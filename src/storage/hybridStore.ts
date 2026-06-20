@@ -27,11 +27,27 @@ export function createHybridBabyTrackerStore(): BabyTrackerStore {
   }
 
   async function connect() {
+    const localData = await localStore.exportData();
     const api = new GoogleSheetsApi(() => requestGoogleSheetsAccessToken(true));
     sheetStore = createGoogleSheetsBabyTrackerStore(api);
-    await sheetStore.initialize();
+    const sheetProfile = await sheetStore.initialize();
+    if (localData.events.length > 0) {
+      await sheetStore.importData(
+        {
+          ...localData,
+          profile: {
+            ...sheetProfile,
+            birthDate: sheetProfile.birthDate ?? localData.profile.birthDate
+          }
+        },
+        { mode: 'merge' }
+      );
+    }
     backend = 'google-sheets';
-    message = 'Writing to the shared Google Sheet.';
+    message =
+      localData.events.length > 0
+        ? `Writing to the shared Google Sheet. Synced ${localData.events.length} local entries.`
+        : 'Writing to the shared Google Sheet.';
   }
 
   async function trySheet<T>(operation: () => Promise<T>, fallback: () => Promise<T>) {

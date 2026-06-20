@@ -1,6 +1,12 @@
-const CACHE_NAME = 'babysteps-v1';
+const CACHE_NAME = 'babysteps-v2';
 const BASE_PATH = new URL(self.registration.scope).pathname;
-const CORE_ASSETS = [BASE_PATH, `${BASE_PATH}manifest.webmanifest`, `${BASE_PATH}icon.svg`];
+const CORE_ASSETS = [
+  BASE_PATH,
+  `${BASE_PATH}manifest.webmanifest`,
+  `${BASE_PATH}icons/icon-192.png`,
+  `${BASE_PATH}icons/icon-512.png`,
+  `${BASE_PATH}icons/maskable-512.png`
+];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

@@ -1,6 +1,7 @@
 import { BarChart3, Home, List, Settings } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Dashboard } from './components/Dashboard';
+import { LoginSplash } from './components/LoginSplash';
 import { QuickAddDialog } from './components/QuickAddDialog';
 import { Reports } from './components/Reports';
 import { SettingsPanel } from './components/SettingsPanel';
@@ -26,8 +27,10 @@ function App() {
   const [profile, setProfile] = useState<BabyProfile | null>(null);
   const [events, setEvents] = useState<CareEvent[]>([]);
   const [activeView, setActiveView] = useState<View>('dashboard');
+  const [logScope, setLogScope] = useState<'all' | 'first-year'>('all');
   const [dialogType, setDialogType] = useState<CareEventType | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [splashComplete, setSplashComplete] = useState(false);
   const [error, setError] = useState('');
   const [storeStatus, setStoreStatus] = useState<StoreStatus | null>(() => trackerStore.getStatus?.() ?? null);
 
@@ -38,15 +41,20 @@ function App() {
     setStoreStatus(trackerStore.getStatus?.() ?? null);
   }, []);
 
-  useEffect(() => {
-    refresh()
-      .catch((caught: unknown) => {
-        setError(caught instanceof Error ? caught.message : 'Unable to load tracker data.');
-      })
-      .finally(() => setLoading(false));
-  }, [refresh]);
-
   const todayKey = useMemo(() => getLocalDateKey(new Date()), []);
+
+  async function loadOffline() {
+    setLoading(true);
+    setError('');
+    try {
+      await refresh();
+      setSplashComplete(true);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to load tracker data.');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function handleAddEvent(input: CreateCareEventInput) {
     await trackerStore.addEvent(input);
@@ -87,6 +95,25 @@ function App() {
     }
   }
 
+  async function handleSplashContinue() {
+    setLoading(true);
+    setError('');
+    try {
+      await trackerStore.connect?.();
+      await refresh();
+      setSplashComplete(true);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to connect Google Sheets.');
+      setStoreStatus(trackerStore.getStatus?.() ?? null);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (!splashComplete) {
+    return <LoginSplash error={error} loading={loading} storeStatus={storeStatus} onContinue={handleSplashContinue} onOffline={loadOffline} />;
+  }
+
   if (loading || !profile) {
     return (
       <div className="app-shell loading-shell">
@@ -95,6 +122,9 @@ function App() {
       </div>
     );
   }
+
+  const firstYearEvents = getFirstYearEvents(profile, events);
+  const logEvents = logScope === 'first-year' ? firstYearEvents : events;
 
   return (
     <div className="app-shell">
@@ -107,10 +137,18 @@ function App() {
           <section className="section-block">
             <div className="section-heading">
               <div>
-                <h1>First Year Log</h1>
-                <span>{getFirstYearEvents(profile, events).length} first-year entries</span>
+                <h1>Log</h1>
+                <span>{events.length} total · {firstYearEvents.length} first-year</span>
               </div>
               <div className="button-row">
+                <div className="segmented-control" aria-label="Log scope">
+                  <button type="button" className={logScope === 'all' ? 'active' : ''} onClick={() => setLogScope('all')}>
+                    All
+                  </button>
+                  <button type="button" className={logScope === 'first-year' ? 'active' : ''} onClick={() => setLogScope('first-year')}>
+                    First year
+                  </button>
+                </div>
                 {!profile.birthDate && (
                   <button className="secondary-button compact" type="button" onClick={() => setDialogType('birth')}>
                     Log birth
@@ -121,7 +159,7 @@ function App() {
                 </button>
               </div>
             </div>
-            <Timeline events={getFirstYearEvents(profile, events)} onDelete={handleDeleteEvent} />
+            <Timeline events={logEvents} onDelete={handleDeleteEvent} />
           </section>
         </main>
       )}
