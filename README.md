@@ -15,3 +15,11 @@ VITE_GOOGLE_CLIENT_ID=your-google-oauth-web-client-id.apps.googleusercontent.com
 ```
 
 Restart the dev server, open Settings, and connect the Google Sheet. Until connected, the app uses local IndexedDB fallback storage.
+
+For GitHub Pages, add a repository variable named `VITE_GOOGLE_CLIENT_ID` with the same OAuth client ID. The OAuth client must allow the JavaScript origin `https://brooksr.github.io`.
+
+## GitHub Pages
+
+This repository deploys with GitHub Actions from the built `dist` output. In GitHub, set Pages source to **GitHub Actions**. The Vite base path is `/baby-steps/` because the production URL is:
+
+https://brooksr.github.io/baby-steps/
