@@ -10,11 +10,60 @@ export interface BaseRecord {
   syncState?: SyncState;
 }
 
+export interface CareContact {
+  name: string;
+  phone?: string;
+  address?: string;
+}
+
+export type FeedingType = 'breastmilk' | 'formula' | 'combination';
+
+export interface CareInfo {
+  // Location / routing
+  homeAddress?: string;
+
+  // Care team
+  hospital?: CareContact;
+  ob?: CareContact;
+  pediatrician?: CareContact;
+  lactation?: CareContact;
+  pharmacy?: CareContact;
+
+  // People
+  guardians?: CareContact[];        // parents / primary caregivers
+  emergencyContacts?: CareContact[]; // backup contacts
+
+  // Admin
+  insurance?: { plan: string; memberId: string; phone: string };
+
+  // Baby health
+  babyBloodType?: string;
+  babyAllergies?: string;
+
+  // Feeding reference (for caregivers, separate from the event log)
+  feedingType?: FeedingType;
+  formulaBrand?: string;
+  bottleAmountOz?: number;
+  feedingNotes?: string;
+
+  // Sleep & soothing
+  safeSleep?: string;
+  sleepRoutine?: string;
+  soothingMethods?: string;
+
+  // Standing medications (name + dose + schedule, not individual log entries)
+  currentMedications?: string;
+
+  // Skin & diapering
+  skinNotes?: string;
+}
+
 export interface BabyProfile extends BaseRecord {
   name: string;
   dueDate: string;
   birthDate?: string;
   timezone: string;
+  careInfo?: CareInfo;
 }
 
 interface BaseCareEvent extends BaseRecord {
@@ -92,6 +141,35 @@ export interface NoteEvent extends BaseCareEvent {
   title?: string;
 }
 
+export interface TemperatureEvent extends BaseCareEvent {
+  type: 'temperature';
+  /** Canonical temperature in Celsius. */
+  celsius: number;
+}
+
+export interface TummyTimeEvent extends BaseCareEvent {
+  type: 'tummytime';
+  durationMinutes: number;
+}
+
+export interface MoodEvent extends BaseCareEvent {
+  type: 'mood';
+  /** Mood/fussiness level 1–5 (see mood-scale.csv). */
+  level: number;
+}
+
+export interface MilestoneEvent extends BaseCareEvent {
+  type: 'milestone';
+  /** Reference id from developmental-milestones.csv (see getMilestones). */
+  refId: string;
+}
+
+export interface VaccineEvent extends BaseCareEvent {
+  type: 'vaccine';
+  /** Reference id from vaccination-schedule.csv (see getVaccinationSchedule). */
+  refId: string;
+}
+
 export type CareEvent =
   | BreastfeedEvent
   | BirthEvent
@@ -102,7 +180,12 @@ export type CareEvent =
   | MedicationEvent
   | AppointmentEvent
   | GrowthEvent
-  | NoteEvent;
+  | NoteEvent
+  | TemperatureEvent
+  | TummyTimeEvent
+  | MoodEvent
+  | MilestoneEvent
+  | VaccineEvent;
 
 type PersistedCareEventFields = 'id' | 'babyId' | 'createdAt' | 'updatedAt' | 'syncState';
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
@@ -132,7 +215,12 @@ export const careEventLabels: Record<CareEventType, string> = {
   diaper: 'Diaper',
   growth: 'Growth',
   medication: 'Medication',
+  milestone: 'Milestone',
+  mood: 'Mood',
   note: 'Note',
   pump: 'Pumping',
-  sleep: 'Sleep'
+  sleep: 'Sleep',
+  temperature: 'Temperature',
+  tummytime: 'Tummy time',
+  vaccine: 'Vaccine'
 };

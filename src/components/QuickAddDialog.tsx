@@ -1,7 +1,10 @@
 import { X } from 'lucide-react';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { addMinutes, fromDateTimeInputValue, toDateTimeInputValue } from '../domain/dates';
+import { getMoodScale } from '../domain/reference';
 import { careEventLabels, type CareEventType, type CreateCareEventInput } from '../domain/types';
+
+const moodLevels = getMoodScale();
 
 interface QuickAddDialogProps {
   eventType: CareEventType | null;
@@ -37,6 +40,9 @@ export function QuickAddDialog({ eventType, onClose, onSave }: QuickAddDialogPro
   const [lengthIn, setLengthIn] = useState('');
   const [headIn, setHeadIn] = useState('');
   const [title, setTitle] = useState('');
+  const [temperature, setTemperature] = useState('98.6');
+  const [temperatureUnit, setTemperatureUnit] = useState('f');
+  const [moodLevel, setMoodLevel] = useState('2');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -47,7 +53,7 @@ export function QuickAddDialog({ eventType, onClose, onSave }: QuickAddDialogPro
     setStartedAt(toDateTimeInputValue(new Date().toISOString()));
     setEndedAt('');
     setNotes('');
-    setDurationMinutes(eventType === 'sleep' ? '60' : '15');
+    setDurationMinutes(eventType === 'sleep' ? '60' : eventType === 'tummytime' ? '5' : '15');
     setAmountOz(eventType === 'pump' ? '3' : '2');
     setMedicationStatus('given');
   }, [eventType]);
@@ -173,6 +179,39 @@ export function QuickAddDialog({ eventType, onClose, onSave }: QuickAddDialogPro
           title: title.trim() || undefined
         };
         break;
+      case 'temperature': {
+        const entered = Number(temperature);
+        const celsius = temperatureUnit === 'f' ? (entered - 32) * (5 / 9) : entered;
+        payload = {
+          type: 'temperature',
+          celsius: Math.round(celsius * 10) / 10,
+          notes: trimmedNotes,
+          startedAt: startedAtIso
+        };
+        break;
+      }
+      case 'tummytime': {
+        const duration = Number(durationMinutes);
+        payload = {
+          type: 'tummytime',
+          durationMinutes: duration,
+          endedAt: addMinutes(startedAtIso, duration),
+          notes: trimmedNotes,
+          startedAt: startedAtIso
+        };
+        break;
+      }
+      case 'mood':
+        payload = {
+          type: 'mood',
+          level: Number(moodLevel),
+          notes: trimmedNotes,
+          startedAt: startedAtIso
+        };
+        break;
+      default:
+        // milestone / vaccine are toggled from the Care view, not this dialog.
+        return;
     }
 
     setSaving(true);
@@ -334,6 +373,42 @@ export function QuickAddDialog({ eventType, onClose, onSave }: QuickAddDialogPro
             <label>
               Title
               <input value={title} onChange={(event) => setTitle(event.target.value)} />
+            </label>
+          )}
+
+          {eventType === 'temperature' && (
+            <>
+              <label>
+                Temperature
+                <input min="0" step="0.1" type="number" value={temperature} onChange={(event) => setTemperature(event.target.value)} required />
+              </label>
+              <label>
+                Unit
+                <select value={temperatureUnit} onChange={(event) => setTemperatureUnit(event.target.value)}>
+                  <option value="f">°F</option>
+                  <option value="c">°C</option>
+                </select>
+              </label>
+            </>
+          )}
+
+          {eventType === 'tummytime' && (
+            <label>
+              Minutes
+              <input min="1" step="1" type="number" value={durationMinutes} onChange={(event) => setDurationMinutes(event.target.value)} required />
+            </label>
+          )}
+
+          {eventType === 'mood' && (
+            <label>
+              Mood
+              <select value={moodLevel} onChange={(event) => setMoodLevel(event.target.value)}>
+                {moodLevels.map((level) => (
+                  <option key={level.level} value={level.level}>
+                    {level.level} · {level.label}
+                  </option>
+                ))}
+              </select>
             </label>
           )}
 

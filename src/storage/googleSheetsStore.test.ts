@@ -85,7 +85,7 @@ describe('Google Sheets tracker store', () => {
     });
 
     expect(api.appendValues).toHaveBeenCalledWith(
-      'Events!A:AA',
+      'Events!A:AE',
       [
         expect.arrayContaining([
           expect.stringMatching(/^event_/),

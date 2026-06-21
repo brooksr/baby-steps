@@ -1,0 +1,6 @@
+band,celsius_min,celsius_max,fahrenheit_min,fahrenheit_max,guidance
+Low,,36.4,,97.6,"Below normal. Warm the baby and recheck; call your doctor if it stays under 36.0 C / 96.8 F."
+Normal,36.5,37.5,97.7,99.5,"Typical body temperature for an infant."
+Elevated,37.6,37.9,99.6,100.3,"Slightly warm. Recheck, remove extra layers, and watch for other symptoms."
+Fever,38.0,38.9,100.4,102.1,"Fever. In a baby under 3 months this is urgent — call your doctor right away."
+High fever,39.0,,102.2,,"High fever. Contact your doctor; seek urgent care for a young infant or if baby seems very unwell."

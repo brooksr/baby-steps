@@ -36,7 +36,7 @@ export interface BabyTrackerStore {
   exportData(): Promise<TrackerExport>;
   importData(data: TrackerExport, options?: ImportOptions): Promise<void>;
   clear(): Promise<void>;
-  connect?(): Promise<void>;
+  connect?(interactive?: boolean): Promise<void>;
   getStatus?(): StoreStatus;
   close(): void;
 }

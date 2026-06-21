@@ -1,6 +1,8 @@
-import { Bed, Calendar, Droplets, FileText, Heart, Pill, Ruler, Trash2, Utensils } from 'lucide-react';
+import { Award, Baby, Bed, Calendar, Droplets, Dumbbell, FileText, Heart, Milk, Pill, Ruler, Smile, Syringe, Thermometer, Trash2, Wind } from 'lucide-react';
 import { formatClock, formatDuration, formatShortDate } from '../domain/dates';
+import { getMilestoneById, getMoodScale, getVaccinationById } from '../domain/reference';
 import { getEventDurationMinutes } from '../domain/summary';
+import { formatTemperature } from '../domain/temperature';
 import { careEventLabels, type CareEvent, type CareEventType } from '../domain/types';
 
 interface TimelineProps {
@@ -12,15 +14,20 @@ interface TimelineProps {
 const icons = {
   appointment: Calendar,
   birth: Heart,
-  bottle: Utensils,
-  breastfeed: Utensils,
-  diaper: Droplets,
+  bottle: Milk,
+  breastfeed: Baby,
+  diaper: Wind,
   growth: Ruler,
   medication: Pill,
+  milestone: Award,
+  mood: Smile,
   note: FileText,
   pump: Droplets,
-  sleep: Bed
-} satisfies Record<CareEventType, typeof Utensils>;
+  sleep: Bed,
+  temperature: Thermometer,
+  tummytime: Dumbbell,
+  vaccine: Syringe
+} satisfies Record<CareEventType, typeof Milk>;
 
 function eventDetail(event: CareEvent) {
   switch (event.type) {
@@ -58,6 +65,20 @@ function eventDetail(event: CareEvent) {
     }
     case 'note':
       return event.title || event.notes || 'Note';
+    case 'temperature':
+      return formatTemperature(event.celsius);
+    case 'tummytime':
+      return formatDuration(event.durationMinutes);
+    case 'mood': {
+      const match = getMoodScale().find((level) => level.level === event.level);
+      return match ? `${event.level} · ${match.label}` : `Level ${event.level}`;
+    }
+    case 'milestone':
+      return getMilestoneById(event.refId)?.milestone ?? 'Milestone reached';
+    case 'vaccine': {
+      const vaccination = getVaccinationById(event.refId);
+      return vaccination ? `${vaccination.age} · ${vaccination.vaccines}` : 'Vaccine given';
+    }
   }
 }
 

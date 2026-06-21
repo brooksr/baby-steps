@@ -19,7 +19,7 @@ export function LoginSplash({ error, loading, storeStatus, onContinue, onOffline
         <p className="eyebrow">BabySteps Theo</p>
         <h1 id="splash-title">Shared baby tracker</h1>
         <p className="splash-copy">
-          This app writes to the shared Google Sheet after Google consent. The OAuth app is currently in testing, so Google may show a testing notice before the consent screen.
+          This app writes to the shared Google Sheet after Google consent. You only need to connect once per device — after that it stays signed in. The OAuth app is in testing, so Google may show a testing notice the first time.
         </p>
 
         <div className="splash-steps" aria-label="Sign in steps">

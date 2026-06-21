@@ -74,6 +74,11 @@ export function formatShortDate(isoOrDate: string | Date) {
   }).format(typeof isoOrDate === 'string' ? new Date(isoOrDate) : isoOrDate);
 }
 
+export function formatAgo(iso: string, now = new Date()) {
+  const minutes = Math.max(0, Math.round((now.getTime() - new Date(iso).getTime()) / MINUTE));
+  return minutes < 1 ? 'just now' : `${formatDuration(minutes)} ago`;
+}
+
 export function formatDuration(minutes: number) {
   if (minutes < 60) {
     return `${minutes}m`;

@@ -15,16 +15,127 @@
   --blue-400: #74bdf2;
   --blue-500: #4f9fdd;
   --blue-700: #256b9d;
-  --accent: #ffe59a;
-  --accent-strong: #ffd166;
+  --accent: #c9abe6;
+  --accent-strong: #a87fce;
+  --on-accent: #2c1f43;
   --coral: #ff8f80;
   --danger: #a74b42;
   --shadow: rgba(34, 75, 112, 0.16);
-  font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-body:
+    Quicksand, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-display:
+    Fraunces, ui-serif, Georgia, "Times New Roman", serif;
+  font-family: var(--font-body);
   font-synthesis: none;
   line-height: 1.5;
   text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3,
+.profile-band h1,
+.section-heading h1,
+.section-heading h2,
+.chart-heading h3,
+.metric-card strong,
+.splash-panel h1 {
+  font-family: var(--font-display);
+}
+
+:root[data-theme='dark'] {
+  color: #e6eef5;
+  background: #0f1620;
+  --ink: #e6eef5;
+  --muted: #9fb2c4;
+  --page: #0f1620;
+  --panel: #18222e;
+  --panel-blue: #1c2836;
+  --line: #2b3a4b;
+  --line-strong: #3a4d63;
+  --blue-50: #16212e;
+  --blue-100: #1f3245;
+  --blue-200: #274058;
+  --blue-300: #3a5f80;
+  --blue-400: #5aa0d6;
+  --blue-500: #4f9fdd;
+  --blue-700: #7cc0f5;
+  --accent: #c7a4ea;
+  --accent-strong: #b48fe0;
+  --coral: #ff8f80;
+  --danger: #ff9b8f;
+  --shadow: rgba(0, 0, 0, 0.5);
+}
+
+/* Dark overrides for surfaces that hardcode light colors. */
+:root[data-theme='dark'] .splash-panel {
+  background: rgba(24, 34, 46, 0.92);
+}
+
+:root[data-theme='dark'] .primary-button {
+  color: #0f1620;
+}
+
+:root[data-theme='dark'] .profile-band,
+:root[data-theme='dark'] .first-year-block {
+  background: linear-gradient(135deg, #1f4a6b, #123048);
+  border-color: #2b5474;
+}
+
+:root[data-theme='dark'] .segmented-control button,
+:root[data-theme='dark'] .birth-button,
+:root[data-theme='dark'] .bottom-nav {
+  background: var(--panel);
+  color: var(--ink);
+}
+
+:root[data-theme='dark'] .check-box {
+  background: var(--panel);
+  border-color: var(--blue-400);
+  color: var(--ink);
+}
+
+:root[data-theme='dark'] .check-row.overdue .check-box {
+  background: #2d1917;
+  border-color: var(--coral);
+  color: var(--coral);
+}
+
+:root[data-theme='dark'] .status-row.urgent,
+:root[data-theme='dark'] .newborn-card.attention,
+:root[data-theme='dark'] .check-row.overdue {
+  background: #2a1d1b;
+  border-color: #6e2d24;
+}
+
+:root[data-theme='dark'] .newborn-card.on-track,
+:root[data-theme='dark'] .check-row.done {
+  background: #16291f;
+  border-color: #2c5c40;
+}
+
+:root[data-theme='dark'] .icon-button.subtle {
+  background: #2a1d1b;
+}
+
+:root[data-theme='dark'] .tool-button {
+  background: var(--panel);
+}
+
+:root[data-theme='dark'] .assess-pill.band-within {
+  color: #7ddba0;
+  background: #1b3828;
+}
+
+:root[data-theme='dark'] .assess-pill.band-below {
+  color: #ffbdb6;
+  background: #3a1f1b;
+}
+
+:root[data-theme='dark'] .error-banner {
+  color: #ffd9d0;
+  background: #3a201b;
+  border-color: #6e2d24;
 }
 
 * {
@@ -138,6 +249,57 @@ button {
   padding: calc(18px + env(safe-area-inset-top)) 14px calc(96px + env(safe-area-inset-bottom));
 }
 
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.app-wordmark {
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--blue-700);
+}
+
+.header-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.header-link svg {
+  width: 18px;
+  height: 18px;
+}
+
+.header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.header-link.icon-only {
+  padding: 8px;
+}
+
+.header-link.active {
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: var(--accent-strong);
+}
+
 .loading-shell {
   display: grid;
   place-content: center;
@@ -205,7 +367,7 @@ button {
   min-width: max-content;
   gap: 8px;
   padding: 10px 12px;
-  color: var(--ink);
+  color: var(--on-accent);
   background: var(--accent);
   border-radius: 8px;
   font-weight: 800;
@@ -339,7 +501,6 @@ button {
 .timeline-row time,
 .timeline-body small,
 .status-row span {
-  color: var(--muted);
   font-size: 0.88rem;
 }
 
@@ -347,6 +508,12 @@ button {
   color: var(--ink);
   font-size: 1.45rem;
   line-height: 1.1;
+}
+
+.metric-card small {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
 }
 
 .status-list {
@@ -359,6 +526,68 @@ button {
   align-items: center;
   gap: 12px;
   padding: 12px;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.info-directions {
+  justify-self: start;
+  margin-top: 8px;
+}
+
+.care-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.care-secondary {
+  margin-top: 12px;
+}
+
+.care-form-section {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.info-subhead {
+  margin-top: 16px;
+}
+
+.hospital-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  text-decoration: none;
+  font-weight: 800;
+}
+
+.hospital-link svg {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  color: var(--blue-700);
+}
+
+.hospital-link div {
+  display: grid;
+  gap: 2px;
+}
+
+.hospital-link span {
+  color: var(--muted);
+  font-size: 0.85rem;
 }
 
 .status-row.urgent {
@@ -408,7 +637,7 @@ button {
 }
 
 .segmented-control button.active {
-  color: var(--ink);
+  color: var(--on-accent);
   background: var(--accent);
 }
 
@@ -419,6 +648,23 @@ button {
 
 .date-input {
   width: 148px;
+}
+
+.log-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.log-filter {
+  width: auto;
+  min-width: 120px;
+}
+
+.load-more {
+  width: 100%;
+  margin-top: 12px;
 }
 
 .timeline {
@@ -562,7 +808,7 @@ button {
 .chart-bar i {
   display: block;
   width: 100%;
-  background: var(--coral);
+  background: var(--blue-400);
   border-radius: inherit;
 }
 
@@ -582,7 +828,7 @@ button {
   left: 12px;
   z-index: 20;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   max-width: 720px;
   margin: 0 auto;
   padding: 8px;
@@ -606,7 +852,7 @@ button {
 }
 
 .bottom-nav button.active {
-  color: var(--ink);
+  color: var(--on-accent);
   background: var(--accent);
 }
 
@@ -691,6 +937,7 @@ textarea {
   min-height: 44px;
   padding: 10px 14px;
   font-weight: 800;
+  text-decoration: none;
 }
 
 .primary-button {
@@ -734,7 +981,7 @@ textarea {
 
 .tool-button {
   color: var(--ink);
-  background: #ffffff;
+  background: var(--panel);
   border: 1px solid var(--line);
 }
 
@@ -773,7 +1020,7 @@ textarea {
 }
 
 .toast {
-  color: var(--ink);
+  color: var(--on-accent);
   background: var(--accent);
 }
 
@@ -817,6 +1064,466 @@ textarea {
 
   .modal-backdrop {
     align-items: center;
+  }
+}
+
+/* Growth standard charts */
+.growth-chart {
+  width: 100%;
+  height: auto;
+}
+
+.growth-band {
+  fill: var(--blue-100);
+  opacity: 0.85;
+}
+
+.growth-median {
+  stroke: var(--blue-500);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+}
+
+.growth-point {
+  fill: var(--blue-500);
+  stroke: var(--panel);
+  stroke-width: 1.5;
+}
+
+.growth-axis-label {
+  fill: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+/* Growth assessment rows */
+.assess-list {
+  display: grid;
+  gap: 10px;
+}
+
+.assess-row {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  background: var(--panel-blue);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--blue-400);
+  border-radius: 8px;
+}
+
+.assess-row p {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.assess-row small {
+  color: var(--muted);
+}
+
+.assess-row.band-below {
+  border-left-color: var(--coral);
+}
+
+.assess-row.band-above {
+  border-left-color: var(--accent-strong);
+}
+
+.assess-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.assess-pill {
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.assess-pill.band-within {
+  color: #1f5e3a;
+  background: #d9f2e3;
+}
+
+.assess-pill.band-below {
+  color: #7a2c22;
+  background: #ffe0d9;
+}
+
+.assess-pill.band-above {
+  color: var(--on-accent);
+  background: var(--accent);
+}
+
+/* Newborn early-days card */
+.newborn-card.on-track {
+  border-color: #bfe8cf;
+  background: #f3fbf6;
+}
+
+.newborn-card.attention {
+  border-color: #ffc4ba;
+  background: #fff7f5;
+}
+
+.newborn-checks {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.newborn-check {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 12px 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  text-align: center;
+}
+
+.newborn-check svg {
+  width: 18px;
+  height: 18px;
+}
+
+.newborn-check.status-within svg {
+  color: #2c8a55;
+}
+
+.newborn-check.status-below svg {
+  color: var(--coral);
+}
+
+.newborn-check strong {
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+.newborn-check span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.newborn-check small {
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.newborn-note {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.newborn-guidance {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  color: var(--ink);
+  background: var(--panel-blue);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 0.88rem;
+}
+
+/* Learn page */
+.learn-list {
+  display: grid;
+  gap: 10px;
+}
+
+.learn-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  background: var(--panel-blue);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.learn-item svg {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.learn-item div {
+  display: grid;
+  gap: 2px;
+}
+
+.learn-item span {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.learn-item.positive {
+  border-left: 4px solid #58c08a;
+}
+
+.learn-item.positive svg {
+  color: #2c8a55;
+}
+
+.learn-item.negative {
+  border-left: 4px solid var(--coral);
+}
+
+.learn-item.negative svg {
+  color: var(--danger);
+}
+
+.learn-item.future {
+  border-left: 4px solid var(--accent-strong);
+}
+
+.learn-item.future svg {
+  color: var(--accent-strong);
+}
+
+.learn-footnote {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  text-align: center;
+}
+
+/* Care plan checklists */
+.care-group + .care-group {
+  margin-top: 16px;
+}
+
+.care-group-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+
+.care-tag {
+  padding: 2px 8px;
+  color: var(--on-accent);
+  background: var(--accent);
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 12px;
+  text-align: left;
+  background: var(--panel-blue);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.check-row.overdue {
+  border-color: #ffc4ba;
+  background: #fff7f5;
+}
+
+.check-row.overdue .check-box {
+  color: var(--danger);
+  border-color: #ffc4ba;
+}
+
+.check-row.done {
+  border-color: #bfe8cf;
+  background: #f3fbf6;
+}
+
+.check-box {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  color: var(--blue-700);
+  background: #ffffff;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+}
+
+.check-row.done .check-box {
+  color: #ffffff;
+  background: #2c8a55;
+  border-color: #2c8a55;
+}
+
+.check-box svg {
+  width: 16px;
+  height: 16px;
+}
+
+.check-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.check-text small {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+/* Family calendar */
+.calendar-frame {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.calendar-frame iframe {
+  display: block;
+  width: 100%;
+  height: 480px;
+  border: 0;
+}
+
+.sheet-link {
+  align-items: center;
+  gap: 8px;
+}
+
+.sheet-link svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* Reference CSV sheets on the Learn page */
+.sheet-group + .sheet-group {
+  margin-top: 18px;
+}
+
+.sheet-group-title {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.sheet-group-blurb {
+  margin: 2px 0 10px;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.sheet-details {
+  margin-bottom: 8px;
+  background: var(--panel-blue);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.sheet-details summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.sheet-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.sheet-details summary::before {
+  content: '+';
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  color: var(--blue-700);
+  background: var(--blue-100);
+  border-radius: 6px;
+  font-weight: 900;
+}
+
+.sheet-details[open] summary::before {
+  content: '−';
+}
+
+.sheet-details summary span {
+  display: grid;
+  gap: 2px;
+}
+
+.sheet-details summary small {
+  color: var(--muted);
+}
+
+.sheet-body {
+  display: grid;
+  gap: 10px;
+  padding: 0 12px 12px;
+}
+
+.sheet-download {
+  justify-self: start;
+  min-height: 38px;
+}
+
+.csv-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.csv-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.csv-table th,
+.csv-table td {
+  padding: 8px 10px;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--line);
+}
+
+.csv-table th {
+  color: var(--blue-700);
+  background: var(--blue-50);
+  font-weight: 800;
+}
+
+.csv-table td {
+  color: var(--ink);
+  white-space: normal;
+}
+
+.csv-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.bottom-nav button span {
+  overflow: hidden;
+  max-width: 100%;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 420px) {
+  .bottom-nav button {
+    font-size: 0.7rem;
   }
 }
 

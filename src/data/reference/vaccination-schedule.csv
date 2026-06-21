@@ -1,0 +1,8 @@
+age,vaccines,note
+Birth,HepB (1st dose),"Usually given before leaving the hospital."
+2 months,"DTaP, IPV, Hib, PCV13, RV, HepB (2nd dose)","First big round of shots."
+4 months,"DTaP, IPV, Hib, PCV13, RV",
+6 months,"DTaP, Hib, PCV13, RV, Influenza (yearly)","IPV and HepB 3rd dose given between 6-18 months."
+12 months,"MMR, Varicella, HepA (1st dose), Hib, PCV13","HepA second dose follows 6 months later."
+15 months,DTaP (4th dose),
+18 months,HepA (2nd dose),

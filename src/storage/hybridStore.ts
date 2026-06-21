@@ -26,7 +26,10 @@ export function createHybridBabyTrackerStore(): BabyTrackerStore {
     };
   }
 
-  async function connect() {
+  async function connect(interactive = true) {
+    // Gate on a token first: silent for an automatic (boot) reconnect, or
+    // interactive when the user explicitly taps connect.
+    await requestGoogleSheetsAccessToken(interactive);
     const localData = await localStore.exportData();
     const api = new GoogleSheetsApi(() => requestGoogleSheetsAccessToken(true));
     sheetStore = createGoogleSheetsBabyTrackerStore(api);

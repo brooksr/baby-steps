@@ -1,5 +1,7 @@
-import { Download, Upload } from 'lucide-react';
+import { Download, FlaskConical, Upload } from 'lucide-react';
 import { ChangeEvent, FormEvent, useState } from 'react';
+import { buildFirstMonthSeed } from '../domain/seed/firstMonthSeed';
+import { buildFullYearSeed } from '../domain/seed/fullYearSeed';
 import type { BabyProfile, CareEvent, TrackerExport } from '../domain/types';
 import type { StoreStatus } from '../storage/store';
 
@@ -60,6 +62,7 @@ export function SettingsPanel({ events, profile, storeStatus, onConnectSheet, on
   const [timezone, setTimezone] = useState(profile.timezone);
   const [status, setStatus] = useState('');
   const [connecting, setConnecting] = useState(false);
+  const [seeding, setSeeding] = useState<'' | 'month' | 'year'>('');
 
   async function handleSaveProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -89,6 +92,36 @@ export function SettingsPanel({ events, profile, storeStatus, onConnectSheet, on
     await onImport(data);
     event.target.value = '';
     setStatus('Import complete.');
+  }
+
+  async function handleSeedMonth() {
+    if (!window.confirm('Add a full month of sample events (including planted warnings and a fever) to the current data? This also sets a birth date.')) {
+      return;
+    }
+
+    setSeeding('month');
+    try {
+      const seed = buildFirstMonthSeed();
+      await onImport(seed);
+      setStatus(`Loaded ${seed.events.length} sample events.`);
+    } finally {
+      setSeeding('');
+    }
+  }
+
+  async function handleSeedYear() {
+    if (!window.confirm('Load a full year of sample data? This replaces the current profile birth date and adds 365 days of events.')) {
+      return;
+    }
+
+    setSeeding('year');
+    try {
+      const seed = buildFullYearSeed();
+      await onImport(seed);
+      setStatus(`Loaded ${seed.events.length} sample events (full year).`);
+    } finally {
+      setSeeding('');
+    }
   }
 
   async function handleConnectSheet() {
@@ -146,6 +179,14 @@ export function SettingsPanel({ events, profile, storeStatus, onConnectSheet, on
           <span>Import</span>
           <input type="file" accept="application/json" onChange={handleImport} />
         </label>
+        <button className="tool-button" type="button" onClick={handleSeedMonth} disabled={seeding !== ''}>
+          <FlaskConical aria-hidden="true" />
+          <span>{seeding === 'month' ? 'Loading' : 'Sample month'}</span>
+        </button>
+        <button className="tool-button" type="button" onClick={handleSeedYear} disabled={seeding !== ''}>
+          <FlaskConical aria-hidden="true" />
+          <span>{seeding === 'year' ? 'Loading' : 'Sample year'}</span>
+        </button>
       </section>
 
       <section className="section-block sync-note">

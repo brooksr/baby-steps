@@ -1,16 +1,16 @@
 import { createDefaultBabyProfile } from '../domain/dates';
-import { DEFAULT_PROFILE_ID, type BabyProfile, type CareEvent, type CareEventType, type CreateCareEventInput, type TrackerExport } from '../domain/types';
+import { DEFAULT_PROFILE_ID, type BabyProfile, type CareInfo, type CareEvent, type CareEventType, type CreateCareEventInput, type TrackerExport } from '../domain/types';
 import { requestGoogleSheetsAccessToken } from './googleSheetsAuth';
 import type { BabyTrackerStore, EventQuery, ImportOptions } from './store';
 
 export const GOOGLE_SHEET_ID = '1VG9px1j-KF29i2J6AG_PP57hOM8V-wLPgP-9VTdURUc';
 export const GOOGLE_SHEET_URL = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/edit`;
 
-const PROFILE_RANGE = 'Profile!A1:H2';
-const PROFILE_ROW_RANGE = 'Profile!A2:H2';
-const EVENTS_RANGE = 'Events!A:AA';
-const EVENTS_BODY_RANGE = 'Events!A2:AA1000';
-const EVENTS_APPEND_RANGE = 'Events!A:AA';
+const PROFILE_RANGE = 'Profile!A1:I2';
+const PROFILE_ROW_RANGE = 'Profile!A2:I2';
+const EVENTS_RANGE = 'Events!A:AE';
+const EVENTS_BODY_RANGE = 'Events!A2:AE1000';
+const EVENTS_APPEND_RANGE = 'Events!A:AE';
 const EVENTS_SHEET_ID = 0;
 
 const eventHeaders = [
@@ -40,12 +40,15 @@ const eventHeaders = [
   'weightOz',
   'lengthIn',
   'headCircumferenceIn',
-  'title'
+  'title',
+  'celsius',
+  'moodLevel',
+  'refId'
 ] as const;
 
 type EventColumn = (typeof eventHeaders)[number];
 
-const profileHeaders = ['id', 'name', 'dueDate', 'birthDate', 'timezone', 'createdAt', 'updatedAt', 'syncState'] as const;
+const profileHeaders = ['id', 'name', 'dueDate', 'birthDate', 'timezone', 'createdAt', 'updatedAt', 'syncState', 'careInfo'] as const;
 
 function createId(prefix: string) {
   if (globalThis.crypto?.randomUUID) {
@@ -94,6 +97,12 @@ function profileFromRow(row: unknown[] | undefined): BabyProfile {
   const record = rowRecord(profileHeaders, row);
   const fallback = createDefaultBabyProfile();
 
+  let careInfo: CareInfo | undefined;
+  const careInfoStr = optionalString(record.careInfo);
+  if (careInfoStr) {
+    try { careInfo = JSON.parse(careInfoStr) as CareInfo; } catch { /* ignore malformed JSON */ }
+  }
+
   return {
     id: optionalString(record.id) ?? DEFAULT_PROFILE_ID,
     name: optionalString(record.name) ?? fallback.name,
@@ -102,7 +111,8 @@ function profileFromRow(row: unknown[] | undefined): BabyProfile {
     timezone: optionalString(record.timezone) ?? fallback.timezone,
     createdAt: optionalString(record.createdAt) ?? fallback.createdAt,
     updatedAt: optionalString(record.updatedAt) ?? fallback.updatedAt,
-    syncState: 'synced'
+    syncState: 'synced',
+    careInfo
   };
 }
 
@@ -201,6 +211,36 @@ function eventFromRow(row: unknown[]): CareEvent | null {
         title: optionalString(record.title),
         type
       };
+    case 'temperature':
+      return {
+        ...base,
+        celsius: optionalNumber(record.celsius) ?? 0,
+        type
+      };
+    case 'tummytime':
+      return {
+        ...base,
+        durationMinutes: optionalNumber(record.durationMinutes) ?? 0,
+        type
+      };
+    case 'mood':
+      return {
+        ...base,
+        level: optionalNumber(record.moodLevel) ?? 3,
+        type
+      };
+    case 'milestone':
+      return {
+        ...base,
+        refId: optionalString(record.refId) ?? '',
+        type
+      };
+    case 'vaccine':
+      return {
+        ...base,
+        refId: optionalString(record.refId) ?? '',
+        type
+      };
   }
 }
 
@@ -208,6 +248,7 @@ function eventToRow(event: CareEvent) {
   const values: Record<EventColumn, unknown> = {
     amountOz: '',
     babyId: event.babyId,
+    celsius: '',
     color: '',
     contents: '',
     createdAt: event.createdAt,
@@ -221,7 +262,9 @@ function eventToRow(event: CareEvent) {
     lengthIn: '',
     location: '',
     medicationName: '',
+    moodLevel: '',
     notes: event.notes ?? '',
+    refId: '',
     provider: '',
     reason: '',
     scheduledAt: '',
@@ -277,6 +320,21 @@ function eventToRow(event: CareEvent) {
     case 'note':
       values.title = event.title ?? '';
       break;
+    case 'temperature':
+      values.celsius = event.celsius;
+      break;
+    case 'tummytime':
+      values.durationMinutes = event.durationMinutes;
+      break;
+    case 'mood':
+      values.moodLevel = event.level;
+      break;
+    case 'milestone':
+      values.refId = event.refId;
+      break;
+    case 'vaccine':
+      values.refId = event.refId;
+      break;
     case 'sleep':
       break;
   }
@@ -285,7 +343,12 @@ function eventToRow(event: CareEvent) {
 }
 
 function profileToRow(profile: BabyProfile) {
-  return profileHeaders.map((header) => normalizeCell(profile[header]));
+  return profileHeaders.map((header) => {
+    if (header === 'careInfo') {
+      return profile.careInfo ? JSON.stringify(profile.careInfo) : '';
+    }
+    return normalizeCell(profile[header as keyof BabyProfile]);
+  });
 }
 
 function assertTrackerExport(data: TrackerExport) {
@@ -368,6 +431,8 @@ export class GoogleSheetsApi {
 }
 
 export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() => requestGoogleSheetsAccessToken(false))): BabyTrackerStore {
+  let headersWritten = false;
+
   async function listRows() {
     const values = await api.getValues(EVENTS_RANGE);
     const [, ...rows] = values;
@@ -387,6 +452,10 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
   async function initialize() {
     const profile = await getProfile();
     await api.updateValues(PROFILE_ROW_RANGE, [profileToRow(profile)]);
+    if (!headersWritten) {
+      await api.updateValues('Events!A1:AD1', [[...eventHeaders]]);
+      headersWritten = true;
+    }
     return profile;
   }
 
@@ -436,7 +505,7 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
       updatedAt: new Date().toISOString()
     };
 
-    await api.updateValues(`Events!A${match.rowNumber}:AA${match.rowNumber}`, [eventToRow(updated)]);
+    await api.updateValues(`Events!A${match.rowNumber}:AE${match.rowNumber}`, [eventToRow(updated)]);
     return updated;
   }
 
@@ -485,7 +554,7 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
     if (options.mode === 'replace') {
       await api.clearValues(EVENTS_BODY_RANGE);
       if (data.events.length > 0) {
-        await api.updateValues('Events!A2:AA', data.events.map((event) => eventToRow({ ...event, syncState: 'synced' })));
+        await api.updateValues('Events!A2:AE', data.events.map((event) => eventToRow({ ...event, syncState: 'synced' })));
       }
       return;
     }
