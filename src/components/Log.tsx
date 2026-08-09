@@ -62,9 +62,10 @@ interface LogProps {
   profile: BabyProfile;
   onAdd: (type: CareEventType) => void;
   onDelete: (id: string) => void;
+  onEdit: (event: CareEvent) => void;
 }
 
-export function Log({ events, firstYearEvents, profile, onAdd, onDelete }: LogProps) {
+export function Log({ events, firstYearEvents, profile, onAdd, onDelete, onEdit }: LogProps) {
   const [scope, setScope] = useState<'all' | 'first-year'>('all');
   const [filter, setFilter] = useState<FilterGroup>('all');
   const [search, setSearch] = useState('');
@@ -147,6 +148,7 @@ export function Log({ events, firstYearEvents, profile, onAdd, onDelete }: LogPr
         <Timeline
           events={visible}
           onDelete={onDelete}
+          onEdit={onEdit}
           emptyMessage={search || filter !== 'all' ? 'No matching entries.' : 'No entries yet.'}
         />
 

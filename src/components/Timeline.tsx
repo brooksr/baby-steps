@@ -1,4 +1,4 @@
-import { Award, Baby, Bed, Calendar, Droplets, Dumbbell, FileText, Heart, Milk, Pill, Ruler, Smile, Syringe, Thermometer, Trash2, Wind } from 'lucide-react';
+import { Award, Baby, Bed, Calendar, Droplets, Dumbbell, FileText, Heart, Milk, Pencil, Pill, Ruler, Smile, Syringe, Thermometer, Trash2, Wind } from 'lucide-react';
 import { formatClock, formatDuration, formatShortDate } from '../domain/dates';
 import { getMilestoneById, getMoodScale, getVaccinationById } from '../domain/reference';
 import { getEventDurationMinutes } from '../domain/summary';
@@ -9,6 +9,7 @@ interface TimelineProps {
   events: CareEvent[];
   emptyMessage?: string;
   onDelete?: (id: string) => void;
+  onEdit?: (event: CareEvent) => void;
 }
 
 const icons = {
@@ -82,7 +83,7 @@ function eventDetail(event: CareEvent) {
   }
 }
 
-export function Timeline({ events, emptyMessage = 'No entries yet.', onDelete }: TimelineProps) {
+export function Timeline({ events, emptyMessage = 'No entries yet.', onDelete, onEdit }: TimelineProps) {
   if (events.length === 0) {
     return <p className="empty-state">{emptyMessage}</p>;
   }
@@ -107,10 +108,19 @@ export function Timeline({ events, emptyMessage = 'No entries yet.', onDelete }:
               <p>{eventDetail(event)}</p>
               {event.notes && event.type !== 'note' && <small>{event.notes}</small>}
             </div>
-            {onDelete && (
-              <button className="icon-button subtle" type="button" onClick={() => onDelete(event.id)} aria-label={`Delete ${careEventLabels[event.type]}`}>
-                <Trash2 aria-hidden="true" />
-              </button>
+            {(onEdit || onDelete) && (
+              <div className="timeline-actions">
+                {onEdit && (
+                  <button className="icon-button" type="button" onClick={() => onEdit(event)} aria-label={`Edit ${careEventLabels[event.type]}`}>
+                    <Pencil aria-hidden="true" />
+                  </button>
+                )}
+                {onDelete && (
+                  <button className="icon-button subtle" type="button" onClick={() => onDelete(event.id)} aria-label={`Delete ${careEventLabels[event.type]}`}>
+                    <Trash2 aria-hidden="true" />
+                  </button>
+                )}
+              </div>
             )}
           </li>
         );

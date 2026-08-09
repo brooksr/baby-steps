@@ -1,15 +1,22 @@
-import { X } from 'lucide-react';
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { Play, Square, X } from 'lucide-react';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { addMinutes, fromDateTimeInputValue, toDateTimeInputValue } from '../domain/dates';
 import { getMoodScale } from '../domain/reference';
-import { careEventLabels, type CareEventType, type CreateCareEventInput } from '../domain/types';
+import { type ActiveTimers, type TimerType, formatElapsed, getElapsedSeconds, isTimerType } from '../domain/timers';
+import { careEventLabels, type CareEvent, type CareEventType, type CreateCareEventInput } from '../domain/types';
 
 const moodLevels = getMoodScale();
 
 interface QuickAddDialogProps {
+  activeTimers: ActiveTimers;
+  /** Set when adding a new entry. Ignored while `editEvent` is set. */
   eventType: CareEventType | null;
+  /** Set when editing an entry that has already been logged. */
+  editEvent?: CareEvent | null;
   onClose: () => void;
   onSave: (input: CreateCareEventInput) => Promise<void>;
+  onTimerStart: (type: TimerType) => void;
+  onTimerStop: (type: TimerType) => void;
 }
 
 function numberOrUndefined(value: string) {
@@ -20,7 +27,11 @@ function numberOrUndefined(value: string) {
   return Number(value);
 }
 
-export function QuickAddDialog({ eventType, onClose, onSave }: QuickAddDialogProps) {
+function numberInputValue(value: number | undefined) {
+  return value == null ? '' : String(value);
+}
+
+export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, onClose, onSave, onTimerStart, onTimerStop }: QuickAddDialogProps) {
   const [startedAt, setStartedAt] = useState(() => toDateTimeInputValue(new Date().toISOString()));
   const [endedAt, setEndedAt] = useState('');
   const [notes, setNotes] = useState('');
@@ -44,30 +55,134 @@ export function QuickAddDialog({ eventType, onClose, onSave }: QuickAddDialogPro
   const [temperatureUnit, setTemperatureUnit] = useState('f');
   const [moodLevel, setMoodLevel] = useState('2');
   const [saving, setSaving] = useState(false);
+  const [timerElapsed, setTimerElapsed] = useState(0);
+
+  const editing = Boolean(editEvent);
+  const eventType = editEvent?.type ?? addType;
+
+  const activeTimer = eventType && !editing && isTimerType(eventType) ? activeTimers[eventType] : undefined;
+  const timerRunning = Boolean(activeTimer);
+
+  // Read only when the dialog opens: the timers object is re-created every second
+  // while one runs, and depending on it would reset the form mid-entry.
+  const activeTimersRef = useRef(activeTimers);
+  activeTimersRef.current = activeTimers;
+
+  useEffect(() => {
+    if (!timerRunning) return;
+    setTimerElapsed(activeTimer ? getElapsedSeconds(activeTimer.startedAt) : 0);
+    const id = setInterval(() => {
+      setTimerElapsed(activeTimer ? getElapsedSeconds(activeTimer.startedAt) : 0);
+    }, 1000);
+    return () => clearInterval(id);
+  }, [timerRunning, activeTimer]);
 
   useEffect(() => {
     if (!eventType) {
       return;
     }
 
-    setStartedAt(toDateTimeInputValue(new Date().toISOString()));
-    setEndedAt('');
-    setNotes('');
+    const timer = !editEvent && isTimerType(eventType) ? activeTimersRef.current[eventType] : undefined;
+
+    setStartedAt(toDateTimeInputValue(editEvent?.startedAt ?? timer?.startedAt ?? new Date().toISOString()));
+    setEndedAt(editEvent?.endedAt ? toDateTimeInputValue(editEvent.endedAt) : '');
+    setNotes(editEvent?.notes ?? '');
     setDurationMinutes(eventType === 'sleep' ? '60' : eventType === 'tummytime' ? '5' : '15');
+    setSide('left');
     setAmountOz(eventType === 'pump' ? '3' : '2');
+    setContents('breastmilk');
+    setDiaperKind('wet');
+    setDiaperColor('');
+    setMedicationName('');
+    setDose('');
     setMedicationStatus('given');
-  }, [eventType]);
+    setProvider('');
+    setLocation('');
+    setReason('Checkup');
+    setWeightOz('');
+    setLengthIn('');
+    setHeadIn('');
+    setTitle('');
+    setTemperature('98.6');
+    setTemperatureUnit('f');
+    setMoodLevel('2');
+
+    if (!editEvent) {
+      return;
+    }
+
+    switch (editEvent.type) {
+      case 'breastfeed':
+        setSide(editEvent.side);
+        setDurationMinutes(String(editEvent.durationMinutes));
+        break;
+      case 'bottle':
+        setAmountOz(String(editEvent.amountOz));
+        setContents(editEvent.contents);
+        break;
+      case 'pump':
+        setAmountOz(String(editEvent.amountOz));
+        setSide(editEvent.side);
+        break;
+      case 'diaper':
+        setDiaperKind(editEvent.kind);
+        setDiaperColor(editEvent.color ?? '');
+        break;
+      case 'medication':
+        setMedicationName(editEvent.medicationName);
+        setDose(editEvent.dose);
+        setMedicationStatus(editEvent.status);
+        break;
+      case 'appointment':
+        setReason(editEvent.reason);
+        setProvider(editEvent.provider ?? '');
+        setLocation(editEvent.location ?? '');
+        break;
+      case 'birth':
+      case 'growth':
+        setWeightOz(numberInputValue(editEvent.weightOz));
+        setLengthIn(numberInputValue(editEvent.lengthIn));
+        setHeadIn(numberInputValue(editEvent.headCircumferenceIn));
+        break;
+      case 'note':
+        setTitle(editEvent.title ?? '');
+        break;
+      case 'temperature':
+        setTemperature(String(Math.round((editEvent.celsius * (9 / 5) + 32) * 10) / 10));
+        setTemperatureUnit('f');
+        break;
+      case 'tummytime':
+        setDurationMinutes(String(editEvent.durationMinutes));
+        break;
+      case 'mood':
+        setMoodLevel(String(editEvent.level));
+        break;
+      default:
+        break;
+    }
+  }, [eventType, editEvent]);
 
   const titleText = useMemo(() => {
     if (!eventType) {
       return '';
     }
 
-    return `Add ${careEventLabels[eventType]}`;
-  }, [eventType]);
+    return `${editing ? 'Edit' : 'Add'} ${careEventLabels[eventType]}`;
+  }, [editing, eventType]);
 
   if (!eventType) {
     return null;
+  }
+
+  function handleStopTimer() {
+    if (!eventType || !isTimerType(eventType) || !activeTimer) return;
+    const nowIso = new Date().toISOString();
+    const elapsed = getElapsedSeconds(activeTimer.startedAt);
+    setEndedAt(toDateTimeInputValue(nowIso));
+    if (eventType === 'breastfeed' || eventType === 'tummytime') {
+      setDurationMinutes(String(Math.max(1, Math.round(elapsed / 60))));
+    }
+    onTimerStop(eventType);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -109,6 +224,7 @@ export function QuickAddDialog({ eventType, onClose, onSave }: QuickAddDialogPro
           type: 'bottle',
           amountOz: Number(amountOz),
           contents: contents as 'breastmilk' | 'formula' | 'mixed' | 'other',
+          endedAt: endedAt ? fromDateTimeInputValue(endedAt) : undefined,
           notes: trimmedNotes,
           startedAt: startedAtIso
         };
@@ -117,6 +233,7 @@ export function QuickAddDialog({ eventType, onClose, onSave }: QuickAddDialogPro
         payload = {
           type: 'pump',
           amountOz: Number(amountOz),
+          endedAt: endedAt ? fromDateTimeInputValue(endedAt) : undefined,
           notes: trimmedNotes,
           side: side as 'left' | 'right' | 'both',
           startedAt: startedAtIso
@@ -210,8 +327,14 @@ export function QuickAddDialog({ eventType, onClose, onSave }: QuickAddDialogPro
         };
         break;
       default:
-        // milestone / vaccine are toggled from the Care view, not this dialog.
-        return;
+        // milestone / vaccine are toggled from the Care view, so there is nothing
+        // to add here — but an existing one can still be re-timed or annotated.
+        if (!editEvent) {
+          return;
+        }
+
+        payload = { ...editEvent, notes: trimmedNotes, startedAt: startedAtIso } as CreateCareEventInput;
+        break;
     }
 
     setSaving(true);
@@ -237,6 +360,25 @@ export function QuickAddDialog({ eventType, onClose, onSave }: QuickAddDialogPro
             Time
             <input type="datetime-local" value={startedAt} onChange={(event) => setStartedAt(event.target.value)} required />
           </label>
+
+          {isTimerType(eventType) && !editing && (
+            <div className="timer-row">
+              {timerRunning ? (
+                <>
+                  <span className="timer-display">{formatElapsed(timerElapsed)}</span>
+                  <button className="timer-stop-button" type="button" onClick={handleStopTimer}>
+                    <Square aria-hidden="true" />
+                    Stop
+                  </button>
+                </>
+              ) : (
+                <button className="timer-start-button" type="button" onClick={() => onTimerStart(eventType)}>
+                  <Play aria-hidden="true" />
+                  Start Timer
+                </button>
+              )}
+            </div>
+          )}
 
           {eventType === 'breastfeed' && (
             <>

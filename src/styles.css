@@ -473,6 +473,24 @@ button {
   transform: translateY(1px);
 }
 
+.quick-button.timer-active {
+  background: var(--blue-100);
+  border-color: var(--blue-400);
+  color: var(--blue-700);
+}
+
+.quick-timer {
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  animation: timer-pulse 2s ease-in-out infinite;
+}
+
+@keyframes timer-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -697,6 +715,12 @@ button {
   min-width: 0;
 }
 
+.timeline-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .timeline-row {
   display: flex;
   align-items: baseline;
@@ -909,6 +933,58 @@ button {
 
 .form-grid-wide {
   grid-column: 1 / -1;
+}
+
+.timer-row {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--blue-50);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.timer-display {
+  flex: 1;
+  font-size: 1.5rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  color: var(--blue-700);
+  letter-spacing: 0;
+  animation: timer-pulse 2s ease-in-out infinite;
+}
+
+.timer-start-button,
+.timer-stop-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-weight: 800;
+  font-size: 0.9rem;
+}
+
+.timer-start-button {
+  flex: 1;
+  justify-content: center;
+  color: var(--blue-700);
+  background: var(--blue-100);
+  border: 1px solid var(--blue-400);
+}
+
+.timer-stop-button {
+  color: var(--panel);
+  background: var(--blue-700);
+  border: 0;
+}
+
+.timer-start-button svg,
+.timer-stop-button svg {
+  width: 16px;
+  height: 16px;
 }
 
 input,
@@ -1328,6 +1404,9 @@ textarea {
   margin-bottom: 8px;
   padding: 12px;
   text-align: left;
+  /* Buttons do not inherit color, so set it explicitly or the labels stay dark
+     on the dark-mode surfaces below. */
+  color: var(--ink);
   background: var(--panel-blue);
   border: 1px solid var(--line);
   border-radius: 8px;

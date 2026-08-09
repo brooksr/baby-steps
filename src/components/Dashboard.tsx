@@ -4,12 +4,14 @@ import { classifyTemperatureC } from '../domain/reference';
 import { getActiveSleep, getDailySummary, getEventDurationMinutes, getLastEvent, getUpcomingAppointments, getUpcomingMedicationEvents } from '../domain/summary';
 import { HOSPITAL } from '../domain/medicalInfo';
 import { formatTemperature } from '../domain/temperature';
+import { type ActiveTimers, formatElapsed, getElapsedSeconds, isTimerType } from '../domain/timers';
 import type { BabyProfile, CareEvent, CareEventType, TemperatureEvent } from '../domain/types';
 import { FamilyCalendar } from './FamilyCalendar';
 import { NewbornStatus } from './NewbornStatus';
 import { Timeline } from './Timeline';
 
 interface DashboardProps {
+  activeTimers: ActiveTimers;
   events: CareEvent[];
   profile: BabyProfile;
   todayKey: string;
@@ -36,7 +38,7 @@ function formatProfileDate(value: string) {
   return new Date(`${dateKey}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-export function Dashboard({ events, profile, todayKey, onAdd }: DashboardProps) {
+export function Dashboard({ activeTimers, events, profile, todayKey, onAdd }: DashboardProps) {
   const isBorn = Boolean(profile.birthDate);
   const daysUntilDue = getDaysUntilDue(profile);
   const ageDays = getAgeDays(profile);
@@ -95,10 +97,13 @@ export function Dashboard({ events, profile, todayKey, onAdd }: DashboardProps) 
       <section className="quick-grid" aria-label="Quick add">
         {actions.map((action) => {
           const Icon = action.icon;
+          const timer = isTimerType(action.type) ? activeTimers[action.type] : undefined;
+          const elapsed = timer ? getElapsedSeconds(timer.startedAt) : null;
           return (
-            <button className="quick-button" type="button" key={action.type} onClick={() => onAdd(action.type)}>
+            <button className={`quick-button${timer ? ' timer-active' : ''}`} type="button" key={action.type} onClick={() => onAdd(action.type)}>
               <Icon aria-hidden="true" />
               <span>{action.label}</span>
+              {elapsed !== null && <span className="quick-timer">{formatElapsed(elapsed)}</span>}
             </button>
           );
         })}

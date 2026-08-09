@@ -33,7 +33,7 @@ describe('Dashboard', () => {
       }
     ];
 
-    render(<Dashboard events={events} profile={createDefaultBabyProfile(new Date('2026-06-19T12:00:00.000Z'))} todayKey="2026-09-02" onAdd={onAdd} />);
+    render(<Dashboard activeTimers={{}} events={events} profile={createDefaultBabyProfile(new Date('2026-06-19T12:00:00.000Z'))} todayKey="2026-09-02" onAdd={onAdd} />);
 
     expect(screen.getByText(/Theo Roche/i)).toBeInTheDocument();
     expect(screen.getByText(/days until due date/i)).toBeInTheDocument();

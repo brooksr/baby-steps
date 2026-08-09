@@ -13,6 +13,7 @@ import { Reports } from './components/Reports';
 import { SettingsPanel } from './components/SettingsPanel';
 import { getLocalDateKey } from './domain/dates';
 import { getFirstYearEvents } from './domain/firstYear';
+import { type ActiveTimers, type TimerType, loadActiveTimers, saveActiveTimers } from './domain/timers';
 import type { BabyProfile, CareEvent, CareEventType, CreateCareEventInput, TrackerExport } from './domain/types';
 import { createHybridBabyTrackerStore } from './storage/hybridStore';
 import type { StoreStatus } from './storage/store';
@@ -41,11 +42,20 @@ function App() {
   const [events, setEvents] = useState<CareEvent[]>([]);
   const [activeView, setActiveView] = useState<View>(viewFromHash);
   const [dialogType, setDialogType] = useState<CareEventType | null>(null);
+  const [editEvent, setEditEvent] = useState<CareEvent | null>(null);
   const [loading, setLoading] = useState(false);
   const [splashComplete, setSplashComplete] = useState(false);
   const [error, setError] = useState('');
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
   const [storeStatus, setStoreStatus] = useState<StoreStatus | null>(() => trackerStore.getStatus?.() ?? null);
+  const [activeTimers, setActiveTimers] = useState<ActiveTimers>(loadActiveTimers);
+
+  const hasActiveTimer = Object.keys(activeTimers).length > 0;
+  useEffect(() => {
+    if (!hasActiveTimer) return;
+    const id = setInterval(() => setActiveTimers((t) => ({ ...t })), 1000);
+    return () => clearInterval(id);
+  }, [hasActiveTimer]);
 
   useEffect(() => {
     applyTheme(theme);
@@ -119,12 +129,40 @@ function App() {
     }
   }
 
-  async function handleAddEvent(input: CreateCareEventInput) {
-    await trackerStore.addEvent(input);
+  function handleTimerStart(type: TimerType) {
+    const next = { ...loadActiveTimers(), [type]: { startedAt: new Date().toISOString() } };
+    saveActiveTimers(next);
+    setActiveTimers(next);
+    setDialogType(null);
+  }
+
+  function handleTimerStop(type: TimerType) {
+    const next = { ...loadActiveTimers() };
+    delete next[type];
+    saveActiveTimers(next);
+    setActiveTimers(next);
+  }
+
+  function closeDialog() {
+    setDialogType(null);
+    setEditEvent(null);
+  }
+
+  async function handleSaveEvent(input: CreateCareEventInput) {
+    if (editEvent) {
+      await trackerStore.updateEvent({ ...editEvent, ...input } as CareEvent);
+    } else {
+      await trackerStore.addEvent(input);
+    }
+
     if (input.type === 'birth') {
       await trackerStore.saveProfile({ birthDate: input.startedAt });
     }
-    setDialogType(null);
+    // Clear any active timer for this event type when saving
+    if (!editEvent && input.type in activeTimers) {
+      handleTimerStop(input.type as TimerType);
+    }
+    closeDialog();
     await refresh();
   }
 
@@ -231,7 +269,7 @@ function App() {
 
       {error && <p className="error-banner" role="alert">{error}</p>}
 
-      {activeView === 'dashboard' && <Dashboard events={events} profile={profile} todayKey={todayKey} onAdd={setDialogType} />}
+      {activeView === 'dashboard' && <Dashboard activeTimers={activeTimers} events={events} profile={profile} todayKey={todayKey} onAdd={setDialogType} />}
 
       {activeView === 'log' && (
         <Log
@@ -240,6 +278,7 @@ function App() {
           profile={profile}
           onAdd={setDialogType}
           onDelete={handleDeleteEvent}
+          onEdit={setEditEvent}
         />
       )}
 
@@ -275,7 +314,15 @@ function App() {
         })}
       </nav>
 
-      <QuickAddDialog eventType={dialogType} onClose={() => setDialogType(null)} onSave={handleAddEvent} />
+      <QuickAddDialog
+        activeTimers={activeTimers}
+        editEvent={editEvent}
+        eventType={dialogType}
+        onClose={closeDialog}
+        onSave={handleSaveEvent}
+        onTimerStart={handleTimerStart}
+        onTimerStop={handleTimerStop}
+      />
     </div>
   );
 }
