@@ -5,6 +5,8 @@ import type { MetricPlot } from '../domain/growth/assess';
 interface GrowthChartProps {
   standard: GrowthStandard;
   plots: MetricPlot[];
+  /** When set, each measurement is also plotted at its preterm-corrected age. */
+  showCorrected?: boolean;
 }
 
 const WIDTH = 320;
@@ -14,7 +16,7 @@ const PAD_RIGHT = 8;
 const PAD_TOP = 12;
 const PAD_BOTTOM = 24;
 
-export function GrowthChart({ standard, plots }: GrowthChartProps) {
+export function GrowthChart({ standard, plots, showCorrected = false }: GrowthChartProps) {
   const geometry = useMemo(() => {
     const months = standard.points.map((point) => point.month);
     const minMonth = months[0];
@@ -49,11 +51,16 @@ export function GrowthChart({ standard, plots }: GrowthChartProps) {
       median: line((index) => standard.points[index].median),
       minMonth,
       minValue,
+      // Two readings of the same measurement: where it lands against peers of
+      // the same birthday, and against peers of the same corrected age.
+      corrected: showCorrected
+        ? plots.map((plot) => ({ cx: x(plot.correctedAgeMonths), cy: y(plot.value), x2: x(plot.ageMonths) }))
+        : [],
       points: plots.map((plot) => ({ cx: x(plot.ageMonths), cy: y(plot.value) })),
       x,
       y
     };
-  }, [plots, standard]);
+  }, [plots, showCorrected, standard]);
 
   const yTicks = [geometry.minValue, (geometry.minValue + geometry.maxValue) / 2, geometry.maxValue];
   const xTicks = [geometry.minMonth, geometry.maxMonth / 2, geometry.maxMonth].map((value) => Math.round(value));
@@ -73,6 +80,21 @@ export function GrowthChart({ standard, plots }: GrowthChartProps) {
         <text key={`x-${tick}`} className="growth-axis-label" x={geometry.x(tick)} y={HEIGHT - 6} textAnchor="middle">
           {tick}m
         </text>
+      ))}
+
+      {geometry.corrected.map((point, index) => (
+        <line
+          key={`shift-${index}`}
+          className="growth-shift"
+          x1={point.cx}
+          y1={point.cy}
+          x2={point.x2}
+          y2={point.cy}
+        />
+      ))}
+
+      {geometry.corrected.map((point, index) => (
+        <circle key={`corrected-${index}`} className="growth-point corrected" cx={point.cx} cy={point.cy} r={3.5} />
       ))}
 
       {geometry.points.map((point, index) => (

@@ -137,11 +137,12 @@ export function buildFullYearSeed(birthDate = defaultFullYearBirthDate()): Track
         push(at(day, hour, 10), {
           durationMinutes: nursingMin,
           endedAt: at(day, hour, 10 + nursingMin),
+          method: 'nursing',
           side: i % 4 === 0 ? 'left' : 'right',
-          type: 'breastfeed'
+          type: 'feed'
         });
       } else {
-        push(at(day, hour, 15), { amountOz: bottleOz, contents: 'breastmilk', type: 'bottle' });
+        push(at(day, hour, 15), { amountOz: bottleOz, contents: 'breastmilk', method: 'bottle', type: 'feed' });
       }
     }
 

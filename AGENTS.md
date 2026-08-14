@@ -25,6 +25,11 @@ change done.
 - `src/domain/` — pure logic + data (no React). Co-located `*.test.ts`.
   - `domain/types.ts` — the `CareEvent` union is the core data model. Adding a
     new tracked thing usually starts here with a new event variant.
+  - `domain/legacyEvents.ts` — reads rows written under an older schema. Nursing
+    (`breastfeed`) and `bottle` are one `feed` event now (with `method`, and
+    optional `durationMinutes`/`amountOz`); old rows still live in the shared
+    sheet and in IndexedDB, so both stores migrate on read rather than rewriting
+    history. Retire a variant the same way — never mutate stored rows in place.
   - `domain/dates.ts`, `domain/summary.ts`, `domain/firstYear.ts` — derived stats.
   - `domain/growth/` — WHO standards data + assessment logic.
   - `domain/csv.ts`, `domain/reference.ts` — CSV parsing + typed reference-data accessors.
@@ -110,9 +115,9 @@ future V2 and should not be started without an explicit go-ahead. The reference
 data for several of them already ships (see `domain/reference.ts`).
 
 ### V2.1 — Inventory & richer tracking
-- **Milk inventory** — track pumped-milk stash (add on pump, subtract on bottle
-  from stash). New lightweight inventory store or derive from existing pump/
-  bottle events. Low-stock indicator.
+- **Milk inventory** — track pumped-milk stash (add on pump, subtract on a bottle
+  feed from stash). New lightweight inventory store or derive from existing pump
+  and `feed` events. Low-stock indicator.
 
 ### V2.2 — Notifications & media (needs platform plumbing)
 - **Feed & med reminders** — schedule local notifications via the service

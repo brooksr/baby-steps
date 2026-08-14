@@ -9,7 +9,49 @@ const AVG_DAYS_PER_MONTH = 365.25 / 12;
 const OZ_TO_KG = 0.0283495;
 const IN_TO_CM = 2.54;
 
+/** A pregnancy carried to 40w0d. Anything earlier leaves age to correct for. */
+const TERM_GESTATION_DAYS = 280;
+/** Below 37w0d is preterm; 34w0d–36w6d is the "late preterm" window. */
+const PRETERM_GESTATION_DAYS = 37 * 7;
+const LATE_PRETERM_GESTATION_DAYS = 34 * 7;
+
 export type GrowthBand = 'below' | 'within' | 'above';
+
+/**
+ * WHO standards are built on term births, so a preterm baby is normally plotted
+ * at *corrected* age (chronological age minus the weeks missed) as well as at
+ * actual age. The correction comes straight from the profile: the gap between
+ * the birth date and the due date is exactly the time not spent in the womb.
+ */
+export interface GestationInfo {
+  /** Completed gestation at birth, in days. */
+  gestationalAgeDays: number;
+  /** Days to subtract from chronological age. Zero for a term (or late) birth. */
+  correctionDays: number;
+  /** e.g. "36w2d". */
+  label: string;
+  preterm: boolean;
+  latePreterm: boolean;
+}
+
+export function getGestationInfo(profile: BabyProfile): GestationInfo | null {
+  if (!profile.birthDate) {
+    return null;
+  }
+
+  const birth = new Date(`${getLocalDateKey(profile.birthDate)}T12:00:00`).getTime();
+  const due = new Date(`${getLocalDateKey(profile.dueDate)}T12:00:00`).getTime();
+  const earlyDays = Math.round((due - birth) / DAY_MS);
+  const gestationalAgeDays = TERM_GESTATION_DAYS - earlyDays;
+
+  return {
+    correctionDays: Math.max(0, earlyDays),
+    gestationalAgeDays,
+    label: `${Math.floor(gestationalAgeDays / 7)}w${gestationalAgeDays % 7}d`,
+    latePreterm: gestationalAgeDays >= LATE_PRETERM_GESTATION_DAYS && gestationalAgeDays < PRETERM_GESTATION_DAYS,
+    preterm: gestationalAgeDays < PRETERM_GESTATION_DAYS
+  };
+}
 
 export interface InterpolatedStandard {
   p2: number;
@@ -34,10 +76,15 @@ export interface GrowthMeasurement {
   dateKey: string;
   ageDays: number;
   ageMonths: number;
+  /** Age with the preterm correction applied; equals `ageMonths` for a term birth. */
+  correctedAgeMonths: number;
   lengthCm?: number;
   weightKg?: number;
   headCm?: number;
 }
+
+/** Which age a measurement is compared against. */
+export type AgeBasis = 'actual' | 'corrected';
 
 /** Linearly interpolate a standard's bounds at an arbitrary age in months. */
 export function interpolateStandard(standard: GrowthStandard, ageMonths: number): InterpolatedStandard {
@@ -127,6 +174,7 @@ export function getGrowthMeasurements(profile: BabyProfile, events: CareEvent[])
     return [];
   }
 
+  const correctionDays = getGestationInfo(profile)?.correctionDays ?? 0;
   const measurements: GrowthMeasurement[] = [];
 
   for (const event of events) {
@@ -144,6 +192,9 @@ export function getGrowthMeasurements(profile: BabyProfile, events: CareEvent[])
     measurements.push({
       ageDays,
       ageMonths,
+      // Before the due date the corrected age is negative; clamp to the
+      // newborn end of the standards, which is the closest honest comparison.
+      correctedAgeMonths: Math.max(0, (ageDays - correctionDays) / AVG_DAYS_PER_MONTH),
       dateKey: getLocalDateKey(event.startedAt),
       headCm: event.headCircumferenceIn != null ? event.headCircumferenceIn * IN_TO_CM : undefined,
       lengthCm: event.lengthIn != null ? event.lengthIn * IN_TO_CM : undefined,
@@ -156,6 +207,7 @@ export function getGrowthMeasurements(profile: BabyProfile, events: CareEvent[])
 
 export interface MetricPlot {
   ageMonths: number;
+  correctedAgeMonths: number;
   value: number;
 }
 
@@ -165,12 +217,16 @@ export function getMetricPlots(measurements: GrowthMeasurement[], metric: Growth
     metric === 'length' ? m.lengthCm : metric === 'weight' ? m.weightKg : m.headCm;
 
   return measurements
-    .map((m) => ({ ageMonths: m.ageMonths, value: select(m) }))
+    .map((m) => ({ ageMonths: m.ageMonths, correctedAgeMonths: m.correctedAgeMonths, value: select(m) }))
     .filter((point): point is MetricPlot => point.value != null);
 }
 
 /** Assess the most recent measurement for each metric against the standards. */
-export function assessLatestGrowth(profile: BabyProfile, events: CareEvent[]): GrowthAssessment[] {
+export function assessLatestGrowth(
+  profile: BabyProfile,
+  events: CareEvent[],
+  basis: AgeBasis = 'actual'
+): GrowthAssessment[] {
   const measurements = getGrowthMeasurements(profile, events);
   const metrics: GrowthMetric[] = ['weight', 'length', 'head'];
   const assessments: GrowthAssessment[] = [];
@@ -179,7 +235,8 @@ export function assessLatestGrowth(profile: BabyProfile, events: CareEvent[]): G
     const plots = getMetricPlots(measurements, metric);
     const latest = plots[plots.length - 1];
     if (latest) {
-      assessments.push(classifyMeasurement(metric, latest.ageMonths, latest.value));
+      const ageMonths = basis === 'corrected' ? latest.correctedAgeMonths : latest.ageMonths;
+      assessments.push(classifyMeasurement(metric, ageMonths, latest.value));
     }
   }
 
@@ -240,7 +297,7 @@ export function countNewbornDaily(events: CareEvent[], dateKey: string): Newborn
         return counts;
       }
 
-      if (event.type === 'breastfeed' || event.type === 'bottle') {
+      if (event.type === 'feed') {
         counts.feeds += 1;
       } else if (event.type === 'diaper') {
         if (event.kind === 'wet' || event.kind === 'both') {

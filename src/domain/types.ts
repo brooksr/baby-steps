@@ -76,18 +76,26 @@ interface BaseCareEvent extends BaseRecord {
 export type NursingSide = 'left' | 'right' | 'both';
 export type BottleContents = 'breastmilk' | 'formula' | 'mixed' | 'other';
 export type DiaperKind = 'wet' | 'dirty' | 'both';
+export type FeedMethod = 'nursing' | 'bottle';
 export type MedicationStatus = 'scheduled' | 'given' | 'skipped';
 
-export interface BreastfeedEvent extends BaseCareEvent {
-  type: 'breastfeed';
-  side: NursingSide;
-  durationMinutes: number;
-}
-
-export interface BottleEvent extends BaseCareEvent {
-  type: 'bottle';
-  amountOz: number;
-  contents: BottleContents;
+/**
+ * One feeding, however it happened. Nursing and bottle used to be separate
+ * event types; they are one entry now because both duration and amount are
+ * situational — a bottle is rarely timed, and a nursing session rarely has a
+ * known volume. See `domain/legacyEvents.ts` for how older rows are read.
+ */
+export interface FeedEvent extends BaseCareEvent {
+  type: 'feed';
+  method: FeedMethod;
+  /** Minutes at the breast (or on the bottle) — optional. */
+  durationMinutes?: number;
+  /** Ounces taken — optional. */
+  amountOz?: number;
+  /** Side nursed on. */
+  side?: NursingSide;
+  /** What was in the bottle. */
+  contents?: BottleContents;
 }
 
 export interface PumpEvent extends BaseCareEvent {
@@ -171,9 +179,8 @@ export interface VaccineEvent extends BaseCareEvent {
 }
 
 export type CareEvent =
-  | BreastfeedEvent
   | BirthEvent
-  | BottleEvent
+  | FeedEvent
   | PumpEvent
   | DiaperEvent
   | SleepEvent
@@ -210,9 +217,8 @@ export type CareEventType = CareEvent['type'];
 export const careEventLabels: Record<CareEventType, string> = {
   appointment: 'Appointment',
   birth: 'Birth',
-  bottle: 'Bottle',
-  breastfeed: 'Nursing',
   diaper: 'Diaper',
+  feed: 'Feeding',
   growth: 'Growth',
   medication: 'Medication',
   milestone: 'Milestone',

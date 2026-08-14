@@ -8,7 +8,7 @@ type FilterGroup = 'all' | 'feeds' | 'diapers' | 'sleep' | 'health' | 'growth' |
 
 const FILTER_OPTIONS: Array<{ id: FilterGroup; label: string; types: CareEventType[] | null }> = [
   { id: 'all', label: 'All types', types: null },
-  { id: 'feeds', label: 'Feeds', types: ['breastfeed', 'bottle', 'pump'] },
+  { id: 'feeds', label: 'Feeds', types: ['feed', 'pump'] },
   { id: 'diapers', label: 'Diapers', types: ['diaper'] },
   { id: 'sleep', label: 'Sleep', types: ['sleep'] },
   { id: 'health', label: 'Health', types: ['medication', 'temperature', 'vaccine'] },
@@ -20,11 +20,9 @@ function searchText(event: CareEvent): string {
   const parts: string[] = [careEventLabels[event.type]];
 
   switch (event.type) {
-    case 'breastfeed':
-      parts.push(event.side);
-      break;
-    case 'bottle':
-      parts.push(event.contents, `${event.amountOz} oz`);
+    case 'feed':
+      parts.push(event.method, event.side ?? '', event.contents ?? '');
+      if (event.amountOz != null) parts.push(`${event.amountOz} oz`);
       break;
     case 'pump':
       parts.push(`${event.amountOz} oz`, event.side);

@@ -15,10 +15,11 @@ describe('Dashboard', () => {
         contents: 'breastmilk',
         amountOz: 2,
         createdAt: '2026-09-02T12:00:00.000Z',
-        id: 'bottle-1',
+        id: 'feed-1',
+        method: 'bottle',
         startedAt: '2026-09-02T12:00:00.000Z',
         syncState: 'local',
-        type: 'bottle',
+        type: 'feed',
         updatedAt: '2026-09-02T12:00:00.000Z'
       },
       {

@@ -8,7 +8,10 @@ export interface FirstYearPoint {
   dateKey: string;
   dayNumber: number;
   feeds: number;
+  /** wet + dirty, so a "both" change counts once each way (as the dashboard shows it). */
   diapers: number;
+  wetDiapers: number;
+  dirtyDiapers: number;
   sleepMinutes: number;
   bottleOunces: number;
   pumpOunces: number;
@@ -54,9 +57,11 @@ function emptyPoint(anchorDate: string, dateKey: string): FirstYearPoint {
     dateKey,
     dayNumber,
     diapers: 0,
+    dirtyDiapers: 0,
     feeds: 0,
     pumpOunces: 0,
-    sleepMinutes: 0
+    sleepMinutes: 0,
+    wetDiapers: 0
   };
 }
 
@@ -92,15 +97,21 @@ export function getFirstYearAnalytics(profile: BabyProfile, events: CareEvent[],
     pointMap.set(dateKey, point);
 
     switch (event.type) {
-      case 'breastfeed':
+      case 'feed':
         point.feeds += 1;
-        break;
-      case 'bottle':
-        point.feeds += 1;
-        point.bottleOunces += event.amountOz;
+        if (event.method === 'bottle') {
+          point.bottleOunces += event.amountOz ?? 0;
+        }
         break;
       case 'diaper':
-        point.diapers += 1;
+        if (event.kind === 'wet' || event.kind === 'both') {
+          point.wetDiapers += 1;
+          point.diapers += 1;
+        }
+        if (event.kind === 'dirty' || event.kind === 'both') {
+          point.dirtyDiapers += 1;
+          point.diapers += 1;
+        }
         break;
       case 'sleep':
         point.sleepMinutes += minutesBetween(event.startedAt, event.endedAt);

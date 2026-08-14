@@ -1,14 +1,13 @@
-export type TimerType = 'breastfeed' | 'bottle' | 'pump' | 'sleep' | 'tummytime';
+export type TimerType = 'feed' | 'pump' | 'sleep' | 'tummytime';
 
-const TIMER_ELIGIBLE = new Set<string>(['breastfeed', 'bottle', 'pump', 'sleep', 'tummytime']);
+const TIMER_ELIGIBLE = new Set<string>(['feed', 'pump', 'sleep', 'tummytime']);
 
 export function isTimerType(type: string): type is TimerType {
   return TIMER_ELIGIBLE.has(type);
 }
 
 export interface ActiveTimers {
-  breastfeed?: { startedAt: string };
-  bottle?: { startedAt: string };
+  feed?: { startedAt: string };
   pump?: { startedAt: string };
   sleep?: { startedAt: string };
   tummytime?: { startedAt: string };
@@ -19,7 +18,10 @@ const STORAGE_KEY = 'babysteps-timers';
 export function loadActiveTimers(): ActiveTimers {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as ActiveTimers) : {};
+    const stored = raw ? (JSON.parse(raw) as Record<string, { startedAt: string }>) : {};
+    // Drop retired keys (breastfeed/bottle) so a timer left running before the
+    // feeding merge cannot stick around with nothing able to stop it.
+    return Object.fromEntries(Object.entries(stored).filter(([type]) => isTimerType(type)));
   } catch {
     return {};
   }

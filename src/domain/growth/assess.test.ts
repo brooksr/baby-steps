@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { BabyProfile, CareEvent } from '../types';
-import { assessNewbornDay, classifyMeasurement, getDayOfLife, getMetricPlots, getGrowthMeasurements, interpolateStandard } from './assess';
+import { assessNewbornDay, assessLatestGrowth, classifyMeasurement, getDayOfLife, getGestationInfo, getMetricPlots, getGrowthMeasurements, interpolateStandard } from './assess';
 import { lengthForAgeBoys } from './whoBoyStandards';
 
 const profile: BabyProfile = {
@@ -32,8 +32,9 @@ function bottle(dateKey: string): CareEvent {
     contents: 'breastmilk',
     createdAt: `${dateKey}T08:00:00.000Z`,
     id: `${dateKey}-feed-${Math.random()}`,
+    method: 'bottle',
     startedAt: `${dateKey}T08:00:00.000Z`,
-    type: 'bottle',
+    type: 'feed',
     updatedAt: `${dateKey}T08:00:00.000Z`
   };
 }
@@ -155,5 +156,59 @@ describe('in-progress day pacing', () => {
     const progressed = assessNewbornDay(bornAtSix, [], '2026-06-01', new Date('2026-06-01T19:00:00.000Z'));
     expect(progressed?.dayProgress).toBeLessThan(0.2);
     expect(progressed?.onTrack).toBe(true);
+  });
+});
+
+describe('gestational age correction', () => {
+  // Born 26 days before the due date — 40w0d minus 26 days is 36w2d.
+  const latePreterm: BabyProfile = { ...profile, birthDate: '2026-06-01', dueDate: '2026-06-27' };
+
+  it('derives gestation at birth from the gap to the due date', () => {
+    expect(getGestationInfo(latePreterm)).toMatchObject({
+      correctionDays: 26,
+      gestationalAgeDays: 254,
+      label: '36w2d',
+      latePreterm: true,
+      preterm: true
+    });
+  });
+
+  it('treats a term birth as needing no correction', () => {
+    expect(getGestationInfo(profile)).toMatchObject({ correctionDays: 0, label: '40w0d', preterm: false });
+  });
+
+  it('subtracts the correction from every measurement age', () => {
+    const growth: CareEvent = {
+      babyId: 'theo',
+      createdAt: '2026-09-01T08:00:00.000Z',
+      id: 'growth-1',
+      lengthIn: 22,
+      startedAt: '2026-09-01T08:00:00.000Z',
+      type: 'growth',
+      updatedAt: '2026-09-01T08:00:00.000Z'
+    };
+
+    const [measurement] = getGrowthMeasurements(latePreterm, [growth]);
+
+    expect(measurement.ageDays).toBe(91);
+    expect(measurement.correctedAgeMonths).toBeCloseTo((91 - 26) / (365.25 / 12), 5);
+  });
+
+  it('compares against a younger standard when corrected', () => {
+    const growth: CareEvent = {
+      babyId: 'theo',
+      createdAt: '2026-09-01T08:00:00.000Z',
+      id: 'growth-1',
+      lengthIn: 22,
+      startedAt: '2026-09-01T08:00:00.000Z',
+      type: 'growth',
+      updatedAt: '2026-09-01T08:00:00.000Z'
+    };
+
+    const [actual] = assessLatestGrowth(latePreterm, [growth], 'actual');
+    const [corrected] = assessLatestGrowth(latePreterm, [growth], 'corrected');
+
+    expect(corrected.ageMonths).toBeLessThan(actual.ageMonths);
+    expect(corrected.standard.median).toBeLessThan(actual.standard.median);
   });
 });

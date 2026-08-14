@@ -1,4 +1,4 @@
-import { Baby, Bed, Calendar, Clock3, Droplets, Dumbbell, FileText, Heart, Milk, Navigation, Pill, Plus, Ruler, Smile, Thermometer, TriangleAlert, Wind } from 'lucide-react';
+import { Bed, Calendar, Clock3, Droplets, Dumbbell, FileText, Heart, Milk, Navigation, Pill, Plus, Ruler, Smile, Thermometer, TriangleAlert, Wind } from 'lucide-react';
 import { formatAgo, formatClock, formatDuration, getAgeDays, getDaysUntilDue, getDueDateStatus, isSameLocalDate } from '../domain/dates';
 import { classifyTemperatureC } from '../domain/reference';
 import { getActiveSleep, getDailySummary, getEventDurationMinutes, getLastEvent, getUpcomingAppointments, getUpcomingMedicationEvents } from '../domain/summary';
@@ -19,8 +19,7 @@ interface DashboardProps {
 }
 
 const actions = [
-  { icon: Baby, label: 'Nurse', type: 'breastfeed' },
-  { icon: Milk, label: 'Bottle', type: 'bottle' },
+  { icon: Milk, label: 'Feed', type: 'feed' },
   { icon: Droplets, label: 'Pump', type: 'pump' },
   { icon: Wind, label: 'Diaper', type: 'diaper' },
   { icon: Bed, label: 'Sleep', type: 'sleep' },
@@ -45,10 +44,10 @@ export function Dashboard({ activeTimers, events, profile, todayKey, onAdd }: Da
   const firstYearProgress = Math.min(100, Math.round(((ageDays + 1) / 365) * 100));
   const todayEvents = events.filter((event) => isSameLocalDate(event.startedAt, todayKey));
   const summary = getDailySummary(todayEvents);
-  const lastFeed = getLastEvent(events, (event) => event.type === 'breastfeed' || event.type === 'bottle');
-  const lastNursing = getLastEvent(events, (event) => event.type === 'breastfeed');
+  const lastFeed = getLastEvent(events, (event) => event.type === 'feed');
+  const lastNursing = getLastEvent(events, (event) => event.type === 'feed' && event.method === 'nursing');
   const nextSide =
-    lastNursing && lastNursing.type === 'breastfeed'
+    lastNursing && lastNursing.type === 'feed'
       ? lastNursing.side === 'left'
         ? 'right'
         : lastNursing.side === 'right'
@@ -68,29 +67,44 @@ export function Dashboard({ activeTimers, events, profile, todayKey, onAdd }: Da
   return (
     <main className="view-stack">
       <section className="profile-band">
-        <div>
-          <p className="eyebrow">{profile.name}</p>
-          <h1>{isBorn ? ageDays : daysUntilDue}</h1>
-          <p>{isBorn ? getDueDateStatus(profile) : daysUntilDue === 1 ? 'day until due date' : 'days until due date'}</p>
-        </div>
-        <div className="hero-side">
-          <div className="profile-badge">
-            <Clock3 aria-hidden="true" />
-            <span>{formatProfileDate(profile.birthDate ?? profile.dueDate)}</span>
+        <div className="profile-band-top">
+          <div>
+            <p className="eyebrow">{profile.name}</p>
+            <h1>{isBorn ? ageDays : daysUntilDue}</h1>
+            <p>{isBorn ? getDueDateStatus(profile) : daysUntilDue === 1 ? 'day until due date' : 'days until due date'}</p>
           </div>
-          {isBorn ? (
-            <div className="hero-progress" aria-label="First year progress">
-              <span>First year {firstYearProgress}%</span>
-              <div>
-                <i style={{ width: `${firstYearProgress}%` }} />
-              </div>
+          <div className="hero-side">
+            <div className="profile-badge">
+              <Clock3 aria-hidden="true" />
+              <span>{formatProfileDate(profile.birthDate ?? profile.dueDate)}</span>
             </div>
-          ) : (
-            <button className="birth-button" type="button" onClick={() => onAdd('birth')}>
-              <Heart aria-hidden="true" />
-              <span>Log birth</span>
-            </button>
-          )}
+            {isBorn ? (
+              <div className="hero-progress" aria-label="First year progress">
+                <span>First year {firstYearProgress}%</span>
+                <div>
+                  <i style={{ width: `${firstYearProgress}%` }} />
+                </div>
+              </div>
+            ) : (
+              <button className="birth-button" type="button" onClick={() => onAdd('birth')}>
+                <Heart aria-hidden="true" />
+                <span>Log birth</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="hero-metrics">
+          <div className="hero-metric">
+            <span>Last feed</span>
+            <strong>{lastFeed ? formatAgo(lastFeed.startedAt) : 'None'}</strong>
+            <small>{lastFeed ? `${formatClock(lastFeed.startedAt)}${nextSide ? ` · next: ${nextSide}` : ''}` : 'Nothing logged yet'}</small>
+          </div>
+          <div className="hero-metric">
+            <span>Last diaper</span>
+            <strong>{lastDiaper ? formatAgo(lastDiaper.startedAt) : 'None'}</strong>
+            <small>{lastDiaper ? formatClock(lastDiaper.startedAt) : 'Nothing logged yet'}</small>
+          </div>
         </div>
       </section>
 
@@ -109,25 +123,18 @@ export function Dashboard({ activeTimers, events, profile, todayKey, onAdd }: Da
         })}
       </section>
 
-      <a className="hospital-link" href={HOSPITAL.directionsUrl} target="_blank" rel="noreferrer">
-        <Navigation aria-hidden="true" />
-        <div>
-          <strong>Directions to {HOSPITAL.name}</strong>
-          <span>{HOSPITAL.note}</span>
-        </div>
-      </a>
+      {/* Only useful on the way to the delivery — retired once Theo is here. */}
+      {!isBorn && (
+        <a className="hospital-link" href={HOSPITAL.directionsUrl} target="_blank" rel="noreferrer">
+          <Navigation aria-hidden="true" />
+          <div>
+            <strong>Directions to {HOSPITAL.name}</strong>
+            <span>{HOSPITAL.note}</span>
+          </div>
+        </a>
+      )}
 
-      <section className="metric-grid" aria-label="Current status">
-        <article className="metric-card">
-          <span>Last feed</span>
-          <strong>{lastFeed ? formatAgo(lastFeed.startedAt) : 'None'}</strong>
-          {lastFeed && <small>{formatClock(lastFeed.startedAt)}{nextSide ? ` · next: ${nextSide}` : ''}</small>}
-        </article>
-        <article className="metric-card">
-          <span>Last diaper</span>
-          <strong>{lastDiaper ? formatAgo(lastDiaper.startedAt) : 'None'}</strong>
-          {lastDiaper && <small>{formatClock(lastDiaper.startedAt)}</small>}
-        </article>
+      <section className="metric-grid status-grid" aria-label="Current status">
         <article className="metric-card">
           <span>Sleep</span>
           <strong>{activeSleep ? formatDuration(getEventDurationMinutes({ ...activeSleep, endedAt: new Date().toISOString() })) : `${formatDuration(summary.sleepMinutes)} today`}</strong>

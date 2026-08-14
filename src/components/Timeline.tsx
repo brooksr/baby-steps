@@ -1,4 +1,4 @@
-import { Award, Baby, Bed, Calendar, Droplets, Dumbbell, FileText, Heart, Milk, Pencil, Pill, Ruler, Smile, Syringe, Thermometer, Trash2, Wind } from 'lucide-react';
+import { Award, Bed, Calendar, Droplets, Dumbbell, FileText, Heart, Milk, Pencil, Pill, Ruler, Smile, Syringe, Thermometer, Trash2, Wind } from 'lucide-react';
 import { formatClock, formatDuration, formatShortDate } from '../domain/dates';
 import { getMilestoneById, getMoodScale, getVaccinationById } from '../domain/reference';
 import { getEventDurationMinutes } from '../domain/summary';
@@ -15,9 +15,8 @@ interface TimelineProps {
 const icons = {
   appointment: Calendar,
   birth: Heart,
-  bottle: Milk,
-  breastfeed: Baby,
   diaper: Wind,
+  feed: Milk,
   growth: Ruler,
   medication: Pill,
   milestone: Award,
@@ -32,8 +31,14 @@ const icons = {
 
 function eventDetail(event: CareEvent) {
   switch (event.type) {
-    case 'breastfeed':
-      return `${event.side} side · ${formatDuration(event.durationMinutes)}`;
+    case 'feed': {
+      const parts = [
+        event.method === 'nursing' ? `nursing${event.side ? ` · ${event.side} side` : ''}` : `bottle${event.contents ? ` · ${event.contents}` : ''}`,
+        event.durationMinutes != null ? formatDuration(event.durationMinutes) : undefined,
+        event.amountOz != null ? `${event.amountOz} oz` : undefined
+      ];
+      return parts.filter(Boolean).join(' · ');
+    }
     case 'birth': {
       const measures = [
         event.weightOz ? `${event.weightOz} oz` : undefined,
@@ -42,8 +47,6 @@ function eventDetail(event: CareEvent) {
       ];
       return measures.filter(Boolean).join(' · ') || 'Birth logged';
     }
-    case 'bottle':
-      return `${event.amountOz} oz · ${event.contents}`;
     case 'pump':
       return `${event.amountOz} oz · ${event.side}`;
     case 'diaper':

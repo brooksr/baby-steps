@@ -1,5 +1,6 @@
 import { createDefaultBabyProfile } from '../domain/dates';
-import { DEFAULT_PROFILE_ID, type BabyProfile, type CareInfo, type CareEvent, type CareEventType, type CreateCareEventInput, type TrackerExport } from '../domain/types';
+import { migrateStoredEvent, migrateStoredEvents, type StoredCareEventType } from '../domain/legacyEvents';
+import { DEFAULT_PROFILE_ID, type BabyProfile, type BottleContents, type CareInfo, type CareEvent, type CreateCareEventInput, type FeedMethod, type NursingSide, type TrackerExport } from '../domain/types';
 import { requestGoogleSheetsAccessToken } from './googleSheetsAuth';
 import type { BabyTrackerStore, EventQuery, ImportOptions } from './store';
 
@@ -43,7 +44,9 @@ const eventHeaders = [
   'title',
   'celsius',
   'moodLevel',
-  'refId'
+  'refId',
+  // New columns append here so existing sheet rows keep their positions.
+  'method'
 ] as const;
 
 type EventColumn = (typeof eventHeaders)[number];
@@ -118,7 +121,7 @@ function profileFromRow(row: unknown[] | undefined): BabyProfile {
 
 function eventFromRow(row: unknown[]): CareEvent | null {
   const record = rowRecord(eventHeaders, row);
-  const type = optionalString(record.type) as CareEventType | undefined;
+  const type = optionalString(record.type) as StoredCareEventType | undefined;
   const id = optionalString(record.id);
   const startedAt = optionalString(record.startedAt);
 
@@ -138,13 +141,34 @@ function eventFromRow(row: unknown[]): CareEvent | null {
   };
 
   switch (type) {
-    case 'breastfeed':
+    case 'feed': {
+      const amountOz = optionalNumber(record.amountOz);
       return {
         ...base,
-        durationMinutes: optionalNumber(record.durationMinutes) ?? 0,
-        side: (optionalString(record.side) ?? 'left') as 'left' | 'right' | 'both',
+        amountOz,
+        contents: optionalString(record.contents) as BottleContents | undefined,
+        durationMinutes: optionalNumber(record.durationMinutes),
+        // Rows written before `method` existed are inferred from what they carry.
+        method: (optionalString(record.method) ?? (amountOz != null ? 'bottle' : 'nursing')) as FeedMethod,
+        side: optionalString(record.side) as NursingSide | undefined,
         type
       };
+    }
+    // Logged before nursing and bottle merged into one feeding entry.
+    case 'breastfeed':
+      return migrateStoredEvent({
+        ...base,
+        durationMinutes: optionalNumber(record.durationMinutes),
+        side: (optionalString(record.side) ?? 'left') as NursingSide,
+        type
+      });
+    case 'bottle':
+      return migrateStoredEvent({
+        ...base,
+        amountOz: optionalNumber(record.amountOz),
+        contents: (optionalString(record.contents) ?? 'breastmilk') as BottleContents,
+        type
+      });
     case 'birth':
       return {
         ...base,
@@ -152,13 +176,6 @@ function eventFromRow(row: unknown[]): CareEvent | null {
         lengthIn: optionalNumber(record.lengthIn),
         type,
         weightOz: optionalNumber(record.weightOz)
-      };
-    case 'bottle':
-      return {
-        ...base,
-        amountOz: optionalNumber(record.amountOz) ?? 0,
-        contents: (optionalString(record.contents) ?? 'breastmilk') as 'breastmilk' | 'formula' | 'mixed' | 'other',
-        type
       };
     case 'pump':
       return {
@@ -262,6 +279,7 @@ function eventToRow(event: CareEvent) {
     lengthIn: '',
     location: '',
     medicationName: '',
+    method: '',
     moodLevel: '',
     notes: event.notes ?? '',
     refId: '',
@@ -279,18 +297,17 @@ function eventToRow(event: CareEvent) {
   };
 
   switch (event.type) {
-    case 'breastfeed':
-      values.durationMinutes = event.durationMinutes;
-      values.side = event.side;
+    case 'feed':
+      values.amountOz = event.amountOz ?? '';
+      values.contents = event.contents ?? '';
+      values.durationMinutes = event.durationMinutes ?? '';
+      values.method = event.method;
+      values.side = event.side ?? '';
       break;
     case 'birth':
       values.headCircumferenceIn = event.headCircumferenceIn ?? '';
       values.lengthIn = event.lengthIn ?? '';
       values.weightOz = event.weightOz ?? '';
-      break;
-    case 'bottle':
-      values.amountOz = event.amountOz;
-      values.contents = event.contents;
       break;
     case 'pump':
       values.amountOz = event.amountOz;
@@ -459,7 +476,7 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
     const profile = await getProfile();
     await api.updateValues(PROFILE_ROW_RANGE, [profileToRow(profile)]);
     if (!headersWritten) {
-      await api.updateValues('Events!A1:AD1', [[...eventHeaders]]);
+      await api.updateValues('Events!A1:AE1', [[...eventHeaders]]);
       headersWritten = true;
     }
     return profile;
@@ -557,17 +574,20 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
     assertTrackerExport(data);
     await saveProfile(data.profile);
 
+    // An export taken before the feeding merge still carries breastfeed/bottle.
+    const incoming = migrateStoredEvents(data.events);
+
     if (options.mode === 'replace') {
       await api.clearValues(EVENTS_BODY_RANGE);
-      if (data.events.length > 0) {
-        await api.updateValues('Events!A2:AE', data.events.map((event) => eventToRow({ ...event, syncState: 'synced' })));
+      if (incoming.length > 0) {
+        await api.updateValues('Events!A2:AE', incoming.map((event) => eventToRow({ ...event, syncState: 'synced' })));
       }
       return;
     }
 
     const current = await listRows();
     const currentIds = new Set(current.map((row) => row.event.id));
-    const newEvents = data.events.filter((event) => !currentIds.has(event.id));
+    const newEvents = incoming.filter((event) => !currentIds.has(event.id));
 
     if (newEvents.length > 0) {
       await api.appendValues(EVENTS_APPEND_RANGE, newEvents.map((event) => eventToRow({ ...event, syncState: 'synced' })));

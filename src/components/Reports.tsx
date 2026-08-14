@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { formatDuration, formatShortDate, getLocalDateKey, isSameLocalDate, minutesBetween } from '../domain/dates';
 import { getFirstYearAnalytics, type FirstYearPoint, type MetricStats } from '../domain/firstYear';
 import { getDailySummary } from '../domain/summary';
-import type { BabyProfile, BreastfeedEvent, CareEvent } from '../domain/types';
+import type { BabyProfile, CareEvent, FeedEvent } from '../domain/types';
 import { GrowthStandards } from './GrowthStandards';
 import { NewbornStatus } from './NewbornStatus';
 import { Timeline } from './Timeline';
@@ -14,15 +14,34 @@ interface ReportsProps {
   profile: BabyProfile;
 }
 
+interface ChartPoint {
+  label: string;
+  value: number;
+  /** Optional breakdown of `value`, stacked bottom-up in the bar. */
+  parts?: number[];
+}
+
 interface MiniChartProps {
   label: string;
   stats: MetricStats;
   suffix?: string;
   /** Sum across the charted span, shown next to the average. */
   total: number;
+  /** Names for the stacked `parts`, in the same order. Drives the legend. */
+  partLabels?: string[];
+  /** Totals per part across the charted span, shown in the legend. */
+  partTotals?: number[];
   /** True when bars average several days together, so a bar is not one day's total. */
   sampled?: boolean;
-  values: Array<{ label: string; value: number }>;
+  values: ChartPoint[];
+}
+
+function formatParts(point: ChartPoint, partLabels: string[] | undefined) {
+  if (!point.parts || !partLabels) {
+    return '';
+  }
+
+  return ` (${point.parts.map((part, index) => `${formatBarValue(part)} ${partLabels[index]}`).join(' · ')})`;
 }
 
 /** Above this many bars there is no room for a number over each one. */
@@ -42,7 +61,7 @@ function formatDayLabel(dateKey: string) {
   return formatShortDate(`${dateKey}T12:00:00`);
 }
 
-function MiniChart({ label, stats, suffix = '', sampled = false, total, values }: MiniChartProps) {
+function MiniChart({ label, stats, suffix = '', partLabels, partTotals, sampled = false, total, values }: MiniChartProps) {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const max = Math.max(1, ...values.map((point) => point.value));
   const cols = Math.max(1, values.length);
@@ -67,7 +86,8 @@ function MiniChart({ label, stats, suffix = '', sampled = false, total, values }
           <p className="empty-state compact">No data</p>
         ) : (
           values.map((point, index) => {
-            const readout = `${dayWord ? `${dayWord} ` : ''}${formatDayLabel(point.label)}: ${formatStat(point.value, suffix)}`;
+            const readout = `${dayWord ? `${dayWord} ` : ''}${formatDayLabel(point.label)}: ${formatStat(point.value, suffix)}${formatParts(point, partLabels)}`;
+            const barHeight = `${Math.max(8, (point.value / max) * 100)}%`;
 
             return (
               <button
@@ -80,7 +100,19 @@ function MiniChart({ label, stats, suffix = '', sampled = false, total, values }
               >
                 {showBarLabels && <b className="chart-bar-value">{formatBarValue(point.value)}</b>}
                 <span className="chart-bar">
-                  <i style={{ height: `${Math.max(8, (point.value / max) * 100)}%` }} />
+                  {point.parts && point.value > 0 ? (
+                    <span className="chart-bar-stack" style={{ height: barHeight }}>
+                      {point.parts.map((part, partIndex) => (
+                        <i
+                          key={partLabels?.[partIndex] ?? partIndex}
+                          className={`chart-bar-part-${partIndex}`}
+                          style={{ height: `${(part / point.value) * 100}%` }}
+                        />
+                      ))}
+                    </span>
+                  ) : (
+                    <i style={{ height: barHeight }} />
+                  )}
                 </span>
                 {showBarLabels && <em className="chart-bar-day">{new Date(`${point.label}T12:00:00`).getDate()}</em>}
               </button>
@@ -91,8 +123,20 @@ function MiniChart({ label, stats, suffix = '', sampled = false, total, values }
       {activePoint && (
         <p className="chart-readout">
           <span>{dayWord ? `${dayWord} ${formatDayLabel(activePoint.label)}` : formatDayLabel(activePoint.label)}</span>
-          <strong>{formatStat(activePoint.value, suffix)}</strong>
+          <strong>
+            {formatStat(activePoint.value, suffix)}
+            {formatParts(activePoint, partLabels)}
+          </strong>
         </p>
+      )}
+      {partLabels && partTotals && (
+        <div className="chart-legend">
+          {partLabels.map((partLabel, index) => (
+            <span className={`chart-legend-item chart-bar-part-${index}`} key={partLabel}>
+              {partLabel} {formatStat(partTotals[index], suffix)}
+            </span>
+          ))}
+        </div>
       )}
       <div className="chart-stats">
         <span>Min {formatStat(stats.min, suffix)}</span>
@@ -113,20 +157,32 @@ function computeStats(values: number[]): MetricStats {
 }
 
 // Reduces daily data to at most maxBars by averaging groups of days.
-function samplePoints(
-  values: Array<{ label: string; value: number }>,
-  maxBars: number
-): Array<{ label: string; value: number }> {
+function samplePoints(values: ChartPoint[], maxBars: number): ChartPoint[] {
   if (values.length <= maxBars) return values;
   const step = values.length / maxBars;
+  const round = (value: number) => Math.round(value * 10) / 10;
+
   return Array.from({ length: maxBars }, (_, i) => {
     const start = Math.floor(i * step);
     const end = Math.floor((i + 1) * step);
     const bucket = values.slice(start, end);
-    const avg = bucket.reduce((sum, p) => sum + p.value, 0) / bucket.length;
-    return { label: bucket[0].label, value: Math.round(avg * 10) / 10 };
+    const average = (selector: (point: ChartPoint) => number) =>
+      round(bucket.reduce((sum, p) => sum + selector(p), 0) / bucket.length);
+
+    return {
+      label: bucket[0].label,
+      parts: bucket[0].parts?.map((_, partIndex) => average((p) => p.parts?.[partIndex] ?? 0)),
+      value: average((p) => p.value)
+    };
   });
 }
+
+/** Diaper bars stack wet under dirty, so the split is readable per day. */
+function diaperPoints(points: FirstYearPoint[]): ChartPoint[] {
+  return points.map((p) => ({ label: p.dateKey, parts: [p.wetDiapers, p.dirtyDiapers], value: p.diapers }));
+}
+
+const DIAPER_PART_LABELS = ['wet', 'dirty'];
 
 function longestSleepMinutes(events: CareEvent[]): number {
   return events
@@ -136,7 +192,7 @@ function longestSleepMinutes(events: CareEvent[]): number {
 
 function avgFeedGapMinutes(events: CareEvent[]): number {
   const feeds = events
-    .filter((e) => e.type === 'breastfeed' || e.type === 'bottle')
+    .filter((e) => e.type === 'feed')
     .sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime());
 
   if (feeds.length < 2) return 0;
@@ -151,7 +207,7 @@ function avgFeedGapMinutes(events: CareEvent[]): number {
 }
 
 function nursingBalance(events: CareEvent[]): { left: number; right: number; total: number } {
-  const feeds = events.filter((e): e is BreastfeedEvent => e.type === 'breastfeed');
+  const feeds = events.filter((e): e is FeedEvent => e.type === 'feed' && e.method === 'nursing');
   const left = feeds.filter((e) => e.side === 'left').length;
   const right = feeds.filter((e) => e.side === 'right').length;
   return { left, right, total: left + right };
@@ -189,16 +245,18 @@ export function Reports({ events, profile }: ReportsProps) {
   // Top overview charts always show the most recent 14 data points
   const recentPoints = analytics.points.slice(-14);
   const recentFeedValues = recentPoints.map((p) => ({ label: p.dateKey, value: p.feeds }));
-  const recentDiaperValues = recentPoints.map((p) => ({ label: p.dateKey, value: p.diapers }));
+  const recentDiaperValues = diaperPoints(recentPoints);
   const recentSleepValues = recentPoints.map((p) => ({ label: p.dateKey, value: p.sleepMinutes / 60 }));
   const recentMilkValues = recentPoints.map((p) => ({ label: p.dateKey, value: p.bottleOunces + p.pumpOunces }));
 
   const sumValues = (values: Array<{ value: number }>) => values.reduce((sum, point) => sum + point.value, 0);
   const recentTotals = {
     diapers: sumValues(recentDiaperValues),
+    dirty: recentPoints.reduce((sum, p) => sum + p.dirtyDiapers, 0),
     feeds: sumValues(recentFeedValues),
     milkOz: sumValues(recentMilkValues),
-    sleepHours: sumValues(recentSleepValues)
+    sleepHours: sumValues(recentSleepValues),
+    wet: recentPoints.reduce((sum, p) => sum + p.wetDiapers, 0)
   };
 
   // Period-scoped points and stats
@@ -209,7 +267,7 @@ export function Reports({ events, profile }: ReportsProps) {
   const sampled = periodPoints.length > maxBars;
 
   const periodFeedValues = samplePoints(periodPoints.map((p) => ({ label: p.dateKey, value: p.feeds })), maxBars);
-  const periodDiaperValues = samplePoints(periodPoints.map((p) => ({ label: p.dateKey, value: p.diapers })), maxBars);
+  const periodDiaperValues = samplePoints(diaperPoints(periodPoints), maxBars);
   const periodSleepValues = samplePoints(periodPoints.map((p) => ({ label: p.dateKey, value: p.sleepMinutes / 60 })), maxBars);
   const periodMilkValues = samplePoints(periodPoints.map((p) => ({ label: p.dateKey, value: p.bottleOunces + p.pumpOunces })), maxBars);
 
@@ -223,8 +281,10 @@ export function Reports({ events, profile }: ReportsProps) {
   const periodTotals = {
     feeds: periodPoints.reduce((s, p) => s + p.feeds, 0),
     diapers: periodPoints.reduce((s, p) => s + p.diapers, 0),
+    dirty: periodPoints.reduce((s, p) => s + p.dirtyDiapers, 0),
     sleepHours: periodPoints.reduce((s, p) => s + p.sleepMinutes, 0) / 60,
-    milkOz: periodPoints.reduce((s, p) => s + p.bottleOunces + p.pumpOunces, 0)
+    milkOz: periodPoints.reduce((s, p) => s + p.bottleOunces + p.pumpOunces, 0),
+    wet: periodPoints.reduce((s, p) => s + p.wetDiapers, 0)
   };
 
   // Period raw events (for insights that need per-event data)
@@ -263,7 +323,14 @@ export function Reports({ events, profile }: ReportsProps) {
       <section className="chart-grid" aria-label="Recent trends">
         <MiniChart label="Feeds/day" stats={analytics.stats.feeds} total={recentTotals.feeds} values={recentFeedValues} />
         <MiniChart label="Sleep/day" stats={analytics.stats.sleepHours} suffix="h" total={recentTotals.sleepHours} values={recentSleepValues} />
-        <MiniChart label="Diapers/day" stats={analytics.stats.diapers} total={recentTotals.diapers} values={recentDiaperValues} />
+        <MiniChart
+          label="Diapers/day"
+          partLabels={DIAPER_PART_LABELS}
+          partTotals={[recentTotals.wet, recentTotals.dirty]}
+          stats={analytics.stats.diapers}
+          total={recentTotals.diapers}
+          values={recentDiaperValues}
+        />
         <MiniChart label="Milk/day" stats={analytics.stats.milkOunces} suffix=" oz" total={recentTotals.milkOz} values={recentMilkValues} />
       </section>
 
@@ -391,7 +458,7 @@ export function Reports({ events, profile }: ReportsProps) {
             <article className="metric-card">
               <span>Diapers/day</span>
               <strong>{formatStat(periodStats.diapers.average)}</strong>
-              <small>{periodTotals.diapers} total</small>
+              <small>{periodTotals.wet} wet · {periodTotals.dirty} dirty</small>
             </article>
             <article className="metric-card">
               <span>Sleep/day</span>
@@ -408,7 +475,15 @@ export function Reports({ events, profile }: ReportsProps) {
           <section className="chart-grid" aria-label={`${period} charts`}>
             <MiniChart label="Feeds/day" sampled={sampled} stats={periodStats.feeds} total={periodTotals.feeds} values={periodFeedValues} />
             <MiniChart label="Sleep/day" sampled={sampled} stats={periodStats.sleepHours} suffix="h" total={periodTotals.sleepHours} values={periodSleepValues} />
-            <MiniChart label="Diapers/day" sampled={sampled} stats={periodStats.diapers} total={periodTotals.diapers} values={periodDiaperValues} />
+            <MiniChart
+              label="Diapers/day"
+              partLabels={DIAPER_PART_LABELS}
+              partTotals={[periodTotals.wet, periodTotals.dirty]}
+              sampled={sampled}
+              stats={periodStats.diapers}
+              total={periodTotals.diapers}
+              values={periodDiaperValues}
+            />
             <MiniChart label="Milk/day" sampled={sampled} stats={periodStats.milkOz} suffix=" oz" total={periodTotals.milkOz} values={periodMilkValues} />
           </section>
         </>

@@ -89,6 +89,13 @@ h3,
   color: var(--ink);
 }
 
+/* The rule above outranks `.segmented-control button.active`, so the selected
+   segment needs matching specificity or it reads as unselected in dark mode. */
+:root[data-theme='dark'] .segmented-control button.active {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
 :root[data-theme='dark'] .check-box {
   background: var(--panel);
   border-color: var(--blue-400);
@@ -335,15 +342,55 @@ button {
 }
 
 .profile-band {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
+  display: grid;
   gap: 16px;
   padding: 18px;
   color: #ffffff;
   background: linear-gradient(135deg, var(--blue-500), var(--blue-700));
   border: 1px solid #2b82bc;
   border-radius: 8px;
+}
+
+.profile-band-top {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+/* Last feed / last diaper — the two things you check first, so they ride in
+   the hero card rather than down in the status grid. */
+.hero-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.hero-metric {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+}
+
+.hero-metric span {
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.85;
+}
+
+.hero-metric strong {
+  font-size: 1.2rem;
+  line-height: 1.15;
+}
+
+.hero-metric small {
+  font-size: 0.76rem;
+  font-weight: 700;
+  opacity: 0.82;
 }
 
 .profile-band h1,
@@ -866,8 +913,66 @@ button {
   border-radius: inherit;
 }
 
-.chart-column.active .chart-bar i {
+.chart-column.active .chart-bar > i {
   background: var(--blue-700);
+}
+
+/* Stacked bar (wet under dirty) — column-reverse so parts fill from the base. */
+.chart-bar-stack {
+  display: flex;
+  flex-direction: column-reverse;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 999px;
+}
+
+.chart-bar-stack i {
+  display: block;
+  width: 100%;
+  border-radius: 0;
+}
+
+.chart-bar-part-0 {
+  background: var(--blue-400);
+}
+
+.chart-bar-part-1 {
+  background: var(--accent-strong);
+}
+
+.chart-column.active .chart-bar-part-0 {
+  background: var(--blue-700);
+}
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.chart-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  color: var(--muted);
+}
+
+.chart-legend-item::before {
+  content: '';
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.chart-legend-item.chart-bar-part-0::before {
+  background: var(--blue-400);
+}
+
+.chart-legend-item.chart-bar-part-1::before {
+  background: var(--accent-strong);
 }
 
 .chart-bar-value,
@@ -1204,6 +1309,11 @@ textarea {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
+  /* Two cards left after last feed/diaper moved into the hero card. */
+  .status-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .report-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
@@ -1238,6 +1348,44 @@ textarea {
   fill: var(--blue-500);
   stroke: var(--panel);
   stroke-width: 1.5;
+}
+
+/* Same measurement, plotted again at its preterm-corrected age. */
+.growth-point.corrected {
+  fill: var(--accent-strong);
+}
+
+.growth-shift {
+  stroke: var(--accent-strong);
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+  opacity: 0.7;
+}
+
+.gestation-note {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  background: var(--panel-blue);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent-strong);
+  border-radius: 8px;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.gestation-note span {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.chart-legend-item.growth-legend-actual::before {
+  background: var(--blue-500);
+}
+
+.chart-legend-item.growth-legend-corrected::before {
+  background: var(--accent-strong);
 }
 
 .growth-axis-label {
@@ -1701,7 +1849,7 @@ textarea {
 }
 
 @media (max-width: 480px) {
-  .profile-band {
+  .profile-band-top {
     align-items: stretch;
     flex-direction: column;
   }

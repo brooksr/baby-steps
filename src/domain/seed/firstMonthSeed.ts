@@ -79,9 +79,9 @@ export function buildFirstMonthSeed(birthDate = defaultSeedBirthDate()): Tracker
     for (let i = 0; i < feeds; i += 1) {
       const hour = Math.round((i * 24) / feeds);
       if (i % 2 === 0) {
-        push(at(day, hour, 10), { durationMinutes: 18, endedAt: at(day, hour, 28), side: i % 4 === 0 ? 'left' : 'right', type: 'breastfeed' });
+        push(at(day, hour, 10), { durationMinutes: 18, endedAt: at(day, hour, 28), method: 'nursing', side: i % 4 === 0 ? 'left' : 'right', type: 'feed' });
       } else {
-        push(at(day, hour, 15), { amountOz: day < 7 ? 2 : 3, contents: 'breastmilk', type: 'bottle' });
+        push(at(day, hour, 15), { amountOz: day < 7 ? 2 : 3, contents: 'breastmilk', method: 'bottle', type: 'feed' });
       }
     }
 

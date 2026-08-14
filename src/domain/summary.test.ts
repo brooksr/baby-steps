@@ -17,17 +17,19 @@ describe('daily summaries', () => {
         durationMinutes: 22,
         endedAt: '2026-09-02T12:22:00.000Z',
         id: 'feed-1',
+        method: 'nursing',
         side: 'left',
         startedAt: '2026-09-02T12:00:00.000Z',
-        type: 'breastfeed'
+        type: 'feed'
       },
       {
         ...base,
         amountOz: 2.5,
         contents: 'formula',
-        id: 'bottle-1',
+        id: 'feed-2',
+        method: 'bottle',
         startedAt: '2026-09-02T14:00:00.000Z',
-        type: 'bottle'
+        type: 'feed'
       },
       {
         ...base,
@@ -74,6 +76,15 @@ describe('daily summaries', () => {
       sleepMinutes: 90,
       wetDiapers: 1
     });
+  });
+
+  it('counts feeds that carry neither a duration nor an amount', () => {
+    const events: CareEvent[] = [
+      { ...base, id: 'feed-1', method: 'nursing', startedAt: '2026-09-02T12:00:00.000Z', type: 'feed' },
+      { ...base, id: 'feed-2', method: 'bottle', startedAt: '2026-09-02T15:00:00.000Z', type: 'feed' }
+    ];
+
+    expect(getDailySummary(events)).toMatchObject({ bottleOunces: 0, feedCount: 2, nursingMinutes: 0 });
   });
 });
 

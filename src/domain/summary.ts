@@ -32,12 +32,8 @@ export function createEmptyDailySummary(): DailySummary {
 }
 
 export function getEventDurationMinutes(event: CareEvent) {
-  if (event.type === 'breastfeed') {
+  if (event.type === 'feed' && event.durationMinutes != null) {
     return event.durationMinutes;
-  }
-
-  if (event.type === 'sleep') {
-    return minutesBetween(event.startedAt, event.endedAt);
   }
 
   return minutesBetween(event.startedAt, event.endedAt);
@@ -46,16 +42,18 @@ export function getEventDurationMinutes(event: CareEvent) {
 export function getDailySummary(events: CareEvent[]): DailySummary {
   return events.reduce((summary, event) => {
     switch (event.type) {
-      case 'breastfeed':
+      case 'feed':
         summary.feedCount += 1;
-        summary.nursingMinutes += event.durationMinutes;
+        // Duration and amount are both optional, so a feed only adds to the
+        // total its method actually measures.
+        if (event.method === 'nursing') {
+          summary.nursingMinutes += event.durationMinutes ?? 0;
+        } else {
+          summary.bottleOunces += event.amountOz ?? 0;
+        }
         break;
       case 'birth':
         summary.growthMeasurements += 1;
-        break;
-      case 'bottle':
-        summary.feedCount += 1;
-        summary.bottleOunces += event.amountOz;
         break;
       case 'pump':
         summary.pumpOunces += event.amountOz;

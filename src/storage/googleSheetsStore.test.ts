@@ -58,7 +58,9 @@ function makeApi() {
 }
 
 describe('Google Sheets tracker store', () => {
-  it('maps sheet rows into care events', async () => {
+  // The fixture row is a pre-merge `bottle`, which is what the shared sheet
+  // still holds for everything logged before nursing and bottle became one feed.
+  it('maps legacy bottle rows into feeding events', async () => {
     const api = makeApi();
     const store = createGoogleSheetsBabyTrackerStore(api);
 
@@ -69,8 +71,9 @@ describe('Google Sheets tracker store', () => {
       amountOz: 2.5,
       contents: 'breastmilk',
       id: 'seed_bottle_1',
+      method: 'bottle',
       notes: 'Supplement',
-      type: 'bottle'
+      type: 'feed'
     });
   });
 

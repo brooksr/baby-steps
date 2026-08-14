@@ -1,5 +1,6 @@
 import Dexie, { type Table } from 'dexie';
 import { createDefaultBabyProfile } from '../domain/dates';
+import { migrateStoredEvents, type StoredCareEvent } from '../domain/legacyEvents';
 import { DEFAULT_PROFILE_ID, type BabyProfile, type CareEvent, type CareEventType, type CreateCareEventInput, type TrackerExport } from '../domain/types';
 
 const DEFAULT_DB_NAME = 'babysteps-theo';
@@ -137,7 +138,8 @@ export function createLocalBabyTrackerStore(dbName = DEFAULT_DB_NAME): BabyTrack
   async function listEvents(query: EventQuery = {}) {
     const profile = await initialize();
     const babyId = query.babyId ?? profile.id;
-    const events = await db.events.where('babyId').equals(babyId).toArray();
+    const stored = (await db.events.where('babyId').equals(babyId).toArray()) as StoredCareEvent[];
+    const events = migrateStoredEvents(stored);
 
     return events
       .filter((event) => (query.type ? event.type === query.type : true))
@@ -178,7 +180,7 @@ export function createLocalBabyTrackerStore(dbName = DEFAULT_DB_NAME): BabyTrack
 
       if (data.events.length > 0) {
         await db.events.bulkPut(
-          data.events.map((event) => ({
+          migrateStoredEvents(data.events).map((event) => ({
             ...event,
             syncState: 'local'
           }))

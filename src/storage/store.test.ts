@@ -32,8 +32,9 @@ describe('local baby tracker store', () => {
     await source.addEvent({
       amountOz: 2.5,
       contents: 'breastmilk',
+      method: 'bottle',
       startedAt: '2026-09-02T12:00:00.000Z',
-      type: 'bottle'
+      type: 'feed'
     });
     await source.addEvent({
       kind: 'wet',
@@ -42,14 +43,28 @@ describe('local baby tracker store', () => {
     });
 
     const sourceEvents = await source.listEvents();
-    expect(sourceEvents.map((event) => event.type)).toEqual(['diaper', 'bottle']);
+    expect(sourceEvents.map((event) => event.type)).toEqual(['diaper', 'feed']);
 
     const exported = await source.exportData();
     const target = makeStore();
     await target.importData(exported, { mode: 'replace' });
 
     const importedEvents = await target.listEvents({ sort: 'asc' });
-    expect(importedEvents.map((event) => event.type)).toEqual(['bottle', 'diaper']);
-    expect(importedEvents[0]).toMatchObject({ amountOz: 2.5, type: 'bottle' });
+    expect(importedEvents.map((event) => event.type)).toEqual(['feed', 'diaper']);
+    expect(importedEvents[0]).toMatchObject({ amountOz: 2.5, method: 'bottle', type: 'feed' });
+  });
+
+  it('reads pre-merge nursing and bottle entries as feedings', async () => {
+    const store = makeStore();
+    // Written the way the old schema stored them, as an existing device would have.
+    await store.addEvent({ durationMinutes: 18, side: 'left', startedAt: '2026-09-02T12:00:00.000Z', type: 'breastfeed' } as never);
+    await store.addEvent({ amountOz: 3, contents: 'formula', startedAt: '2026-09-02T15:00:00.000Z', type: 'bottle' } as never);
+
+    const events = await store.listEvents({ sort: 'asc' });
+
+    expect(events).toMatchObject([
+      { durationMinutes: 18, method: 'nursing', side: 'left', type: 'feed' },
+      { amountOz: 3, contents: 'formula', method: 'bottle', type: 'feed' }
+    ]);
   });
 });

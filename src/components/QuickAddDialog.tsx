@@ -3,7 +3,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { addMinutes, fromDateTimeInputValue, toDateTimeInputValue } from '../domain/dates';
 import { getMoodScale } from '../domain/reference';
 import { type ActiveTimers, type TimerType, formatElapsed, getElapsedSeconds, isTimerType } from '../domain/timers';
-import { careEventLabels, type CareEvent, type CareEventType, type CreateCareEventInput } from '../domain/types';
+import { careEventLabels, type CareEvent, type CareEventType, type CreateCareEventInput, type FeedMethod } from '../domain/types';
 
 const moodLevels = getMoodScale();
 
@@ -39,6 +39,7 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
   const [side, setSide] = useState('left');
   const [amountOz, setAmountOz] = useState('2');
   const [contents, setContents] = useState('breastmilk');
+  const [feedMethod, setFeedMethod] = useState<FeedMethod>('nursing');
   const [diaperKind, setDiaperKind] = useState('wet');
   const [diaperColor, setDiaperColor] = useState('');
   const [medicationName, setMedicationName] = useState('');
@@ -89,8 +90,10 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
     setNotes(editEvent?.notes ?? '');
     setDurationMinutes(eventType === 'sleep' ? '60' : eventType === 'tummytime' ? '5' : '15');
     setSide('left');
-    setAmountOz(eventType === 'pump' ? '3' : '2');
+    // A feed opens on nursing, where the amount is unknown until a bottle is picked.
+    setAmountOz(eventType === 'pump' ? '3' : eventType === 'feed' ? '' : '2');
     setContents('breastmilk');
+    setFeedMethod('nursing');
     setDiaperKind('wet');
     setDiaperColor('');
     setMedicationName('');
@@ -112,13 +115,12 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
     }
 
     switch (editEvent.type) {
-      case 'breastfeed':
-        setSide(editEvent.side);
-        setDurationMinutes(String(editEvent.durationMinutes));
-        break;
-      case 'bottle':
-        setAmountOz(String(editEvent.amountOz));
-        setContents(editEvent.contents);
+      case 'feed':
+        setAmountOz(numberInputValue(editEvent.amountOz));
+        setContents(editEvent.contents ?? 'breastmilk');
+        setDurationMinutes(numberInputValue(editEvent.durationMinutes));
+        setFeedMethod(editEvent.method);
+        setSide(editEvent.side ?? 'left');
         break;
       case 'pump':
         setAmountOz(String(editEvent.amountOz));
@@ -179,10 +181,23 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
     const nowIso = new Date().toISOString();
     const elapsed = getElapsedSeconds(activeTimer.startedAt);
     setEndedAt(toDateTimeInputValue(nowIso));
-    if (eventType === 'breastfeed' || eventType === 'tummytime') {
+    if (eventType === 'feed' || eventType === 'tummytime') {
       setDurationMinutes(String(Math.max(1, Math.round(elapsed / 60))));
     }
     onTimerStop(eventType);
+  }
+
+  // Switching method clears the field the other one doesn't measure, so a
+  // bottle never carries a stray duration (or a nursing feed a stray amount).
+  function handleFeedMethod(next: FeedMethod) {
+    setFeedMethod(next);
+    if (next === 'nursing') {
+      setAmountOz('');
+      setDurationMinutes((current) => current || '15');
+    } else {
+      setDurationMinutes('');
+      setAmountOz((current) => current || '2');
+    }
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -197,14 +212,18 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
     let payload: CreateCareEventInput;
 
     switch (eventType) {
-      case 'breastfeed': {
-        const duration = Number(durationMinutes);
+      case 'feed': {
+        const duration = numberOrUndefined(durationMinutes);
+        const nursing = feedMethod === 'nursing';
         payload = {
-          type: 'breastfeed',
+          type: 'feed',
+          amountOz: numberOrUndefined(amountOz),
+          contents: nursing ? undefined : (contents as 'breastmilk' | 'formula' | 'mixed' | 'other'),
           durationMinutes: duration,
-          endedAt: addMinutes(startedAtIso, duration),
+          endedAt: duration != null ? addMinutes(startedAtIso, duration) : endedAt ? fromDateTimeInputValue(endedAt) : undefined,
+          method: feedMethod,
           notes: trimmedNotes,
-          side: side as 'left' | 'right' | 'both',
+          side: nursing ? (side as 'left' | 'right' | 'both') : undefined,
           startedAt: startedAtIso
         };
         break;
@@ -217,16 +236,6 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
           notes: trimmedNotes,
           startedAt: startedAtIso,
           weightOz: numberOrUndefined(weightOz)
-        };
-        break;
-      case 'bottle':
-        payload = {
-          type: 'bottle',
-          amountOz: Number(amountOz),
-          contents: contents as 'breastmilk' | 'formula' | 'mixed' | 'other',
-          endedAt: endedAt ? fromDateTimeInputValue(endedAt) : undefined,
-          notes: trimmedNotes,
-          startedAt: startedAtIso
         };
         break;
       case 'pump':
@@ -380,37 +389,51 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
             </div>
           )}
 
-          {eventType === 'breastfeed' && (
+          {eventType === 'feed' && (
             <>
+              <div className="form-grid-wide segmented-control" role="radiogroup" aria-label="Feeding method">
+                {(['nursing', 'bottle'] as FeedMethod[]).map((method) => (
+                  <button
+                    key={method}
+                    type="button"
+                    role="radio"
+                    aria-checked={feedMethod === method}
+                    className={feedMethod === method ? 'active' : ''}
+                    onClick={() => handleFeedMethod(method)}
+                  >
+                    {method === 'nursing' ? 'Nursing' : 'Bottle'}
+                  </button>
+                ))}
+              </div>
+              {feedMethod === 'nursing' ? (
+                <label>
+                  Side
+                  <select value={side} onChange={(event) => setSide(event.target.value)}>
+                    <option value="left">Left</option>
+                    <option value="right">Right</option>
+                    <option value="both">Both</option>
+                  </select>
+                </label>
+              ) : (
+                <label>
+                  Contents
+                  <select value={contents} onChange={(event) => setContents(event.target.value)}>
+                    <option value="breastmilk">Breast milk</option>
+                    <option value="formula">Formula</option>
+                    <option value="mixed">Mixed</option>
+                    <option value="other">Other</option>
+                  </select>
+                </label>
+              )}
+              {/* Both are optional: a bottle is rarely timed, and a nursing
+                  session rarely has a known volume. */}
               <label>
-                Side
-                <select value={side} onChange={(event) => setSide(event.target.value)}>
-                  <option value="left">Left</option>
-                  <option value="right">Right</option>
-                  <option value="both">Both</option>
-                </select>
+                Minutes <small>optional</small>
+                <input min="1" step="1" type="number" value={durationMinutes} onChange={(event) => setDurationMinutes(event.target.value)} />
               </label>
               <label>
-                Minutes
-                <input min="1" step="1" type="number" value={durationMinutes} onChange={(event) => setDurationMinutes(event.target.value)} required />
-              </label>
-            </>
-          )}
-
-          {eventType === 'bottle' && (
-            <>
-              <label>
-                Ounces
-                <input min="0" step="0.25" type="number" value={amountOz} onChange={(event) => setAmountOz(event.target.value)} required />
-              </label>
-              <label>
-                Contents
-                <select value={contents} onChange={(event) => setContents(event.target.value)}>
-                  <option value="breastmilk">Breast milk</option>
-                  <option value="formula">Formula</option>
-                  <option value="mixed">Mixed</option>
-                  <option value="other">Other</option>
-                </select>
+                Ounces <small>optional</small>
+                <input min="0" step="0.25" type="number" value={amountOz} onChange={(event) => setAmountOz(event.target.value)} />
               </label>
             </>
           )}
