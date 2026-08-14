@@ -1,9 +1,13 @@
 const GOOGLE_IDENTITY_SCRIPT = 'https://accounts.google.com/gsi/client';
 const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
-const EXPIRY_SKEW_MS = 60_000;
+/** Treat a token as spent slightly early so an in-flight request can't expire mid-call. */
+const EXPIRY_SKEW_MS = 120_000;
+/** Renew this far ahead of expiry so the session never lapses while the app is open. */
+const REFRESH_LEAD_MS = 300_000;
+const MIN_REFRESH_DELAY_MS = 30_000;
 const TOKEN_STORAGE_KEY = 'babysteps.google.token';
 const GRANT_STORAGE_KEY = 'babysteps.google.granted';
-const SILENT_TIMEOUT_MS = 8_000;
+const SILENT_TIMEOUT_MS = 20_000;
 
 interface GoogleTokenResponse {
   access_token?: string;
@@ -36,6 +40,10 @@ let scriptPromise: Promise<void> | null = null;
 let tokenClient: GoogleTokenClient | null = null;
 let accessToken: string | null = null;
 let expiresAt = 0;
+/** Only one token request may be in flight — the GIS client has a single callback slot. */
+let pendingRequest: Promise<string> | null = null;
+let refreshTimer: number | null = null;
+let keepAliveAttached = false;
 
 export class GoogleAuthRequiredError extends Error {
   constructor(message = 'Connect Google Sheets before using sheet storage.') {
@@ -72,9 +80,21 @@ export function hasStoredGoogleGrant() {
 export function signOutGoogle() {
   accessToken = null;
   expiresAt = 0;
+  cancelSilentRefresh();
   const storage = safeStorage();
   storage?.removeItem(TOKEN_STORAGE_KEY);
   storage?.removeItem(GRANT_STORAGE_KEY);
+}
+
+/**
+ * Drop the cached token but keep the grant, so the next request mints a fresh
+ * one. Used when Google rejects a token before its stated expiry.
+ */
+export function invalidateGoogleToken() {
+  accessToken = null;
+  expiresAt = 0;
+  cancelSilentRefresh();
+  safeStorage()?.removeItem(TOKEN_STORAGE_KEY);
 }
 
 function hydrateToken() {
@@ -88,6 +108,8 @@ function hydrateToken() {
     if (parsed.accessToken && parsed.expiresAt && Date.now() < parsed.expiresAt - EXPIRY_SKEW_MS) {
       accessToken = parsed.accessToken;
       expiresAt = parsed.expiresAt;
+    } else {
+      safeStorage()?.removeItem(TOKEN_STORAGE_KEY);
     }
   } catch {
     safeStorage()?.removeItem(TOKEN_STORAGE_KEY);
@@ -102,6 +124,74 @@ export function getGoogleClientId() {
 
 export function hasGoogleClientId() {
   return Boolean(getGoogleClientId());
+}
+
+function hasFreshToken() {
+  return Boolean(accessToken) && Date.now() < expiresAt - EXPIRY_SKEW_MS;
+}
+
+/** True when the cached token is close enough to expiry to be worth renewing. */
+function needsRenewal() {
+  return !accessToken || Date.now() > expiresAt - REFRESH_LEAD_MS;
+}
+
+function cancelSilentRefresh() {
+  if (refreshTimer !== null) {
+    window.clearTimeout(refreshTimer);
+    refreshTimer = null;
+  }
+}
+
+/** Renew shortly before the current token lapses so the user is never bounced. */
+function scheduleSilentRefresh() {
+  cancelSilentRefresh();
+
+  if (!expiresAt || typeof window === 'undefined') {
+    return;
+  }
+
+  const delay = Math.max(MIN_REFRESH_DELAY_MS, expiresAt - REFRESH_LEAD_MS - Date.now());
+  refreshTimer = window.setTimeout(() => {
+    refreshTimer = null;
+    void requestGoogleSheetsAccessToken(false).catch(() => {
+      // A failed background renewal is not fatal — the next real request retries.
+    });
+  }, delay);
+}
+
+/**
+ * Keep the Google session warm for the life of the app: renew when the tab
+ * comes back to the foreground (timers don't fire reliably in a backgrounded
+ * PWA) and when the device comes back online. Returns a cleanup function.
+ */
+export function keepGoogleSessionAlive() {
+  if (keepAliveAttached || typeof window === 'undefined') {
+    return () => {};
+  }
+
+  const renew = () => {
+    if (!hasStoredGoogleGrant() || document.visibilityState === 'hidden' || !needsRenewal()) {
+      return;
+    }
+
+    void requestGoogleSheetsAccessToken(false).catch(() => {
+      // Ignore — an interactive reconnect is offered if a real request fails.
+    });
+  };
+
+  keepAliveAttached = true;
+  document.addEventListener('visibilitychange', renew);
+  window.addEventListener('focus', renew);
+  window.addEventListener('online', renew);
+  scheduleSilentRefresh();
+
+  return () => {
+    keepAliveAttached = false;
+    document.removeEventListener('visibilitychange', renew);
+    window.removeEventListener('focus', renew);
+    window.removeEventListener('online', renew);
+    cancelSilentRefresh();
+  };
 }
 
 function loadGoogleIdentityScript() {
@@ -120,7 +210,10 @@ function loadGoogleIdentityScript() {
     script.async = true;
     script.defer = true;
     script.onload = () => resolve();
-    script.onerror = () => reject(new Error('Unable to load Google Identity Services.'));
+    script.onerror = () => {
+      scriptPromise = null;
+      reject(new Error('Unable to load Google Identity Services.'));
+    };
     document.head.append(script);
   });
 
@@ -151,17 +244,7 @@ async function getTokenClient() {
   return tokenClient;
 }
 
-export async function requestGoogleSheetsAccessToken(interactive: boolean) {
-  if (accessToken && Date.now() < expiresAt - EXPIRY_SKEW_MS) {
-    return accessToken;
-  }
-
-  // A silent (non-interactive) refresh is only attempted once the user has
-  // granted consent on this device — otherwise we'd surprise them with a popup.
-  if (!interactive && !hasStoredGoogleGrant()) {
-    throw new GoogleAuthRequiredError();
-  }
-
+async function fetchToken(interactive: boolean) {
   const client = await getTokenClient();
 
   return new Promise<string>((resolve, reject) => {
@@ -192,6 +275,7 @@ export async function requestGoogleSheetsAccessToken(interactive: boolean) {
       expiresAt = Date.now() + (response.expires_in ?? 3600) * 1000;
       persistToken();
       markGranted();
+      scheduleSilentRefresh();
       finish(() => resolve(accessToken as string));
     };
 
@@ -200,4 +284,63 @@ export async function requestGoogleSheetsAccessToken(interactive: boolean) {
     // this device aren't sent back to a login screen each launch.
     client.requestAccessToken({ prompt: '' });
   });
+}
+
+export async function requestGoogleSheetsAccessToken(interactive: boolean) {
+  if (hasFreshToken()) {
+    return accessToken as string;
+  }
+
+  // Share one in-flight request: the GIS client keeps a single callback, so
+  // overlapping requests would clobber each other and hang.
+  if (pendingRequest) {
+    try {
+      return await pendingRequest;
+    } catch (error) {
+      if (!interactive) {
+        throw error;
+      }
+    }
+
+    if (hasFreshToken()) {
+      return accessToken as string;
+    }
+  }
+
+  // A silent (non-interactive) refresh is only attempted once the user has
+  // granted consent on this device — otherwise we'd surprise them with a popup.
+  if (!interactive && !hasStoredGoogleGrant()) {
+    throw new GoogleAuthRequiredError();
+  }
+
+  const request = fetchToken(interactive);
+  pendingRequest = request;
+
+  try {
+    return await request;
+  } finally {
+    if (pendingRequest === request) {
+      pendingRequest = null;
+    }
+  }
+}
+
+/**
+ * Token getter for Sheets API calls: reuse or silently renew the grant, and
+ * only fall back to an interactive prompt when Google really needs the user.
+ */
+export async function getGoogleSheetsAccessToken(forceRefresh = false) {
+  if (forceRefresh) {
+    invalidateGoogleToken();
+  }
+
+  try {
+    return await requestGoogleSheetsAccessToken(false);
+  } catch (error) {
+    if (!hasStoredGoogleGrant()) {
+      throw error;
+    }
+
+    return requestGoogleSheetsAccessToken(true);
+  }
 }

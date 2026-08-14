@@ -358,10 +358,10 @@ function assertTrackerExport(data: TrackerExport) {
 }
 
 export class GoogleSheetsApi {
-  constructor(private readonly getAccessToken: () => Promise<string>) {}
+  constructor(private readonly getAccessToken: (forceRefresh?: boolean) => Promise<string>) {}
 
-  private async request<T>(path: string, init: RequestInit = {}) {
-    const token = await this.getAccessToken();
+  private async request<T>(path: string, init: RequestInit = {}, forceRefresh = false): Promise<T> {
+    const token = await this.getAccessToken(forceRefresh);
     const response = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${GOOGLE_SHEET_ID}${path}`, {
       ...init,
       headers: {
@@ -372,6 +372,12 @@ export class GoogleSheetsApi {
     });
 
     if (!response.ok) {
+      // Google can retire a token before its stated expiry — mint a fresh one
+      // and retry once rather than sending the user back to the login screen.
+      if (response.status === 401 && !forceRefresh) {
+        return this.request<T>(path, init, true);
+      }
+
       const text = await response.text();
       throw new Error(`Google Sheets request failed (${response.status}): ${text}`);
     }

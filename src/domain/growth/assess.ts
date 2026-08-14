@@ -190,12 +190,19 @@ export function assessLatestGrowth(profile: BabyProfile, events: CareEvent[]): G
 // Newborn early-window diaper / feed checks
 // ---------------------------------------------------------------------------
 
-export type RangeStatus = 'below' | 'within';
+/**
+ * `pending` means the full-day minimum isn't met yet but the count is on pace
+ * for how much of the day has actually happened — half the diapers by noon is
+ * normal, so it must not read as a warning.
+ */
+export type RangeStatus = 'below' | 'pending' | 'within';
 
 export interface NewbornMetricCheck {
   label: string;
   count: number;
   expectedMin: number;
+  /** Pro-rated target for the elapsed part of the day (equals expectedMin once the day is over). */
+  expectedByNow: number;
   status: RangeStatus;
 }
 
@@ -203,8 +210,14 @@ export interface NewbornDayAssessment {
   dayOfLife: number;
   expectation: NewbornDayExpectation;
   checks: NewbornMetricCheck[];
-  /** True when every tracked metric meets its minimum. */
+  /** True when no tracked metric has fallen behind its pace. */
   onTrack: boolean;
+  /** True once the day is over — a partial day is only judged against the pace. */
+  dayComplete: boolean;
+  /** Share of the day (from birth on day 1) that has elapsed, 0–1. */
+  dayProgress: number;
+  /** True when a metric is short of the full-day minimum but still on pace. */
+  stillCounting: boolean;
 }
 
 export interface NewbornDailyCounts {
@@ -244,7 +257,46 @@ export function countNewbornDaily(events: CareEvent[], dateKey: string): Newborn
   );
 }
 
-export function assessNewbornDay(profile: BabyProfile, events: CareEvent[], dateKey: string): NewbornDayAssessment | null {
+/**
+ * How much of `dateKey` has elapsed, as a 0–1 share. The birth day starts at
+ * the birth itself rather than midnight, so a baby born at 6pm isn't measured
+ * against a whole day of feeds.
+ */
+export function getDayProgress(birthDate: string, dateKey: string, now: Date = new Date()): number {
+  const dayStart = new Date(`${dateKey}T00:00:00`).getTime();
+  const dayEnd = dayStart + DAY_MS;
+  const current = now.getTime();
+
+  if (current >= dayEnd) {
+    return 1;
+  }
+
+  // A date-only birthDate has no usable time of day, so fall back to midnight.
+  const birth = birthDate.length > 10 ? new Date(birthDate).getTime() : Number.NaN;
+  const start = Number.isFinite(birth) ? Math.max(dayStart, birth) : dayStart;
+
+  if (current <= start) {
+    return 0;
+  }
+
+  return Math.min(1, (current - start) / (dayEnd - start));
+}
+
+function buildCheck(label: string, count: number, expectedMin: number, progress: number): NewbornMetricCheck {
+  // Floor keeps the pace target forgiving: 6 wet nappies by bedtime is only
+  // 3 by noon, and a target of 0 early in the morning flags nothing.
+  const expectedByNow = progress >= 1 ? expectedMin : Math.floor(expectedMin * progress);
+  const status: RangeStatus = count >= expectedMin ? 'within' : count >= expectedByNow ? 'pending' : 'below';
+
+  return { count, expectedByNow, expectedMin, label, status };
+}
+
+export function assessNewbornDay(
+  profile: BabyProfile,
+  events: CareEvent[],
+  dateKey: string,
+  now: Date = new Date()
+): NewbornDayAssessment | null {
   if (!profile.birthDate) {
     return null;
   }
@@ -256,17 +308,21 @@ export function assessNewbornDay(profile: BabyProfile, events: CareEvent[], date
   }
 
   const counts = countNewbornDaily(events, dateKey);
+  const dayProgress = getDayProgress(profile.birthDate, dateKey, now);
 
   const checks: NewbornMetricCheck[] = [
-    { count: counts.wetDiapers, expectedMin: expectation.wetMin, label: 'Wet diapers', status: counts.wetDiapers >= expectation.wetMin ? 'within' : 'below' },
-    { count: counts.stoolDiapers, expectedMin: expectation.stoolMin, label: 'Stools', status: counts.stoolDiapers >= expectation.stoolMin ? 'within' : 'below' },
-    { count: counts.feeds, expectedMin: expectation.feedMin, label: 'Feeds', status: counts.feeds >= expectation.feedMin ? 'within' : 'below' }
+    buildCheck('Wet diapers', counts.wetDiapers, expectation.wetMin, dayProgress),
+    buildCheck('Stools', counts.stoolDiapers, expectation.stoolMin, dayProgress),
+    buildCheck('Feeds', counts.feeds, expectation.feedMin, dayProgress)
   ];
 
   return {
     checks,
+    dayComplete: dayProgress >= 1,
     dayOfLife,
+    dayProgress,
     expectation,
-    onTrack: checks.every((check) => check.status === 'within')
+    onTrack: checks.every((check) => check.status !== 'below'),
+    stillCounting: checks.some((check) => check.status === 'pending')
   };
 }

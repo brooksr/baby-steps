@@ -2,7 +2,7 @@ import { BarChart3, BookOpen, ClipboardCheck, Home, Images, List, Moon, Settings
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { PHOTO_ALBUM_URL } from './domain/media';
 import { applyTheme, getInitialTheme, type Theme } from './domain/theme';
-import { hasStoredGoogleGrant } from './storage/googleSheetsAuth';
+import { hasStoredGoogleGrant, keepGoogleSessionAlive } from './storage/googleSheetsAuth';
 import { Care } from './components/Care';
 import { Dashboard } from './components/Dashboard';
 import { Learn } from './components/Learn';
@@ -19,6 +19,10 @@ import { createHybridBabyTrackerStore } from './storage/hybridStore';
 import type { StoreStatus } from './storage/store';
 
 type View = 'dashboard' | 'log' | 'reports' | 'care' | 'learn' | 'settings';
+
+// 'restoring' resumes a device that already granted Google, so a returning user
+// sees a branded reconnect rather than a flash of the login screen.
+type BootPhase = 'restoring' | 'signin' | 'ready';
 
 const VIEWS: View[] = ['dashboard', 'log', 'reports', 'care', 'learn', 'settings'];
 
@@ -44,7 +48,8 @@ function App() {
   const [dialogType, setDialogType] = useState<CareEventType | null>(null);
   const [editEvent, setEditEvent] = useState<CareEvent | null>(null);
   const [loading, setLoading] = useState(false);
-  const [splashComplete, setSplashComplete] = useState(false);
+  const [bootPhase, setBootPhase] = useState<BootPhase>(() => (hasStoredGoogleGrant() ? 'restoring' : 'signin'));
+  const [sessionExpired, setSessionExpired] = useState(false);
   const [error, setError] = useState('');
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
   const [storeStatus, setStoreStatus] = useState<StoreStatus | null>(() => trackerStore.getStatus?.() ?? null);
@@ -84,29 +89,27 @@ function App() {
   // Stay signed in: if Google was already granted on this device, silently
   // reconnect on launch instead of showing the login screen.
   useEffect(() => {
-    if (splashComplete || !hasStoredGoogleGrant()) {
+    if (bootPhase !== 'restoring') {
       return;
     }
 
     let cancelled = false;
-    setLoading(true);
 
     (async () => {
       try {
         await trackerStore.connect?.(false);
         await refresh();
         if (!cancelled) {
-          setSplashComplete(true);
+          setBootPhase('ready');
         }
       } catch {
         // Silent reconnect failed (e.g. the device's Google session expired) —
-        // fall back to the splash so the user can reconnect with one tap.
+        // fall back to the sign-in screen so it's one tap to get back in. Never
+        // pull back someone who already got in offline while this was running.
         if (!cancelled) {
           setStoreStatus(trackerStore.getStatus?.() ?? null);
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
+          setSessionExpired(true);
+          setBootPhase((phase) => (phase === 'restoring' ? 'signin' : phase));
         }
       }
     })();
@@ -114,14 +117,24 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [refresh, splashComplete]);
+  }, [bootPhase, refresh]);
+
+  // Renew the Google token ahead of expiry (and whenever the app is refocused)
+  // so a long-lived session never drops the user back to sign-in.
+  useEffect(() => {
+    if (bootPhase !== 'ready') {
+      return;
+    }
+
+    return keepGoogleSessionAlive();
+  }, [bootPhase]);
 
   async function loadOffline() {
     setLoading(true);
     setError('');
     try {
       await refresh();
-      setSplashComplete(true);
+      setBootPhase('ready');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Unable to load tracker data.');
     } finally {
@@ -214,7 +227,8 @@ function App() {
     try {
       await trackerStore.connect?.();
       await refresh();
-      setSplashComplete(true);
+      setSessionExpired(false);
+      setBootPhase('ready');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Unable to connect Google Sheets.');
       setStoreStatus(trackerStore.getStatus?.() ?? null);
@@ -223,8 +237,18 @@ function App() {
     }
   }
 
-  if (!splashComplete) {
-    return <LoginSplash error={error} loading={loading} storeStatus={storeStatus} onContinue={handleSplashContinue} onOffline={loadOffline} />;
+  if (bootPhase !== 'ready') {
+    return (
+      <LoginSplash
+        error={error}
+        loading={loading}
+        restoring={bootPhase === 'restoring'}
+        sessionExpired={sessionExpired}
+        storeStatus={storeStatus}
+        onContinue={handleSplashContinue}
+        onOffline={loadOffline}
+      />
+    );
   }
 
   if (loading || !profile) {

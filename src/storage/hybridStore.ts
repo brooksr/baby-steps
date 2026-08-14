@@ -1,5 +1,5 @@
 import type { BabyProfile, CareEvent, CreateCareEventInput, TrackerExport } from '../domain/types';
-import { GoogleAuthRequiredError, hasGoogleClientId, requestGoogleSheetsAccessToken } from './googleSheetsAuth';
+import { getGoogleSheetsAccessToken, GoogleAuthRequiredError, hasGoogleClientId, requestGoogleSheetsAccessToken } from './googleSheetsAuth';
 import { createGoogleSheetsBabyTrackerStore, GOOGLE_SHEET_ID, GOOGLE_SHEET_URL, GoogleSheetsApi } from './googleSheetsStore';
 import { createLocalBabyTrackerStore, type BabyTrackerStore, type EventQuery, type ImportOptions, type StoreStatus } from './store';
 
@@ -31,9 +31,12 @@ export function createHybridBabyTrackerStore(): BabyTrackerStore {
     // interactive when the user explicitly taps connect.
     await requestGoogleSheetsAccessToken(interactive);
     const localData = await localStore.exportData();
-    const api = new GoogleSheetsApi(() => requestGoogleSheetsAccessToken(true));
-    sheetStore = createGoogleSheetsBabyTrackerStore(api);
-    const sheetProfile = await sheetStore.initialize();
+    const api = new GoogleSheetsApi(getGoogleSheetsAccessToken);
+    // Only promote the sheet store once it has initialized — a half-connected
+    // store would swallow reads that should still fall back to local.
+    const connecting = createGoogleSheetsBabyTrackerStore(api);
+    const sheetProfile = await connecting.initialize();
+    sheetStore = connecting;
     if (localData.events.length > 0) {
       await sheetStore.importData(
         {

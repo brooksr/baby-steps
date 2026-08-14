@@ -111,3 +111,49 @@ describe('newborn day assessment', () => {
     expect(assessNewbornDay(profile, [], '2026-08-01')).toBeNull();
   });
 });
+
+describe('in-progress day pacing', () => {
+  const noon = new Date('2026-06-06T12:00:00');
+
+  it('treats half the expected diapers by midday as on pace, not a warning', () => {
+    const events = [
+      ...Array.from({ length: 3 }, () => diaper('2026-06-06', 'wet')),
+      ...Array.from({ length: 3 }, () => diaper('2026-06-06', 'dirty')),
+      ...Array.from({ length: 4 }, () => bottle('2026-06-06'))
+    ];
+
+    const result = assessNewbornDay(profile, events, '2026-06-06', noon);
+    expect(result?.onTrack).toBe(true);
+    expect(result?.dayComplete).toBe(false);
+    expect(result?.stillCounting).toBe(true);
+    expect(result?.checks.map((check) => check.status)).toEqual(['pending', 'within', 'pending']);
+    expect(result?.checks.find((check) => check.label === 'Wet diapers')?.expectedByNow).toBe(3);
+  });
+
+  it('still flags a day that is behind the pace for the time of day', () => {
+    const events = [diaper('2026-06-06', 'wet')];
+    const result = assessNewbornDay(profile, events, '2026-06-06', noon);
+    expect(result?.onTrack).toBe(false);
+    expect(result?.checks.find((check) => check.label === 'Wet diapers')?.status).toBe('below');
+  });
+
+  it('flags nothing at the very start of a day', () => {
+    const result = assessNewbornDay(profile, [], '2026-06-06', new Date('2026-06-06T01:00:00'));
+    expect(result?.onTrack).toBe(true);
+    expect(result?.checks.every((check) => check.expectedByNow === 0)).toBe(true);
+  });
+
+  it('judges a finished day against the full-day minimum', () => {
+    const events = Array.from({ length: 3 }, () => diaper('2026-06-06', 'wet'));
+    const result = assessNewbornDay(profile, events, '2026-06-06', new Date('2026-06-07T09:00:00'));
+    expect(result?.dayComplete).toBe(true);
+    expect(result?.onTrack).toBe(false);
+  });
+
+  it('measures the birth day from the birth time rather than midnight', () => {
+    const bornAtSix: BabyProfile = { ...profile, birthDate: '2026-06-01T18:00:00.000Z' };
+    const progressed = assessNewbornDay(bornAtSix, [], '2026-06-01', new Date('2026-06-01T19:00:00.000Z'));
+    expect(progressed?.dayProgress).toBeLessThan(0.2);
+    expect(progressed?.onTrack).toBe(true);
+  });
+});

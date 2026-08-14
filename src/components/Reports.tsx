@@ -18,23 +18,45 @@ interface MiniChartProps {
   label: string;
   stats: MetricStats;
   suffix?: string;
+  /** Sum across the charted span, shown next to the average. */
+  total: number;
+  /** True when bars average several days together, so a bar is not one day's total. */
+  sampled?: boolean;
   values: Array<{ label: string; value: number }>;
 }
 
+/** Above this many bars there is no room for a number over each one. */
+const BAR_LABEL_LIMIT = 7;
+
 function formatStat(value: number, suffix = '') {
-  const rounded = value >= 10 ? value.toFixed(1) : value.toFixed(2);
-  return `${Number(rounded).toLocaleString()}${suffix}`;
+  const rounded = Number.isInteger(value) ? value : Number(value >= 10 ? value.toFixed(1) : value.toFixed(2));
+  return `${rounded.toLocaleString()}${suffix}`;
 }
 
-function MiniChart({ label, stats, suffix = '', values }: MiniChartProps) {
+function formatBarValue(value: number) {
+  return `${value >= 10 ? Math.round(value) : Math.round(value * 10) / 10}`;
+}
+
+// Date keys are local days; anchor at midday so they never slip a day in parsing.
+function formatDayLabel(dateKey: string) {
+  return formatShortDate(`${dateKey}T12:00:00`);
+}
+
+function MiniChart({ label, stats, suffix = '', sampled = false, total, values }: MiniChartProps) {
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const max = Math.max(1, ...values.map((point) => point.value));
   const cols = Math.max(1, values.length);
+  const showBarLabels = values.length > 0 && values.length <= BAR_LABEL_LIMIT;
+  // Defaults to the most recent bar so a day total is always on screen.
+  const activePoint = values.length > 0 ? values[Math.min(activeIndex ?? values.length - 1, values.length - 1)] : null;
+  const dayWord = sampled ? 'avg/day from' : '';
 
   return (
     <article className="chart-card">
       <div className="chart-heading">
         <h3>{label}</h3>
         <strong>{formatStat(stats.average, suffix)} avg</strong>
+        <small>{formatStat(total, suffix)} total</small>
       </div>
       <div
         className="chart-bars"
@@ -44,13 +66,34 @@ function MiniChart({ label, stats, suffix = '', values }: MiniChartProps) {
         {values.length === 0 ? (
           <p className="empty-state compact">No data</p>
         ) : (
-          values.map((point) => (
-            <span className="chart-bar" key={`${label}-${point.label}`}>
-              <i style={{ height: `${Math.max(8, (point.value / max) * 100)}%` }} />
-            </span>
-          ))
+          values.map((point, index) => {
+            const readout = `${dayWord ? `${dayWord} ` : ''}${formatDayLabel(point.label)}: ${formatStat(point.value, suffix)}`;
+
+            return (
+              <button
+                type="button"
+                className={`chart-column${point === activePoint ? ' active' : ''}`}
+                key={`${label}-${point.label}`}
+                aria-label={readout}
+                title={readout}
+                onClick={() => setActiveIndex(index)}
+              >
+                {showBarLabels && <b className="chart-bar-value">{formatBarValue(point.value)}</b>}
+                <span className="chart-bar">
+                  <i style={{ height: `${Math.max(8, (point.value / max) * 100)}%` }} />
+                </span>
+                {showBarLabels && <em className="chart-bar-day">{new Date(`${point.label}T12:00:00`).getDate()}</em>}
+              </button>
+            );
+          })
         )}
       </div>
+      {activePoint && (
+        <p className="chart-readout">
+          <span>{dayWord ? `${dayWord} ${formatDayLabel(activePoint.label)}` : formatDayLabel(activePoint.label)}</span>
+          <strong>{formatStat(activePoint.value, suffix)}</strong>
+        </p>
+      )}
       <div className="chart-stats">
         <span>Min {formatStat(stats.min, suffix)}</span>
         <span>Max {formatStat(stats.max, suffix)}</span>
@@ -132,7 +175,7 @@ function periodLabel(points: FirstYearPoint[]): string {
   if (points.length === 0) return '';
   const first = points[0].dateKey;
   const last = points[points.length - 1].dateKey;
-  return first === last ? formatShortDate(first) : `${formatShortDate(first)} – ${formatShortDate(last)}`;
+  return first === last ? formatDayLabel(first) : `${formatDayLabel(first)} – ${formatDayLabel(last)}`;
 }
 
 export function Reports({ events, profile }: ReportsProps) {
@@ -150,10 +193,20 @@ export function Reports({ events, profile }: ReportsProps) {
   const recentSleepValues = recentPoints.map((p) => ({ label: p.dateKey, value: p.sleepMinutes / 60 }));
   const recentMilkValues = recentPoints.map((p) => ({ label: p.dateKey, value: p.bottleOunces + p.pumpOunces }));
 
+  const sumValues = (values: Array<{ value: number }>) => values.reduce((sum, point) => sum + point.value, 0);
+  const recentTotals = {
+    diapers: sumValues(recentDiaperValues),
+    feeds: sumValues(recentFeedValues),
+    milkOz: sumValues(recentMilkValues),
+    sleepHours: sumValues(recentSleepValues)
+  };
+
   // Period-scoped points and stats
   const periodCount = period === 'week' ? 7 : period === 'month' ? 30 : analytics.points.length;
   const periodPoints = analytics.points.slice(-Math.min(periodCount, analytics.points.length));
   const maxBars = period === 'week' ? 7 : period === 'month' ? 30 : 52;
+  // Above maxBars the bars average groups of days, so they stop being day totals.
+  const sampled = periodPoints.length > maxBars;
 
   const periodFeedValues = samplePoints(periodPoints.map((p) => ({ label: p.dateKey, value: p.feeds })), maxBars);
   const periodDiaperValues = samplePoints(periodPoints.map((p) => ({ label: p.dateKey, value: p.diapers })), maxBars);
@@ -208,10 +261,10 @@ export function Reports({ events, profile }: ReportsProps) {
       </section>
 
       <section className="chart-grid" aria-label="Recent trends">
-        <MiniChart label="Feeds/day" stats={analytics.stats.feeds} values={recentFeedValues} />
-        <MiniChart label="Sleep/day" stats={analytics.stats.sleepHours} suffix="h" values={recentSleepValues} />
-        <MiniChart label="Diapers/day" stats={analytics.stats.diapers} values={recentDiaperValues} />
-        <MiniChart label="Milk/day" stats={analytics.stats.milkOunces} suffix=" oz" values={recentMilkValues} />
+        <MiniChart label="Feeds/day" stats={analytics.stats.feeds} total={recentTotals.feeds} values={recentFeedValues} />
+        <MiniChart label="Sleep/day" stats={analytics.stats.sleepHours} suffix="h" total={recentTotals.sleepHours} values={recentSleepValues} />
+        <MiniChart label="Diapers/day" stats={analytics.stats.diapers} total={recentTotals.diapers} values={recentDiaperValues} />
+        <MiniChart label="Milk/day" stats={analytics.stats.milkOunces} suffix=" oz" total={recentTotals.milkOz} values={recentMilkValues} />
       </section>
 
       <GrowthStandards events={events} profile={profile} />
@@ -353,10 +406,10 @@ export function Reports({ events, profile }: ReportsProps) {
           </section>
 
           <section className="chart-grid" aria-label={`${period} charts`}>
-            <MiniChart label="Feeds/day" stats={periodStats.feeds} values={periodFeedValues} />
-            <MiniChart label="Sleep/day" stats={periodStats.sleepHours} suffix="h" values={periodSleepValues} />
-            <MiniChart label="Diapers/day" stats={periodStats.diapers} values={periodDiaperValues} />
-            <MiniChart label="Milk/day" stats={periodStats.milkOz} suffix=" oz" values={periodMilkValues} />
+            <MiniChart label="Feeds/day" sampled={sampled} stats={periodStats.feeds} total={periodTotals.feeds} values={periodFeedValues} />
+            <MiniChart label="Sleep/day" sampled={sampled} stats={periodStats.sleepHours} suffix="h" total={periodTotals.sleepHours} values={periodSleepValues} />
+            <MiniChart label="Diapers/day" sampled={sampled} stats={periodStats.diapers} total={periodTotals.diapers} values={periodDiaperValues} />
+            <MiniChart label="Milk/day" sampled={sampled} stats={periodStats.milkOz} suffix=" oz" total={periodTotals.milkOz} values={periodMilkValues} />
           </section>
         </>
       )}
