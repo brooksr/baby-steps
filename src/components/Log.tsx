@@ -13,7 +13,7 @@ const FILTER_OPTIONS: Array<{ id: FilterGroup; label: string; types: CareEventTy
   { id: 'sleep', label: 'Sleep', types: ['sleep'] },
   { id: 'health', label: 'Health', types: ['medication', 'temperature', 'vaccine'] },
   { id: 'growth', label: 'Growth', types: ['birth', 'growth', 'milestone', 'tummytime'] },
-  { id: 'other', label: 'Other', types: ['appointment', 'mood', 'note'] }
+  { id: 'other', label: 'Other', types: ['appointment', 'bath', 'mood', 'note'] }
 ];
 
 function searchText(event: CareEvent): string {

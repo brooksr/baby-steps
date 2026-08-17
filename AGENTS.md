@@ -108,6 +108,13 @@ Care view adds/deletes the corresponding event via `App.handleToggleRef`.
 Also: the shared Photos album moved from a Dashboard card to a persistent
 **app header link** (`App.tsx` header + `domain/media.ts`).
 
+### Outside the staged plan
+- **Bath** — a `bath` event carrying nothing but time and notes, so it needs no
+  new Sheets column (it reads and writes the base row, like `sleep`). Dashboard
+  has a quick action plus a "Last bath" status card. Baths are counted in days,
+  not hours, so it uses `formatDaysAgo` (calendar-day diff — "Yesterday", not
+  "14h ago") rather than `formatAgo`.
+
 ## V2 — deferred
 
 V1 is feature-complete and paused. The remaining roadmap items are deferred to a

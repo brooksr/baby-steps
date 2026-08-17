@@ -592,6 +592,12 @@ button {
   font-weight: 700;
 }
 
+/* Last bath is the odd card out on the two-up mobile grid, so it runs full
+   width rather than leaving a hole beside it. */
+.status-grid .metric-card:nth-child(3) {
+  grid-column: 1 / -1;
+}
+
 .status-list {
   display: grid;
   gap: 10px;
@@ -1309,9 +1315,13 @@ textarea {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
-  /* Two cards left after last feed/diaper moved into the hero card. */
+  /* Sleep, milk out, and last bath — last feed/diaper live in the hero card. */
   .status-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .status-grid .metric-card:nth-child(3) {
+    grid-column: auto;
   }
 
   .report-grid {

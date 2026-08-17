@@ -1,5 +1,5 @@
-import { Bed, Calendar, Clock3, Droplets, Dumbbell, FileText, Heart, Milk, Navigation, Pill, Plus, Ruler, Smile, Thermometer, TriangleAlert, Wind } from 'lucide-react';
-import { formatAgo, formatClock, formatDuration, getAgeDays, getDaysUntilDue, getDueDateStatus, isSameLocalDate } from '../domain/dates';
+import { Bath, Bed, Calendar, Clock3, Droplets, Dumbbell, FileText, Heart, Milk, Navigation, Pill, Plus, Ruler, Smile, Thermometer, TriangleAlert, Wind } from 'lucide-react';
+import { formatAgo, formatClock, formatDaysAgo, formatDuration, formatShortDate, getAgeDays, getDaysUntilDue, getDueDateStatus, isSameLocalDate } from '../domain/dates';
 import { classifyTemperatureC } from '../domain/reference';
 import { getActiveSleep, getDailySummary, getEventDurationMinutes, getLastEvent, getUpcomingAppointments, getUpcomingMedicationEvents } from '../domain/summary';
 import { HOSPITAL } from '../domain/medicalInfo';
@@ -29,6 +29,7 @@ const actions = [
   { icon: Thermometer, label: 'Temp', type: 'temperature' },
   { icon: Dumbbell, label: 'Tummy', type: 'tummytime' },
   { icon: Smile, label: 'Mood', type: 'mood' },
+  { icon: Bath, label: 'Bath', type: 'bath' },
   { icon: FileText, label: 'Note', type: 'note' }
 ] satisfies Array<{ icon: typeof Plus; label: string; type: CareEventType }>;
 
@@ -55,6 +56,7 @@ export function Dashboard({ activeTimers, events, profile, todayKey, onAdd }: Da
           : 'either'
       : null;
   const lastDiaper = getLastEvent(events, (event) => event.type === 'diaper');
+  const lastBath = getLastEvent(events, (event) => event.type === 'bath');
   const activeSleep = getActiveSleep(events);
   const upcomingMeds = getUpcomingMedicationEvents(events).slice(0, 3);
   const upcomingAppointments = getUpcomingAppointments(events).slice(0, 3);
@@ -142,6 +144,11 @@ export function Dashboard({ activeTimers, events, profile, todayKey, onAdd }: Da
         <article className="metric-card">
           <span>Milk out</span>
           <strong>{summary.pumpOunces.toFixed(1)} oz</strong>
+        </article>
+        <article className="metric-card">
+          <span>Last bath</span>
+          <strong>{lastBath ? formatDaysAgo(lastBath.startedAt) : 'None'}</strong>
+          <small>{lastBath ? `${formatShortDate(lastBath.startedAt)} · ${formatClock(lastBath.startedAt)}` : 'Nothing logged yet'}</small>
         </article>
       </section>
 

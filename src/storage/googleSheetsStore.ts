@@ -191,6 +191,8 @@ function eventFromRow(row: unknown[]): CareEvent | null {
         kind: (optionalString(record.kind) ?? 'wet') as 'wet' | 'dirty' | 'both',
         type
       };
+    // Neither carries anything beyond the base row.
+    case 'bath':
     case 'sleep':
       return {
         ...base,
@@ -352,6 +354,7 @@ function eventToRow(event: CareEvent) {
     case 'vaccine':
       values.refId = event.refId;
       break;
+    case 'bath':
     case 'sleep':
       break;
   }

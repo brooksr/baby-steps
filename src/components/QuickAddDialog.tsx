@@ -257,6 +257,14 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
           startedAt: startedAtIso
         };
         break;
+      case 'bath':
+        // Time and notes only — there is nothing else worth typing at 7pm.
+        payload = {
+          type: 'bath',
+          notes: trimmedNotes,
+          startedAt: startedAtIso
+        };
+        break;
       case 'sleep':
         payload = {
           type: 'sleep',

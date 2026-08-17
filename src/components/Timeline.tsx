@@ -1,4 +1,4 @@
-import { Award, Bed, Calendar, Droplets, Dumbbell, FileText, Heart, Milk, Pencil, Pill, Ruler, Smile, Syringe, Thermometer, Trash2, Wind } from 'lucide-react';
+import { Award, Bath, Bed, Calendar, Droplets, Dumbbell, FileText, Heart, Milk, Pencil, Pill, Ruler, Smile, Syringe, Thermometer, Trash2, Wind } from 'lucide-react';
 import { formatClock, formatDuration, formatShortDate } from '../domain/dates';
 import { getMilestoneById, getMoodScale, getVaccinationById } from '../domain/reference';
 import { getEventDurationMinutes } from '../domain/summary';
@@ -14,6 +14,7 @@ interface TimelineProps {
 
 const icons = {
   appointment: Calendar,
+  bath: Bath,
   birth: Heart,
   diaper: Wind,
   feed: Milk,
@@ -31,6 +32,8 @@ const icons = {
 
 function eventDetail(event: CareEvent) {
   switch (event.type) {
+    case 'bath':
+      return 'Bath time';
     case 'feed': {
       const parts = [
         event.method === 'nursing' ? `nursing${event.side ? ` · ${event.side} side` : ''}` : `bottle${event.contents ? ` · ${event.contents}` : ''}`,

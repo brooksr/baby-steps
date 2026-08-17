@@ -79,6 +79,23 @@ export function formatAgo(iso: string, now = new Date()) {
   return minutes < 1 ? 'just now' : `${formatDuration(minutes)} ago`;
 }
 
+/**
+ * "How long ago" for things counted in days rather than hours, like a bath.
+ * Compares calendar days, so a bath last night reads "Yesterday" rather than
+ * the "14h ago" that `formatAgo` would give it.
+ */
+export function formatDaysAgo(iso: string, now = new Date()) {
+  const then = new Date(`${getLocalDateKey(iso)}T12:00:00`).getTime();
+  const today = new Date(`${getLocalDateKey(now)}T12:00:00`).getTime();
+  const days = Math.round((today - then) / DAY);
+
+  if (days <= 0) {
+    return 'Today';
+  }
+
+  return days === 1 ? 'Yesterday' : `${days} days ago`;
+}
+
 export function formatDuration(minutes: number) {
   if (minutes < 60) {
     return `${minutes}m`;

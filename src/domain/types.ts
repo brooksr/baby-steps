@@ -114,6 +114,11 @@ export interface SleepEvent extends BaseCareEvent {
   type: 'sleep';
 }
 
+/** A bath. Nothing to measure — the time it happened is the whole point. */
+export interface BathEvent extends BaseCareEvent {
+  type: 'bath';
+}
+
 export interface MedicationEvent extends BaseCareEvent {
   type: 'medication';
   medicationName: string;
@@ -179,6 +184,7 @@ export interface VaccineEvent extends BaseCareEvent {
 }
 
 export type CareEvent =
+  | BathEvent
   | BirthEvent
   | FeedEvent
   | PumpEvent
@@ -216,6 +222,7 @@ export type CareEventType = CareEvent['type'];
 
 export const careEventLabels: Record<CareEventType, string> = {
   appointment: 'Appointment',
+  bath: 'Bath',
   birth: 'Birth',
   diaper: 'Diaper',
   feed: 'Feeding',
