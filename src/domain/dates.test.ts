@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDaysAgo } from './dates';
+import { createDefaultBabyProfile, formatAgeSummary, formatDaysAgo } from './dates';
 
 describe('formatDaysAgo', () => {
   const now = new Date('2026-09-10T09:00:00');
@@ -19,5 +19,34 @@ describe('formatDaysAgo', () => {
 
   it('treats a future timestamp as today', () => {
     expect(formatDaysAgo('2026-09-11T08:00:00', now)).toBe('Today');
+  });
+});
+
+describe('formatAgeSummary', () => {
+  const profile = { ...createDefaultBabyProfile(new Date('2026-06-19T12:00:00')), birthDate: '2026-09-02' };
+
+  it('counts the first fortnight in days', () => {
+    expect(formatAgeSummary(profile, new Date('2026-09-02T18:00:00'))).toBe('Newborn');
+    expect(formatAgeSummary(profile, new Date('2026-09-03T13:00:00'))).toBe('1 day');
+    expect(formatAgeSummary(profile, new Date('2026-09-15T13:00:00'))).toBe('13 days');
+  });
+
+  it('switches to weeks at a fortnight', () => {
+    expect(formatAgeSummary(profile, new Date('2026-09-16T13:00:00'))).toBe('2 weeks');
+    expect(formatAgeSummary(profile, new Date('2026-11-30T13:00:00'))).toBe('12 weeks');
+  });
+
+  it('switches to whole calendar months at three months', () => {
+    expect(formatAgeSummary(profile, new Date('2026-12-02T13:00:00'))).toBe('3 months');
+    expect(formatAgeSummary(profile, new Date('2027-08-02T13:00:00'))).toBe('11 months');
+  });
+
+  it('switches to years after two', () => {
+    expect(formatAgeSummary(profile, new Date('2028-09-02T13:00:00'))).toBe('2 years');
+    expect(formatAgeSummary(profile, new Date('2028-12-02T13:00:00'))).toBe('2y 3m');
+  });
+
+  it('says nothing before birth', () => {
+    expect(formatAgeSummary(createDefaultBabyProfile(new Date('2026-06-19T12:00:00')))).toBe('');
   });
 });

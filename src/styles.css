@@ -407,6 +407,13 @@ button {
   line-height: 0.82;
 }
 
+/* After birth the headline is words ("2 weeks"), not a one-to-three digit
+   countdown, so it drops to a size those actually fit on. */
+.profile-band h1.age-headline {
+  font-size: clamp(2.6rem, 13vw, 4.5rem);
+  line-height: 1;
+}
+
 .profile-band p {
   margin: 6px 0 0;
 }
@@ -675,6 +682,13 @@ button {
 .status-row.urgent {
   border-color: #ffc4ba;
   background: #fff7f5;
+}
+
+/* Cadence nudges sit between plain and urgent: a lavender edge that reads as a
+   reminder rather than an alarm. Both tokens are theme-aware, so it follows. */
+.status-row.gentle {
+  border-color: var(--accent);
+  background: var(--panel-blue);
 }
 
 .status-row div {

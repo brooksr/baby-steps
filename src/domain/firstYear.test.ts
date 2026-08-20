@@ -82,4 +82,24 @@ describe('first year analytics', () => {
 
     expect(day).toMatchObject({ diapers: 4, dirtyDiapers: 2, wetDiapers: 2 });
   });
+
+  it('averages wet and dirty over the days that logged any diaper', () => {
+    const profile = {
+      ...createDefaultBabyProfile(new Date('2026-06-20T12:00:00.000Z')),
+      birthDate: '2026-09-02T06:30:00.000Z'
+    };
+    const events: CareEvent[] = [
+      { ...base, id: 'd-1', kind: 'both', startedAt: '2026-09-02T09:00:00.000Z', type: 'diaper' },
+      { ...base, id: 'd-2', kind: 'dirty', startedAt: '2026-09-02T15:00:00.000Z', type: 'diaper' },
+      // A day with nothing dirty still counts against the dirty average.
+      { ...base, id: 'd-3', kind: 'wet', startedAt: '2026-09-03T09:00:00.000Z', type: 'diaper' },
+      { ...base, id: 'd-4', kind: 'wet', startedAt: '2026-09-03T12:00:00.000Z', type: 'diaper' }
+    ];
+
+    const { stats } = getFirstYearAnalytics(profile, events, new Date('2026-09-04T12:00:00.000Z'));
+
+    expect(stats.diapers).toMatchObject({ average: 2.5, max: 3, min: 2 });
+    expect(stats.wetDiapers).toMatchObject({ average: 1.5, max: 2, min: 1 });
+    expect(stats.dirtyDiapers).toMatchObject({ average: 1, max: 2, min: 0 });
+  });
 });

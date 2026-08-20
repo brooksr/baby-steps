@@ -1,5 +1,7 @@
 import { Bath, Bed, Calendar, Clock3, Droplets, Dumbbell, FileText, Heart, Milk, Navigation, Pill, Plus, Ruler, Smile, Thermometer, TriangleAlert, Wind } from 'lucide-react';
-import { formatAgo, formatClock, formatDaysAgo, formatDuration, formatShortDate, getAgeDays, getDaysUntilDue, getDueDateStatus, isSameLocalDate } from '../domain/dates';
+import { getCadenceReminders } from '../domain/cadence';
+import { formatAgeSummary, formatAgo, formatClock, formatDaysAgo, formatDuration, formatShortDate, getAgeDays, getDaysUntilDue, getDueDateStatus, isSameLocalDate } from '../domain/dates';
+import { predictNextDiaper } from '../domain/diapers';
 import { classifyTemperatureC } from '../domain/reference';
 import { getActiveSleep, getDailySummary, getEventDurationMinutes, getLastEvent, getUpcomingAppointments, getUpcomingMedicationEvents } from '../domain/summary';
 import { HOSPITAL } from '../domain/medicalInfo';
@@ -56,7 +58,18 @@ export function Dashboard({ activeTimers, events, profile, todayKey, onAdd }: Da
           : 'either'
       : null;
   const lastDiaper = getLastEvent(events, (event) => event.type === 'diaper');
+  const nextDiaper = predictNextDiaper(events);
   const lastBath = getLastEvent(events, (event) => event.type === 'bath');
+  const cadenceReminders = getCadenceReminders(events, { feedInProgress: Boolean(activeTimers.feed) });
+  // Under a fortnight the headline is already in days, so the exact age below it
+  // would only say the same thing twice.
+  const ageDetail = isBorn
+    ? ageDays >= 14
+      ? getDueDateStatus(profile)
+      : ''
+    : daysUntilDue === 1
+      ? 'day until due date'
+      : 'days until due date';
   const activeSleep = getActiveSleep(events);
   const upcomingMeds = getUpcomingMedicationEvents(events).slice(0, 3);
   const upcomingAppointments = getUpcomingAppointments(events).slice(0, 3);
@@ -72,8 +85,8 @@ export function Dashboard({ activeTimers, events, profile, todayKey, onAdd }: Da
         <div className="profile-band-top">
           <div>
             <p className="eyebrow">{profile.name}</p>
-            <h1>{isBorn ? ageDays : daysUntilDue}</h1>
-            <p>{isBorn ? getDueDateStatus(profile) : daysUntilDue === 1 ? 'day until due date' : 'days until due date'}</p>
+            <h1 className={isBorn ? 'age-headline' : undefined}>{isBorn ? formatAgeSummary(profile) : daysUntilDue}</h1>
+            {ageDetail && <p>{ageDetail}</p>}
           </div>
           <div className="hero-side">
             <div className="profile-badge">
@@ -160,6 +173,40 @@ export function Dashboard({ activeTimers, events, profile, todayKey, onAdd }: Da
               <strong>Theo has a fever — {formatTemperature(lastTemperature.celsius)}</strong>
               <span>
                 {ageDays < 90 ? 'Under 3 months, a fever is worth a call to your doctor now.' : 'Keep Theo comfortable and hydrated; call your doctor if it climbs or persists.'} · {formatClock(lastTemperature.startedAt)}
+              </span>
+            </div>
+          </article>
+        </section>
+      )}
+
+      {cadenceReminders.length > 0 && (
+        <section className="status-list" aria-label="Gentle reminders">
+          {cadenceReminders.map((reminder) => {
+            const Icon = reminder.kind === 'feed' ? Milk : Bath;
+
+            return (
+              <article className="status-row gentle" key={reminder.kind}>
+                <Icon aria-hidden="true" />
+                <div>
+                  <strong>{reminder.title}</strong>
+                  <span>{reminder.message}</span>
+                </div>
+              </article>
+            );
+          })}
+        </section>
+      )}
+
+      {nextDiaper && (
+        <section className="status-list" aria-label="Next diaper">
+          <article className="status-row">
+            <Wind aria-hidden="true" />
+            <div>
+              <strong>
+                Next diaper {nextDiaper.minutesAway > 0 ? `in ${formatDuration(nextDiaper.minutesAway)}` : 'due now'} · likely {nextDiaper.likelyKind}
+              </strong>
+              <span>
+                {formatClock(nextDiaper.windowStartAt)}–{formatClock(nextDiaper.windowEndAt)} · {nextDiaper.basis} · {nextDiaper.confidence} confidence
               </span>
             </div>
           </article>

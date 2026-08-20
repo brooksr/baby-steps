@@ -31,6 +31,8 @@ change done.
     sheet and in IndexedDB, so both stores migrate on read rather than rewriting
     history. Retire a variant the same way — never mutate stored rows in place.
   - `domain/dates.ts`, `domain/summary.ts`, `domain/firstYear.ts` — derived stats.
+  - `domain/diapers.ts` — feed → diaper lags and the next-change prediction.
+  - `domain/cadence.ts` — gentle feed/bath rhythm nudges.
   - `domain/growth/` — WHO standards data + assessment logic.
   - `domain/csv.ts`, `domain/reference.ts` — CSV parsing + typed reference-data accessors.
   - `domain/download.ts` — client-side file download helper.
@@ -114,6 +116,34 @@ Also: the shared Photos album moved from a Dashboard card to a persistent
   has a quick action plus a "Last bath" status card. Baths are counted in days,
   not hours, so it uses `formatDaysAgo` (calendar-day diff — "Yesterday", not
   "14h ago") rather than `formatAgo`.
+- **Diaper rhythm** (`domain/diapers.ts`) — no new event type, all derived from
+  the `diaper` and `feed` events already logged.
+  - `getFeedToDiaperLags()` — mean wait from a feed to the next wet / next dirty
+    diaper, dropping pairs more than 6h apart as unrelated. Shown as two Reports
+    insight cards.
+  - `predictNextDiaper()` — a recency-weighted average of recent gaps between
+    changes (weights halve every 3 days, so a changing routine shows up fast),
+    projected off the last change and pulled toward the usual feed → wet lag when
+    a feed was logged since. Interval spread becomes the window and the
+    confidence; it returns `null` under 4 intervals rather than guessing. Shown
+    as a Dashboard status row. Informational only — see Guardrails.
+  - Wet/dirty per-day averages ride along in `firstYearAnalytics.stats`, averaged
+    over the days that logged any diaper so the splits add up to the total.
+- **Cadence nudges** (`domain/cadence.ts`) — `getCadenceReminders()` flags a feed
+  past 3h (`FEED_CADENCE_HOURS` 2–3, day and night) and a bath past 3 calendar
+  days (`BATH_CADENCE_DAYS` 2–3). Rendered as `.status-row.gentle` rows on the
+  Dashboard — a lavender edge, deliberately not the red `.urgent` used by the
+  fever alert. Three rules keep them gentle: nothing fires until the *top* of the
+  range has passed, nothing fires while a feed timer is running, and nothing
+  fires with no earlier event to measure from (an empty log means unknown, not
+  overdue). Copy suggests offering a feed or a bath and points at the
+  pediatrician — never more than that.
+- **Hero age** — after birth the profile band headlines `formatAgeSummary()`
+  ("2 weeks"): days for the first fortnight, then weeks, then calendar months,
+  then years. The exact "N days old" line sits under it only from day 14, since
+  before that the headline already says days. Pre-birth the band still shows the
+  big due-date countdown number, which is what `.profile-band h1` is sized for —
+  hence the smaller `.age-headline` variant for words.
 
 ## V2 — deferred
 

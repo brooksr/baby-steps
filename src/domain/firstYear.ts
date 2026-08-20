@@ -32,6 +32,10 @@ export interface FirstYearAnalytics {
   stats: {
     feeds: MetricStats;
     diapers: MetricStats;
+    /** Wet and dirty are averaged over days with any diaper logged, so the two
+     *  splits add up to the `diapers` average rather than each counting its own days. */
+    wetDiapers: MetricStats;
+    dirtyDiapers: MetricStats;
     sleepHours: MetricStats;
     milkOunces: MetricStats;
     weightOz: MetricStats;
@@ -142,13 +146,15 @@ export function getFirstYearAnalytics(profile: BabyProfile, events: CareEvent[],
     progressPercent: Math.round((daysElapsed / FIRST_YEAR_DAYS) * 100),
     stats: {
       diapers: getMetricStats(valuesFor(points, (point) => (point.diapers > 0 ? point.diapers : undefined))),
+      dirtyDiapers: getMetricStats(valuesFor(points, (point) => (point.diapers > 0 ? point.dirtyDiapers : undefined))),
       feeds: getMetricStats(valuesFor(points, (point) => (point.feeds > 0 ? point.feeds : undefined))),
       milkOunces: getMetricStats(valuesFor(points, (point) => {
         const ounces = point.bottleOunces + point.pumpOunces;
         return ounces > 0 ? ounces : undefined;
       })),
       sleepHours: getMetricStats(valuesFor(points, (point) => (point.sleepMinutes > 0 ? point.sleepMinutes / 60 : undefined))),
-      weightOz: getMetricStats(valuesFor(points, (point) => point.weightOz))
+      weightOz: getMetricStats(valuesFor(points, (point) => point.weightOz)),
+      wetDiapers: getMetricStats(valuesFor(points, (point) => (point.diapers > 0 ? point.wetDiapers : undefined)))
     },
     totalLogs: firstYearEvents.length
   };

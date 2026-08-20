@@ -84,10 +84,16 @@ export function formatAgo(iso: string, now = new Date()) {
  * Compares calendar days, so a bath last night reads "Yesterday" rather than
  * the "14h ago" that `formatAgo` would give it.
  */
-export function formatDaysAgo(iso: string, now = new Date()) {
+/** Calendar days between two moments, for the things counted in days not hours. */
+export function getDaysAgo(iso: string, now = new Date()) {
   const then = new Date(`${getLocalDateKey(iso)}T12:00:00`).getTime();
   const today = new Date(`${getLocalDateKey(now)}T12:00:00`).getTime();
-  const days = Math.round((today - then) / DAY);
+
+  return Math.round((today - then) / DAY);
+}
+
+export function formatDaysAgo(iso: string, now = new Date()) {
+  const days = getDaysAgo(iso, now);
 
   if (days <= 0) {
     return 'Today';
@@ -154,4 +160,49 @@ export function getAgeDays(profile: BabyProfile, now = new Date()) {
 
   const birthAtNoon = new Date(`${getLocalDateKey(profile.birthDate)}T12:00:00`);
   return Math.max(0, Math.floor((now.getTime() - birthAtNoon.getTime()) / DAY));
+}
+
+/** Whole calendar months since birth — the 2nd of each month, not 30-day blocks. */
+function getAgeMonths(birthDate: string, now: Date) {
+  const birth = new Date(`${getLocalDateKey(birthDate)}T12:00:00`);
+  const months = (now.getFullYear() - birth.getFullYear()) * 12 + (now.getMonth() - birth.getMonth());
+
+  return Math.max(0, now.getDate() < birth.getDate() ? months - 1 : months);
+}
+
+/**
+ * Age in the unit people actually say out loud: days for the first fortnight,
+ * then weeks, then months, then years. 14 days reads "2 weeks", not "14 days".
+ */
+export function formatAgeSummary(profile: BabyProfile, now = new Date()) {
+  if (!profile.birthDate) {
+    return '';
+  }
+
+  const days = getAgeDays(profile, now);
+
+  if (days === 0) {
+    return 'Newborn';
+  }
+
+  if (days < 14) {
+    return days === 1 ? '1 day' : `${days} days`;
+  }
+
+  const weeks = Math.floor(days / 7);
+
+  if (weeks < 13) {
+    return `${weeks} weeks`;
+  }
+
+  const months = getAgeMonths(profile.birthDate, now);
+
+  if (months < 24) {
+    return `${months} months`;
+  }
+
+  const years = Math.floor(months / 12);
+  const remainingMonths = months % 12;
+
+  return remainingMonths === 0 ? `${years} years` : `${years}y ${remainingMonths}m`;
 }

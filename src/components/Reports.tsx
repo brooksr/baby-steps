@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { formatDuration, formatShortDate, getLocalDateKey, isSameLocalDate, minutesBetween } from '../domain/dates';
+import { getFeedToDiaperLags } from '../domain/diapers';
 import { getFirstYearAnalytics, type FirstYearPoint, type MetricStats } from '../domain/firstYear';
 import { getDailySummary } from '../domain/summary';
 import type { BabyProfile, CareEvent, FeedEvent } from '../domain/types';
@@ -29,6 +30,8 @@ interface MiniChartProps {
   total: number;
   /** Names for the stacked `parts`, in the same order. Drives the legend. */
   partLabels?: string[];
+  /** Per-day averages per part, shown in the legend beside the headline average. */
+  partAverages?: number[];
   /** Totals per part across the charted span, shown in the legend. */
   partTotals?: number[];
   /** True when bars average several days together, so a bar is not one day's total. */
@@ -61,7 +64,7 @@ function formatDayLabel(dateKey: string) {
   return formatShortDate(`${dateKey}T12:00:00`);
 }
 
-function MiniChart({ label, stats, suffix = '', partLabels, partTotals, sampled = false, total, values }: MiniChartProps) {
+function MiniChart({ label, stats, suffix = '', partAverages, partLabels, partTotals, sampled = false, total, values }: MiniChartProps) {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const max = Math.max(1, ...values.map((point) => point.value));
   const cols = Math.max(1, values.length);
@@ -133,7 +136,9 @@ function MiniChart({ label, stats, suffix = '', partLabels, partTotals, sampled 
         <div className="chart-legend">
           {partLabels.map((partLabel, index) => (
             <span className={`chart-legend-item chart-bar-part-${index}`} key={partLabel}>
-              {partLabel} {formatStat(partTotals[index], suffix)}
+              {partLabel}{' '}
+              {partAverages ? `${formatStat(partAverages[index], suffix)} avg · ` : ''}
+              {formatStat(partTotals[index], suffix)} total
             </span>
           ))}
         </div>
@@ -175,6 +180,23 @@ function samplePoints(values: ChartPoint[], maxBars: number): ChartPoint[] {
       value: average((p) => p.value)
     };
   });
+}
+
+/**
+ * Wet and dirty per day, averaged over the days that logged any diaper — the
+ * same denominator the total uses, so the two splits add up to it.
+ */
+function diaperSplitAverages(points: FirstYearPoint[]) {
+  const days = points.filter((point) => point.diapers > 0).length;
+
+  if (days === 0) {
+    return { dirty: 0, wet: 0 };
+  }
+
+  return {
+    dirty: points.reduce((sum, point) => sum + point.dirtyDiapers, 0) / days,
+    wet: points.reduce((sum, point) => sum + point.wetDiapers, 0) / days
+  };
 }
 
 /** Diaper bars stack wet under dirty, so the split is readable per day. */
@@ -271,6 +293,8 @@ export function Reports({ events, profile }: ReportsProps) {
   const periodSleepValues = samplePoints(periodPoints.map((p) => ({ label: p.dateKey, value: p.sleepMinutes / 60 })), maxBars);
   const periodMilkValues = samplePoints(periodPoints.map((p) => ({ label: p.dateKey, value: p.bottleOunces + p.pumpOunces })), maxBars);
 
+  const periodDiaperAverages = diaperSplitAverages(periodPoints);
+
   const periodStats = {
     feeds: computeStats(periodPoints.map((p) => p.feeds)),
     diapers: computeStats(periodPoints.map((p) => p.diapers)),
@@ -299,6 +323,7 @@ export function Reports({ events, profile }: ReportsProps) {
 
   const longestSleep = longestSleepMinutes(events); // all-time best
   const feedGap = avgFeedGapMinutes(periodRawEvents);
+  const diaperLags = getFeedToDiaperLags(periodRawEvents);
   const balance = nursingBalance(periodRawEvents);
   const weightRate = weightGainOzPerWeek(events);
 
@@ -325,6 +350,7 @@ export function Reports({ events, profile }: ReportsProps) {
         <MiniChart label="Sleep/day" stats={analytics.stats.sleepHours} suffix="h" total={recentTotals.sleepHours} values={recentSleepValues} />
         <MiniChart
           label="Diapers/day"
+          partAverages={[analytics.stats.wetDiapers.average, analytics.stats.dirtyDiapers.average]}
           partLabels={DIAPER_PART_LABELS}
           partTotals={[recentTotals.wet, recentTotals.dirty]}
           stats={analytics.stats.diapers}
@@ -346,6 +372,16 @@ export function Reports({ events, profile }: ReportsProps) {
           <span>Avg feed gap</span>
           <strong>{feedGap > 0 ? formatDuration(Math.round(feedGap)) : '—'}</strong>
           <small>{period === 'day' ? 'today' : `this ${period}`}</small>
+        </article>
+        <article className="metric-card">
+          <span>Feed → wet</span>
+          <strong>{diaperLags.wet.averageMinutes !== null ? formatDuration(Math.round(diaperLags.wet.averageMinutes)) : '—'}</strong>
+          <small>{diaperLags.wet.samples > 0 ? `${diaperLags.wet.samples} feeds` : 'no pairs yet'}</small>
+        </article>
+        <article className="metric-card">
+          <span>Feed → dirty</span>
+          <strong>{diaperLags.dirty.averageMinutes !== null ? formatDuration(Math.round(diaperLags.dirty.averageMinutes)) : '—'}</strong>
+          <small>{diaperLags.dirty.samples > 0 ? `${diaperLags.dirty.samples} feeds` : 'no pairs yet'}</small>
         </article>
         <article className="metric-card">
           <span>Nursing L/R</span>
@@ -458,7 +494,8 @@ export function Reports({ events, profile }: ReportsProps) {
             <article className="metric-card">
               <span>Diapers/day</span>
               <strong>{formatStat(periodStats.diapers.average)}</strong>
-              <small>{periodTotals.wet} wet · {periodTotals.dirty} dirty</small>
+              <small>{formatStat(periodDiaperAverages.wet)} wet · {formatStat(periodDiaperAverages.dirty)} dirty</small>
+              <small>{periodTotals.diapers} total</small>
             </article>
             <article className="metric-card">
               <span>Sleep/day</span>
@@ -477,6 +514,7 @@ export function Reports({ events, profile }: ReportsProps) {
             <MiniChart label="Sleep/day" sampled={sampled} stats={periodStats.sleepHours} suffix="h" total={periodTotals.sleepHours} values={periodSleepValues} />
             <MiniChart
               label="Diapers/day"
+              partAverages={[periodDiaperAverages.wet, periodDiaperAverages.dirty]}
               partLabels={DIAPER_PART_LABELS}
               partTotals={[periodTotals.wet, periodTotals.dirty]}
               sampled={sampled}
