@@ -57,6 +57,20 @@ change done.
   `styles.css` using CSS variables (`--font-body` Quicksand, `--font-display`
   Fraunces). Keep edits matching the surrounding idiom.
 
+### Sheets values: RAW in, coerce out
+
+Writes use `valueInputOption=RAW`. **Do not change this to `USER_ENTERED`.**
+USER_ENTERED lets Sheets *interpret* what we send: a bare `2026-08-15` becomes a
+date cell, and reading it back with `UNFORMATTED_VALUE` returns a serial number
+instead of the string — which is exactly how the profile birth date stopped
+surviving a round trip (and `dueDate` hid the same bug behind its default).
+RAW also keeps a note beginning with `=` as text rather than a formula.
+
+Rows written before the switch still hold serials, so `optionalDateString()`
+converts a numeric cell back to a date string on read (Sheets epoch is
+1899-12-30). Every date-ish column goes through it — never plain
+`optionalString` — and we migrate on read rather than rewriting history.
+
 ### Adding a new profile field
 
 `profileHeaders` in `googleSheetsStore.ts` is positional: append the new key at

@@ -16,6 +16,19 @@ const EVENTS_BODY_RANGE = 'Events!A2:AE1000';
 const EVENTS_APPEND_RANGE = 'Events!A:AE';
 const EVENTS_SHEET_ID = 0;
 
+/**
+ * RAW, not USER_ENTERED. USER_ENTERED lets Sheets *interpret* what we send:
+ * a bare `2026-08-15` becomes a date cell, and reading it back with
+ * UNFORMATTED_VALUE returns a serial number rather than the string we wrote —
+ * which is how the birth date stopped surviving a round trip. RAW also means a
+ * note that starts with `=` stays text instead of becoming a formula.
+ */
+const VALUE_INPUT_OPTION = 'RAW';
+
+/** Sheets counts days from 1899-12-30, so serial 0 is that date. */
+const SHEETS_EPOCH_MS = Date.UTC(1899, 11, 30);
+const MS_PER_DAY = 86_400_000;
+
 const eventHeaders = [
   'id',
   'babyId',
@@ -76,6 +89,26 @@ function optionalString(value: unknown) {
   return typeof value === 'string' && value.trim() ? value : undefined;
 }
 
+/**
+ * A date column that Sheets parsed comes back as a serial number. Convert it to
+ * the string the app expects, so rows written before the switch to RAW still
+ * read correctly — we migrate on read rather than rewriting history in place.
+ */
+function optionalDateString(value: unknown) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return optionalString(value);
+  }
+
+  const date = new Date(SHEETS_EPOCH_MS + Math.round(value * MS_PER_DAY));
+
+  if (Number.isNaN(date.getTime())) {
+    return undefined;
+  }
+
+  // A whole serial is a plain date; a fraction carries a time of day too.
+  return Number.isInteger(value) ? date.toISOString().slice(0, 10) : date.toISOString();
+}
+
 function optionalNumber(value: unknown) {
   if (value === '' || value === undefined || value === null) {
     return undefined;
@@ -112,12 +145,12 @@ function profileFromRow(row: unknown[] | undefined): BabyProfile {
   return {
     id: optionalString(record.id) ?? DEFAULT_PROFILE_ID,
     name: optionalString(record.name) ?? fallback.name,
-    dueDate: optionalString(record.dueDate) ?? fallback.dueDate,
-    birthDate: optionalString(record.birthDate),
+    dueDate: optionalDateString(record.dueDate) ?? fallback.dueDate,
+    birthDate: optionalDateString(record.birthDate),
     gender: optionalString(record.gender) as BabyGender | undefined,
     timezone: optionalString(record.timezone) ?? fallback.timezone,
-    createdAt: optionalString(record.createdAt) ?? fallback.createdAt,
-    updatedAt: optionalString(record.updatedAt) ?? fallback.updatedAt,
+    createdAt: optionalDateString(record.createdAt) ?? fallback.createdAt,
+    updatedAt: optionalDateString(record.updatedAt) ?? fallback.updatedAt,
     syncState: 'synced',
     careInfo
   };
@@ -127,7 +160,7 @@ function eventFromRow(row: unknown[]): CareEvent | null {
   const record = rowRecord(eventHeaders, row);
   const type = optionalString(record.type) as StoredCareEventType | undefined;
   const id = optionalString(record.id);
-  const startedAt = optionalString(record.startedAt);
+  const startedAt = optionalDateString(record.startedAt);
 
   if (!id || !type || !startedAt) {
     return null;
@@ -135,13 +168,13 @@ function eventFromRow(row: unknown[]): CareEvent | null {
 
   const base = {
     babyId: optionalString(record.babyId) ?? DEFAULT_PROFILE_ID,
-    createdAt: optionalString(record.createdAt) ?? startedAt,
-    endedAt: optionalString(record.endedAt),
+    createdAt: optionalDateString(record.createdAt) ?? startedAt,
+    endedAt: optionalDateString(record.endedAt),
     id,
     notes: optionalString(record.notes),
     startedAt,
     syncState: 'synced' as const,
-    updatedAt: optionalString(record.updatedAt) ?? startedAt
+    updatedAt: optionalDateString(record.updatedAt) ?? startedAt
   };
 
   switch (type) {
@@ -206,9 +239,9 @@ function eventFromRow(row: unknown[]): CareEvent | null {
       return {
         ...base,
         dose: optionalString(record.dose) ?? '',
-        givenAt: optionalString(record.givenAt),
+        givenAt: optionalDateString(record.givenAt),
         medicationName: optionalString(record.medicationName) ?? '',
-        scheduledAt: optionalString(record.scheduledAt),
+        scheduledAt: optionalDateString(record.scheduledAt),
         status: (optionalString(record.status) ?? 'given') as 'scheduled' | 'given' | 'skipped',
         type
       };
@@ -432,14 +465,14 @@ export class GoogleSheetsApi {
   }
 
   async updateValues(range: string, values: unknown[][]) {
-    await this.request(`/values/${encodeRange(range)}?valueInputOption=USER_ENTERED`, {
+    await this.request(`/values/${encodeRange(range)}?valueInputOption=${VALUE_INPUT_OPTION}`, {
       body: JSON.stringify({ majorDimension: 'ROWS', values }),
       method: 'PUT'
     });
   }
 
   async appendValues(range: string, values: unknown[][]) {
-    await this.request(`/values/${encodeRange(range)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`, {
+    await this.request(`/values/${encodeRange(range)}:append?valueInputOption=${VALUE_INPUT_OPTION}&insertDataOption=INSERT_ROWS`, {
       body: JSON.stringify({ majorDimension: 'ROWS', values }),
       method: 'POST'
     });

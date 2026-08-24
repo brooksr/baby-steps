@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
-import { createGoogleSheetsBabyTrackerStore, type GoogleSheetsApi } from './googleSheetsStore';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createGoogleSheetsBabyTrackerStore, GoogleSheetsApi } from './googleSheetsStore';
 
 function makeApi() {
   const getValues = vi.fn(async (range: string) => {
@@ -110,6 +110,29 @@ describe('Google Sheets tracker store', () => {
     expect(api.updateValues).not.toHaveBeenCalledWith('Profile!A2:J2', expect.anything());
   });
 
+  // Regression: the Settings form saves a bare `YYYY-MM-DD`, which USER_ENTERED
+  // turned into a date cell — so it read back as a serial number and the birth
+  // date vanished from the form. Rows written that way are still in the sheet.
+  it('reads a date column Sheets stored as a serial number', async () => {
+    const api = makeApi();
+    api.getValues.mockImplementation(async (range: string) => {
+      if (range.startsWith('Profile')) {
+        return [
+          ['id', 'name', 'dueDate', 'birthDate', 'timezone', 'createdAt', 'updatedAt', 'syncState', 'careInfo', 'gender'],
+          ['theo-roche', 'Theo Roche', 46266, 46264, 'America/Los_Angeles', '2026-06-20T16:15:00.000Z', '2026-06-20T16:15:00.000Z', 'synced', '', 'boy']
+        ];
+      }
+
+      return [['id', 'babyId', 'type', 'startedAt']];
+    });
+
+    const { profile } = await createGoogleSheetsBabyTrackerStore(api).snapshot();
+
+    // 46264 / 46266 are the Sheets serials for these dates (epoch 1899-12-30).
+    expect(profile.birthDate).toBe('2026-08-30');
+    expect(profile.dueDate).toBe('2026-09-01');
+  });
+
   it('round-trips the profile gender through the sheet row', async () => {
     const api = makeApi();
     const store = createGoogleSheetsBabyTrackerStore(api);
@@ -196,5 +219,32 @@ describe('Google Sheets tracker store', () => {
       type: 'birth',
       weightOz: 118
     });
+  });
+});
+
+describe('Google Sheets API writes', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  // USER_ENTERED is what broke the birth date: Sheets parsed the string we sent
+  // into a date cell, and reading it back gave a serial number instead.
+  it('sends values as RAW so Sheets stores exactly what we wrote', async () => {
+    const urls: string[] = [];
+    vi.stubGlobal('fetch', (input: RequestInfo | URL) => {
+      urls.push(String(input));
+      return Promise.resolve(new Response('{}', { status: 200 }));
+    });
+
+    const api = new GoogleSheetsApi(async () => 'token');
+    await api.updateValues('Profile!A2:J2', [['theo-roche']]);
+    await api.appendValues('Events!A:AE', [['event_1']]);
+
+    expect(urls).toHaveLength(2);
+
+    for (const url of urls) {
+      expect(url).toContain('valueInputOption=RAW');
+      expect(url).not.toContain('USER_ENTERED');
+    }
   });
 });
