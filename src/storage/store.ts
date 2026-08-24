@@ -1,7 +1,7 @@
 import Dexie, { type Table } from 'dexie';
 import { createDefaultBabyProfile } from '../domain/dates';
 import { migrateStoredEvents, type StoredCareEvent } from '../domain/legacyEvents';
-import { DEFAULT_PROFILE_ID, type BabyProfile, type CareEvent, type CareEventType, type CreateCareEventInput, type TrackerExport } from '../domain/types';
+import { DEFAULT_PROFILE_ID, type BabyProfile, type CareEvent, type CareEventType, type CreateCareEventInput, type TrackerExport, type TrackerSnapshot } from '../domain/types';
 
 const DEFAULT_DB_NAME = 'babysteps-theo';
 
@@ -34,6 +34,8 @@ export interface BabyTrackerStore {
   updateEvent(event: CareEvent): Promise<CareEvent>;
   deleteEvent(id: string): Promise<void>;
   listEvents(query?: EventQuery): Promise<CareEvent[]>;
+  /** Profile + events in one read, for cheap background polling. */
+  snapshot(query?: EventQuery): Promise<TrackerSnapshot>;
   exportData(): Promise<TrackerExport>;
   importData(data: TrackerExport, options?: ImportOptions): Promise<void>;
   clear(): Promise<void>;
@@ -151,9 +153,15 @@ export function createLocalBabyTrackerStore(dbName = DEFAULT_DB_NAME): BabyTrack
       });
   }
 
-  async function exportData(): Promise<TrackerExport> {
+  async function snapshot(query: EventQuery = {}): Promise<TrackerSnapshot> {
     const profile = await initialize();
-    const events = await listEvents({ sort: 'asc' });
+    const events = await listEvents({ ...query, babyId: query.babyId ?? profile.id });
+
+    return { events, profile };
+  }
+
+  async function exportData(): Promise<TrackerExport> {
+    const { events, profile } = await snapshot({ sort: 'asc' });
 
     return {
       version: 1,
@@ -207,6 +215,7 @@ export function createLocalBabyTrackerStore(dbName = DEFAULT_DB_NAME): BabyTrack
     initialize,
     listEvents,
     saveProfile,
+    snapshot,
     updateEvent
   };
 }

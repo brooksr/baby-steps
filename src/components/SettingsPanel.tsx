@@ -1,19 +1,29 @@
-import { Download, FlaskConical, Upload } from 'lucide-react';
-import { ChangeEvent, FormEvent, useState } from 'react';
-import { buildFirstMonthSeed } from '../domain/seed/firstMonthSeed';
-import { buildFullYearSeed } from '../domain/seed/fullYearSeed';
-import type { BabyProfile, CareEvent, TrackerExport } from '../domain/types';
+import { BookOpen, Download, Moon, Sun, Upload } from 'lucide-react';
+import { ChangeEvent, FormEvent, useMemo, useState } from 'react';
+import { getTimezoneOptions } from '../domain/dates';
+import type { Theme } from '../domain/theme';
+import { babyGenderLabels, type BabyGender, type BabyProfile, type CareEvent, type TrackerExport } from '../domain/types';
 import type { StoreStatus } from '../storage/store';
 
 interface SettingsPanelProps {
   events: CareEvent[];
   profile: BabyProfile;
   storeStatus: StoreStatus | null;
+  theme: Theme;
   onConnectSheet: () => Promise<void>;
   onExport: () => Promise<TrackerExport>;
   onImport: (data: TrackerExport) => Promise<void>;
+  onOpenLearn: () => void;
   onSaveProfile: (profile: Partial<BabyProfile>) => Promise<void>;
+  onThemeChange: (theme: Theme) => void;
 }
+
+const GENDERS = Object.keys(babyGenderLabels) as BabyGender[];
+
+const THEMES: Array<{ icon: typeof Sun; id: Theme; label: string }> = [
+  { icon: Sun, id: 'light', label: 'Light' },
+  { icon: Moon, id: 'dark', label: 'Dark' }
+];
 
 function escapeCsv(value: unknown) {
   const text = value === undefined || value === null ? '' : String(value);
@@ -55,18 +65,22 @@ function eventsToCsv(events: CareEvent[]) {
   return [headers.join(','), ...rows].join('\n');
 }
 
-export function SettingsPanel({ events, profile, storeStatus, onConnectSheet, onExport, onImport, onSaveProfile }: SettingsPanelProps) {
+export function SettingsPanel({ events, profile, storeStatus, theme, onConnectSheet, onExport, onImport, onOpenLearn, onSaveProfile, onThemeChange }: SettingsPanelProps) {
   const [name, setName] = useState(profile.name);
   const [dueDate, setDueDate] = useState(profile.dueDate);
   const [birthDate, setBirthDate] = useState(profile.birthDate?.slice(0, 10) ?? '');
+  const [gender, setGender] = useState<BabyGender | ''>(profile.gender ?? '');
   const [timezone, setTimezone] = useState(profile.timezone);
   const [status, setStatus] = useState('');
   const [connecting, setConnecting] = useState(false);
-  const [seeding, setSeeding] = useState<'' | 'month' | 'year'>('');
+
+  // Enumerating every zone is not free, and the saved one has to stay in the
+  // list even when this browser wouldn't have offered it.
+  const timezones = useMemo(() => getTimezoneOptions(profile.timezone), [profile.timezone]);
 
   async function handleSaveProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await onSaveProfile({ birthDate: birthDate || undefined, dueDate, name, timezone });
+    await onSaveProfile({ birthDate: birthDate || undefined, dueDate, gender: gender || undefined, name, timezone });
     setStatus('Profile saved.');
   }
 
@@ -92,36 +106,6 @@ export function SettingsPanel({ events, profile, storeStatus, onConnectSheet, on
     await onImport(data);
     event.target.value = '';
     setStatus('Import complete.');
-  }
-
-  async function handleSeedMonth() {
-    if (!window.confirm('Add a full month of sample events (including planted warnings and a fever) to the current data? This also sets a birth date.')) {
-      return;
-    }
-
-    setSeeding('month');
-    try {
-      const seed = buildFirstMonthSeed();
-      await onImport(seed);
-      setStatus(`Loaded ${seed.events.length} sample events.`);
-    } finally {
-      setSeeding('');
-    }
-  }
-
-  async function handleSeedYear() {
-    if (!window.confirm('Load a full year of sample data? This replaces the current profile birth date and adds 365 days of events.')) {
-      return;
-    }
-
-    setSeeding('year');
-    try {
-      const seed = buildFullYearSeed();
-      await onImport(seed);
-      setStatus(`Loaded ${seed.events.length} sample events (full year).`);
-    } finally {
-      setSeeding('');
-    }
   }
 
   async function handleConnectSheet() {
@@ -155,9 +139,22 @@ export function SettingsPanel({ events, profile, storeStatus, onConnectSheet, on
             Birth date
             <input type="date" value={birthDate} onChange={(event) => setBirthDate(event.target.value)} />
           </label>
+          <label>
+            Gender
+            <select value={gender} onChange={(event) => setGender(event.target.value as BabyGender | '')}>
+              <option value="">Not set</option>
+              {GENDERS.map((option) => (
+                <option key={option} value={option}>{babyGenderLabels[option]}</option>
+              ))}
+            </select>
+          </label>
           <label className="form-grid-wide">
             Timezone
-            <input value={timezone} onChange={(event) => setTimezone(event.target.value)} required />
+            <select value={timezone} onChange={(event) => setTimezone(event.target.value)} required>
+              {timezones.map((zone) => (
+                <option key={zone} value={zone}>{zone.replace(/_/g, ' ')}</option>
+              ))}
+            </select>
           </label>
           <button className="primary-button form-grid-wide" type="submit">
             Save profile
@@ -179,14 +176,43 @@ export function SettingsPanel({ events, profile, storeStatus, onConnectSheet, on
           <span>Import</span>
           <input type="file" accept="application/json" onChange={handleImport} />
         </label>
-        <button className="tool-button" type="button" onClick={handleSeedMonth} disabled={seeding !== ''}>
-          <FlaskConical aria-hidden="true" />
-          <span>{seeding === 'month' ? 'Loading' : 'Sample month'}</span>
+      </section>
+
+      <section className="section-block">
+        <div className="section-heading">
+          <div>
+            <h2>Learn</h2>
+            <span>What BabySteps tracks, what it will not do, and the reference tables behind it.</span>
+          </div>
+        </div>
+        <button className="secondary-button learn-link" type="button" onClick={onOpenLearn}>
+          <BookOpen aria-hidden="true" />
+          <span>Open the Learn page</span>
         </button>
-        <button className="tool-button" type="button" onClick={handleSeedYear} disabled={seeding !== ''}>
-          <FlaskConical aria-hidden="true" />
-          <span>{seeding === 'year' ? 'Loading' : 'Sample year'}</span>
-        </button>
+      </section>
+
+      <section className="section-block">
+        <div className="section-heading">
+          <h2>Appearance</h2>
+          <div className="segmented-control" aria-label="Theme">
+            {THEMES.map((option) => {
+              const Icon = option.icon;
+
+              return (
+                <button
+                  type="button"
+                  key={option.id}
+                  aria-pressed={theme === option.id}
+                  className={theme === option.id ? 'active' : ''}
+                  onClick={() => onThemeChange(option.id)}
+                >
+                  <Icon aria-hidden="true" />
+                  <span>{option.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
       </section>
 
       <section className="section-block sync-note">

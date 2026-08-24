@@ -59,6 +59,16 @@ export function GrowthStandards({ events, profile }: GrowthStandardsProps) {
           )}
         </div>
 
+        {/* Only the boys' WHO curves are bundled. Say so rather than quietly
+            charting a girl against the wrong reference. */}
+        {profile.gender === 'girl' && (
+          <p className="gestation-note">
+            Only the WHO <strong>boys&rsquo;</strong> curves ship with this app, so these bands compare against the
+            boys&rsquo; reference.
+            <span>Read them alongside your pediatrician&rsquo;s own chart.</span>
+          </p>
+        )}
+
         {showCorrected && gestation && (
           <p className="gestation-note">
             Born at <strong>{gestation.label}</strong>

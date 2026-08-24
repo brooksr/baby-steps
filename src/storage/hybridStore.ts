@@ -1,4 +1,4 @@
-import type { BabyProfile, CareEvent, CreateCareEventInput, TrackerExport } from '../domain/types';
+import type { BabyProfile, CareEvent, CreateCareEventInput, TrackerExport, TrackerSnapshot } from '../domain/types';
 import { getGoogleSheetsAccessToken, GoogleAuthRequiredError, hasGoogleClientId, requestGoogleSheetsAccessToken } from './googleSheetsAuth';
 import { createGoogleSheetsBabyTrackerStore, GOOGLE_SHEET_ID, GOOGLE_SHEET_URL, GoogleSheetsApi } from './googleSheetsStore';
 import { createLocalBabyTrackerStore, type BabyTrackerStore, type EventQuery, type ImportOptions, type StoreStatus } from './store';
@@ -107,6 +107,19 @@ export function createHybridBabyTrackerStore(): BabyTrackerStore {
     },
     saveProfile(profile: Partial<BabyProfile>) {
       return trySheet(() => currentStore().saveProfile(profile), () => localStore.saveProfile(profile));
+    },
+    async snapshot(query?: EventQuery): Promise<TrackerSnapshot> {
+      try {
+        return await currentStore().snapshot(query);
+      } catch (error) {
+        if (error instanceof GoogleAuthRequiredError) {
+          backend = 'local';
+          message = 'Local fallback is active until Google Sheets is connected.';
+          return localStore.snapshot(query);
+        }
+
+        throw error;
+      }
     },
     updateEvent(event: CareEvent) {
       return trySheet(() => currentStore().updateEvent(event), () => localStore.updateEvent(event));

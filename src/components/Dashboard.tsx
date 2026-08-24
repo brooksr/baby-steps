@@ -1,4 +1,4 @@
-import { Bath, Bed, Calendar, Clock3, Droplets, Dumbbell, FileText, Heart, Milk, Navigation, Pill, Plus, Ruler, Smile, Thermometer, TriangleAlert, Wind } from 'lucide-react';
+import { Bath, Bed, Calendar, Droplets, Dumbbell, FileText, Heart, Milk, Navigation, Pill, Plus, Ruler, Smile, Thermometer, TriangleAlert, Wind } from 'lucide-react';
 import { getCadenceReminders } from '../domain/cadence';
 import { formatAgeSummary, formatAgo, formatClock, formatDaysAgo, formatDuration, formatShortDate, getAgeDays, getDaysUntilDue, getDueDateStatus, isSameLocalDate } from '../domain/dates';
 import { predictNextDiaper } from '../domain/diapers';
@@ -8,7 +8,6 @@ import { HOSPITAL } from '../domain/medicalInfo';
 import { formatTemperature } from '../domain/temperature';
 import { type ActiveTimers, formatElapsed, getElapsedSeconds, isTimerType } from '../domain/timers';
 import type { BabyProfile, CareEvent, CareEventType, TemperatureEvent } from '../domain/types';
-import { FamilyCalendar } from './FamilyCalendar';
 import { NewbornStatus } from './NewbornStatus';
 import { Timeline } from './Timeline';
 
@@ -35,16 +34,10 @@ const actions = [
   { icon: FileText, label: 'Note', type: 'note' }
 ] satisfies Array<{ icon: typeof Plus; label: string; type: CareEventType }>;
 
-function formatProfileDate(value: string) {
-  const dateKey = value.slice(0, 10);
-  return new Date(`${dateKey}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-}
-
 export function Dashboard({ activeTimers, events, profile, todayKey, onAdd }: DashboardProps) {
   const isBorn = Boolean(profile.birthDate);
   const daysUntilDue = getDaysUntilDue(profile);
   const ageDays = getAgeDays(profile);
-  const firstYearProgress = Math.min(100, Math.round(((ageDays + 1) / 365) * 100));
   const todayEvents = events.filter((event) => isSameLocalDate(event.startedAt, todayKey));
   const summary = getDailySummary(todayEvents);
   const lastFeed = getLastEvent(events, (event) => event.type === 'feed');
@@ -88,25 +81,14 @@ export function Dashboard({ activeTimers, events, profile, todayKey, onAdd }: Da
             <h1 className={isBorn ? 'age-headline' : undefined}>{isBorn ? formatAgeSummary(profile) : daysUntilDue}</h1>
             {ageDetail && <p>{ageDetail}</p>}
           </div>
-          <div className="hero-side">
-            <div className="profile-badge">
-              <Clock3 aria-hidden="true" />
-              <span>{formatProfileDate(profile.birthDate ?? profile.dueDate)}</span>
-            </div>
-            {isBorn ? (
-              <div className="hero-progress" aria-label="First year progress">
-                <span>First year {firstYearProgress}%</span>
-                <div>
-                  <i style={{ width: `${firstYearProgress}%` }} />
-                </div>
-              </div>
-            ) : (
+          {!isBorn && (
+            <div className="hero-side">
               <button className="birth-button" type="button" onClick={() => onAdd('birth')}>
                 <Heart aria-hidden="true" />
                 <span>Log birth</span>
               </button>
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
         <div className="hero-metrics">
@@ -243,10 +225,18 @@ export function Dashboard({ activeTimers, events, profile, todayKey, onAdd }: Da
           <h2>Today</h2>
           <span>{summary.feedCount} feeds · {summary.wetDiapers + summary.dirtyDiapers} diapers</span>
         </div>
+        <div className="today-totals" aria-label="Diapers today">
+          <article>
+            <span>Wet</span>
+            <strong>{summary.wetDiapers}</strong>
+          </article>
+          <article>
+            <span>Dirty</span>
+            <strong>{summary.dirtyDiapers}</strong>
+          </article>
+        </div>
         <Timeline events={todayEvents.slice(0, 8)} emptyMessage="No entries for today." />
       </section>
-
-      <FamilyCalendar />
     </main>
   );
 }

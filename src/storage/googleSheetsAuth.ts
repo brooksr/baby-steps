@@ -142,6 +142,24 @@ function cancelSilentRefresh() {
   }
 }
 
+/**
+ * Retry a renewal that just failed. Without this the timer chain ends on the
+ * first hiccup (a cold network, a tab waking mid-request) and the token quietly
+ * lapses — which is what sends someone back to the sign-in screen.
+ */
+function scheduleRenewalRetry() {
+  cancelSilentRefresh();
+
+  if (typeof window === 'undefined' || !hasStoredGoogleGrant()) {
+    return;
+  }
+
+  refreshTimer = window.setTimeout(() => {
+    refreshTimer = null;
+    void requestGoogleSheetsAccessToken(false).catch(scheduleRenewalRetry);
+  }, MIN_REFRESH_DELAY_MS);
+}
+
 /** Renew shortly before the current token lapses so the user is never bounced. */
 function scheduleSilentRefresh() {
   cancelSilentRefresh();
@@ -153,9 +171,7 @@ function scheduleSilentRefresh() {
   const delay = Math.max(MIN_REFRESH_DELAY_MS, expiresAt - REFRESH_LEAD_MS - Date.now());
   refreshTimer = window.setTimeout(() => {
     refreshTimer = null;
-    void requestGoogleSheetsAccessToken(false).catch(() => {
-      // A failed background renewal is not fatal — the next real request retries.
-    });
+    void requestGoogleSheetsAccessToken(false).catch(scheduleRenewalRetry);
   }, delay);
 }
 

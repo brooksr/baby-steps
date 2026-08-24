@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react';
+import { ALL_TIME, filterEventsByRange, isRangeActive, type DateRange } from '../domain/dateRange';
 import { careEventLabels, type BabyProfile, type CareEvent, type CareEventType } from '../domain/types';
+import { DateRangeFilter } from './DateRangeFilter';
 import { Timeline } from './Timeline';
 
 const PAGE_SIZE = 20;
@@ -66,13 +68,14 @@ interface LogProps {
 export function Log({ events, firstYearEvents, profile, onAdd, onDelete, onEdit }: LogProps) {
   const [scope, setScope] = useState<'all' | 'first-year'>('all');
   const [filter, setFilter] = useState<FilterGroup>('all');
+  const [range, setRange] = useState<DateRange>(ALL_TIME);
   const [search, setSearch] = useState('');
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   const scopedEvents = scope === 'all' ? events : firstYearEvents;
 
   const filtered = useMemo(() => {
-    let result = scopedEvents;
+    let result = filterEventsByRange(scopedEvents, range);
 
     const filterOption = FILTER_OPTIONS.find((o) => o.id === filter);
     if (filterOption?.types) {
@@ -86,8 +89,10 @@ export function Log({ events, firstYearEvents, profile, onAdd, onDelete, onEdit 
     }
 
     return result;
-  }, [scopedEvents, filter, search]);
+  }, [scopedEvents, filter, range, search]);
 
+  // Every control resets paging: narrowing the list while page 3 is on screen
+  // would leave someone staring at entries the new filter already excluded.
   function handleSearch(value: string) {
     setSearch(value);
     setVisibleCount(PAGE_SIZE);
@@ -95,6 +100,11 @@ export function Log({ events, firstYearEvents, profile, onAdd, onDelete, onEdit 
 
   function handleFilter(value: FilterGroup) {
     setFilter(value);
+    setVisibleCount(PAGE_SIZE);
+  }
+
+  function handleRange(value: DateRange) {
+    setRange(value);
     setVisibleCount(PAGE_SIZE);
   }
 
@@ -143,11 +153,18 @@ export function Log({ events, firstYearEvents, profile, onAdd, onDelete, onEdit 
           </select>
         </div>
 
+        <DateRangeFilter
+          label="Log date range"
+          range={range}
+          summary={`${filtered.length} entr${filtered.length === 1 ? 'y' : 'ies'}`}
+          onChange={handleRange}
+        />
+
         <Timeline
           events={visible}
           onDelete={onDelete}
           onEdit={onEdit}
-          emptyMessage={search || filter !== 'all' ? 'No matching entries.' : 'No entries yet.'}
+          emptyMessage={search || filter !== 'all' || isRangeActive(range) ? 'No matching entries.' : 'No entries yet.'}
         />
 
         {hasMore && (

@@ -5,8 +5,8 @@ function makeApi() {
   const getValues = vi.fn(async (range: string) => {
     if (range.startsWith('Profile')) {
       return [
-        ['id', 'name', 'dueDate', 'birthDate', 'timezone', 'createdAt', 'updatedAt', 'syncState'],
-        ['theo-roche', 'Theo Roche', '2026-09-01', '', 'America/Los_Angeles', '2026-06-20T16:15:00.000Z', '2026-06-20T16:15:00.000Z', 'synced']
+        ['id', 'name', 'dueDate', 'birthDate', 'timezone', 'createdAt', 'updatedAt', 'syncState', 'careInfo', 'gender'],
+        ['theo-roche', 'Theo Roche', '2026-09-01', '', 'America/Los_Angeles', '2026-06-20T16:15:00.000Z', '2026-06-20T16:15:00.000Z', 'synced', '', 'boy']
       ];
     }
 
@@ -44,14 +44,18 @@ function makeApi() {
     ];
   });
 
+  const batchGetValues = vi.fn(async (ranges: string[]) => Promise.all(ranges.map((range) => getValues(range))));
+
   return {
     appendValues: vi.fn().mockResolvedValue(undefined),
+    batchGetValues,
     clearValues: vi.fn().mockResolvedValue(undefined),
     deleteEventRow: vi.fn().mockResolvedValue(undefined),
     getValues,
     updateValues: vi.fn().mockResolvedValue(undefined)
   } as unknown as GoogleSheetsApi & {
     appendValues: ReturnType<typeof vi.fn>;
+    batchGetValues: ReturnType<typeof vi.fn>;
     getValues: ReturnType<typeof vi.fn>;
     updateValues: ReturnType<typeof vi.fn>;
   };
@@ -75,6 +79,45 @@ describe('Google Sheets tracker store', () => {
       notes: 'Supplement',
       type: 'feed'
     });
+  });
+
+  // Polling reads run on a timer, so they must cost one request and must never
+  // write — a profile row rewritten on every read would clobber whatever
+  // another device saved between our read and our write.
+  it('reads profile and events in one request without writing', async () => {
+    const api = makeApi();
+    const store = createGoogleSheetsBabyTrackerStore(api);
+
+    const snapshot = await store.snapshot();
+
+    expect(snapshot.profile.name).toBe('Theo Roche');
+    expect(snapshot.profile.gender).toBe('boy');
+    expect(snapshot.events).toHaveLength(1);
+    expect(api.batchGetValues).toHaveBeenCalledTimes(1);
+    expect(api.updateValues).not.toHaveBeenCalled();
+  });
+
+  it('leaves an existing profile row alone on initialize', async () => {
+    const api = makeApi();
+    const store = createGoogleSheetsBabyTrackerStore(api);
+
+    await store.initialize();
+
+    // Header rows only — never the profile row itself.
+    expect(api.updateValues).toHaveBeenCalledTimes(2);
+    expect(api.updateValues).toHaveBeenCalledWith('Events!A1:AE1', [expect.arrayContaining(['id', 'babyId', 'type'])]);
+    expect(api.updateValues).toHaveBeenCalledWith('Profile!A1:J1', [expect.arrayContaining(['id', 'name', 'gender'])]);
+    expect(api.updateValues).not.toHaveBeenCalledWith('Profile!A2:J2', expect.anything());
+  });
+
+  it('round-trips the profile gender through the sheet row', async () => {
+    const api = makeApi();
+    const store = createGoogleSheetsBabyTrackerStore(api);
+
+    const saved = await store.saveProfile({ gender: 'girl' });
+
+    expect(saved.gender).toBe('girl');
+    expect(api.updateValues).toHaveBeenCalledWith('Profile!A2:J2', [expect.arrayContaining(['theo-roche', 'Theo Roche', 'girl'])]);
   });
 
   it('appends new events to the Events tab', async () => {

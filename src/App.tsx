@@ -1,6 +1,5 @@
-import { BarChart3, BookOpen, ClipboardCheck, Home, Images, List, Moon, Settings, Sun } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { PHOTO_ALBUM_URL } from './domain/media';
+import { BarChart3, ClipboardCheck, Home, List, Settings } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { applyTheme, getInitialTheme, type Theme } from './domain/theme';
 import { hasStoredGoogleGrant, keepGoogleSessionAlive } from './storage/googleSheetsAuth';
 import { Care } from './components/Care';
@@ -13,8 +12,9 @@ import { Reports } from './components/Reports';
 import { SettingsPanel } from './components/SettingsPanel';
 import { getLocalDateKey } from './domain/dates';
 import { getFirstYearEvents } from './domain/firstYear';
+import { snapshotSignature } from './domain/snapshot';
 import { type ActiveTimers, type TimerType, loadActiveTimers, saveActiveTimers } from './domain/timers';
-import type { BabyProfile, CareEvent, CareEventType, CreateCareEventInput, TrackerExport } from './domain/types';
+import type { BabyProfile, CareEvent, CareEventType, CreateCareEventInput, TrackerExport, TrackerSnapshot } from './domain/types';
 import { createHybridBabyTrackerStore } from './storage/hybridStore';
 import type { StoreStatus } from './storage/store';
 
@@ -25,6 +25,43 @@ type View = 'dashboard' | 'log' | 'reports' | 'care' | 'learn' | 'settings';
 type BootPhase = 'restoring' | 'signin' | 'ready';
 
 const VIEWS: View[] = ['dashboard', 'log', 'reports', 'care', 'learn', 'settings'];
+
+/** How often a foreground tab re-reads the shared sheet for other people's edits. */
+const POLL_INTERVAL_MS = 45_000;
+/** Silent reconnects to try at launch before falling back to the sign-in screen. */
+const RESTORE_ATTEMPTS = 2;
+const RESTORE_RETRY_MS = 1_500;
+/** How often the reconnect screen retries on its own, so it can heal untouched. */
+const RECONNECT_RETRY_MS = 20_000;
+
+/**
+ * Run `task` on a repeating delay, chained rather than on an interval so a slow
+ * read can never stack up behind itself. Failures are swallowed to keep the
+ * chain alive — a background sync that misses a beat just tries again.
+ */
+function startPolling(task: () => Promise<void>, intervalMs: number) {
+  let stopped = false;
+  let timer: number | undefined;
+
+  const run = async () => {
+    try {
+      await task();
+    } catch {
+      // Transient — the next tick retries rather than alarming anyone.
+    }
+
+    if (!stopped) {
+      timer = window.setTimeout(run, intervalMs);
+    }
+  };
+
+  timer = window.setTimeout(run, intervalMs);
+
+  return () => {
+    stopped = true;
+    window.clearTimeout(timer);
+  };
+}
 
 function viewFromHash(): View {
   const hash = window.location.hash.slice(1) as View;
@@ -66,12 +103,43 @@ function App() {
     applyTheme(theme);
   }, [theme]);
 
-  const refresh = useCallback(async () => {
-    const [nextProfile, nextEvents] = await Promise.all([trackerStore.initialize(), trackerStore.listEvents()]);
-    setProfile(nextProfile);
-    setEvents(nextEvents);
-    setStoreStatus(trackerStore.getStatus?.() ?? null);
+  // What the UI is currently showing, so a poll that finds nothing new can bail
+  // out without re-rendering the tree under someone's fingers.
+  const signatureRef = useRef('');
+  // Bumped before every write, so a read that started earlier can't reinstate
+  // the rows it saw before that write landed.
+  const mutationRef = useRef(0);
+
+  const applySnapshot = useCallback((snapshot: TrackerSnapshot) => {
+    const signature = snapshotSignature(snapshot.profile, snapshot.events);
+
+    if (signature === signatureRef.current) {
+      return;
+    }
+
+    signatureRef.current = signature;
+    setProfile(snapshot.profile);
+    setEvents(snapshot.events);
   }, []);
+
+  const refresh = useCallback(async () => {
+    applySnapshot(await trackerStore.snapshot());
+    setStoreStatus(trackerStore.getStatus?.() ?? null);
+  }, [applySnapshot]);
+
+  /** A background read: same data, but it never touches connection status. */
+  const syncFromSheet = useCallback(async () => {
+    if (document.visibilityState !== 'visible' || navigator.onLine === false) {
+      return;
+    }
+
+    const seen = mutationRef.current;
+    const snapshot = await trackerStore.snapshot();
+
+    if (mutationRef.current === seen) {
+      applySnapshot(snapshot);
+    }
+  }, [applySnapshot]);
 
   const todayKey = useMemo(() => getLocalDateKey(new Date()), []);
 
@@ -86,6 +154,11 @@ function App() {
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
+  const restoreSession = useCallback(async () => {
+    await trackerStore.connect?.(false);
+    await refresh();
+  }, [refresh]);
+
   // Stay signed in: if Google was already granted on this device, silently
   // reconnect on launch instead of showing the login screen.
   useEffect(() => {
@@ -96,38 +169,99 @@ function App() {
     let cancelled = false;
 
     (async () => {
-      try {
-        await trackerStore.connect?.(false);
-        await refresh();
-        if (!cancelled) {
-          setBootPhase('ready');
+      // A cold network or a token Google retired early makes the first silent
+      // attempt fail on a session that is otherwise perfectly good, so give it
+      // a second go before showing anyone a sign-in screen.
+      for (let attempt = 1; attempt <= RESTORE_ATTEMPTS; attempt += 1) {
+        try {
+          await restoreSession();
+
+          if (!cancelled) {
+            setBootPhase('ready');
+          }
+
+          return;
+        } catch {
+          if (cancelled) {
+            return;
+          }
+
+          if (attempt < RESTORE_ATTEMPTS) {
+            await new Promise((resolve) => window.setTimeout(resolve, RESTORE_RETRY_MS));
+          }
         }
-      } catch {
-        // Silent reconnect failed (e.g. the device's Google session expired) —
-        // fall back to the sign-in screen so it's one tap to get back in. Never
-        // pull back someone who already got in offline while this was running.
-        if (!cancelled) {
-          setStoreStatus(trackerStore.getStatus?.() ?? null);
-          setSessionExpired(true);
-          setBootPhase((phase) => (phase === 'restoring' ? 'signin' : phase));
-        }
+      }
+
+      // Out of attempts — fall back to the sign-in screen so it's one tap to get
+      // back in. Never pull back someone who already got in offline meanwhile.
+      if (!cancelled) {
+        setStoreStatus(trackerStore.getStatus?.() ?? null);
+        setSessionExpired(true);
+        setBootPhase((phase) => (phase === 'restoring' ? 'signin' : phase));
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [bootPhase, refresh]);
+  }, [bootPhase, restoreSession]);
 
-  // Renew the Google token ahead of expiry (and whenever the app is refocused)
-  // so a long-lived session never drops the user back to sign-in.
+  // Keep trying quietly behind the reconnect screen: a grant that failed to
+  // restore is usually a transient hiccup, and healing on its own is better
+  // than making a parent hunt for the Reconnect button at 3am.
   useEffect(() => {
-    if (bootPhase !== 'ready') {
+    if (bootPhase !== 'signin' || !sessionExpired || !hasStoredGoogleGrant()) {
       return;
     }
 
-    return keepGoogleSessionAlive();
-  }, [bootPhase]);
+    let stopped = false;
+
+    const stop = startPolling(async () => {
+      await restoreSession();
+
+      if (!stopped) {
+        setSessionExpired(false);
+        setBootPhase('ready');
+      }
+    }, RECONNECT_RETRY_MS);
+
+    return () => {
+      stopped = true;
+      stop();
+    };
+  }, [bootPhase, restoreSession, sessionExpired]);
+
+  // Renew the Google token ahead of expiry (and whenever the app is refocused)
+  // so a long-lived session never drops the user back to sign-in. Attached from
+  // launch, not just when ready, so it covers the reconnect screen too.
+  useEffect(() => keepGoogleSessionAlive(), []);
+
+  // Poll the shared sheet so an entry logged by someone else — or on another
+  // device — lands here without a manual reload, and pull immediately whenever
+  // the app comes back to the foreground or regains a connection.
+  useEffect(() => {
+    if (bootPhase !== 'ready' || !storeStatus?.connected) {
+      return;
+    }
+
+    const stop = startPolling(syncFromSheet, POLL_INTERVAL_MS);
+    const syncNow = () => {
+      void syncFromSheet().catch(() => {
+        // Transient — the polling chain picks it up on the next tick.
+      });
+    };
+
+    document.addEventListener('visibilitychange', syncNow);
+    window.addEventListener('focus', syncNow);
+    window.addEventListener('online', syncNow);
+
+    return () => {
+      stop();
+      document.removeEventListener('visibilitychange', syncNow);
+      window.removeEventListener('focus', syncNow);
+      window.removeEventListener('online', syncNow);
+    };
+  }, [bootPhase, storeStatus?.connected, syncFromSheet]);
 
   async function loadOffline() {
     setLoading(true);
@@ -162,6 +296,8 @@ function App() {
   }
 
   async function handleSaveEvent(input: CreateCareEventInput) {
+    mutationRef.current += 1;
+
     if (editEvent) {
       await trackerStore.updateEvent({ ...editEvent, ...input } as CareEvent);
     } else {
@@ -180,11 +316,14 @@ function App() {
   }
 
   async function handleDeleteEvent(id: string) {
+    mutationRef.current += 1;
     await trackerStore.deleteEvent(id);
     await refresh();
   }
 
   async function handleToggleRef(type: 'milestone' | 'vaccine', refId: string, on: boolean) {
+    mutationRef.current += 1;
+
     if (on) {
       await trackerStore.addEvent({ refId, startedAt: new Date().toISOString(), type } as CreateCareEventInput);
     } else {
@@ -197,8 +336,12 @@ function App() {
   }
 
   async function handleSaveProfile(profilePatch: Partial<BabyProfile>) {
+    mutationRef.current += 1;
     const saved = await trackerStore.saveProfile(profilePatch);
     setProfile(saved);
+    // The signature is stale now, so the next poll reconciles rather than
+    // deciding nothing changed.
+    signatureRef.current = '';
   }
 
   async function handleExport() {
@@ -206,6 +349,7 @@ function App() {
   }
 
   async function handleImport(data: TrackerExport) {
+    mutationRef.current += 1;
     await trackerStore.importData(data, { mode: 'merge' });
     await refresh();
   }
@@ -266,29 +410,6 @@ function App() {
     <div className="app-shell">
       <header className="app-header">
         <span className="app-wordmark">BabySteps</span>
-        <div className="header-actions">
-          <button
-            type="button"
-            className={`header-link ${activeView === 'learn' ? 'active' : ''}`}
-            onClick={() => navigate('learn')}
-            aria-pressed={activeView === 'learn'}
-          >
-            <BookOpen aria-hidden="true" />
-            <span>Learn</span>
-          </button>
-          <button
-            type="button"
-            className="header-link icon-only"
-            onClick={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
-            aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-          >
-            {theme === 'dark' ? <Sun aria-hidden="true" /> : <Moon aria-hidden="true" />}
-          </button>
-          <a className="header-link" href={PHOTO_ALBUM_URL} target="_blank" rel="noreferrer">
-            <Images aria-hidden="true" />
-            <span>Album</span>
-          </a>
-        </div>
       </header>
 
       {error && <p className="error-banner" role="alert">{error}</p>}
@@ -317,10 +438,13 @@ function App() {
           events={events}
           profile={profile}
           storeStatus={storeStatus}
+          theme={theme}
           onConnectSheet={handleConnectSheet}
           onExport={handleExport}
           onImport={handleImport}
+          onOpenLearn={() => navigate('learn')}
           onSaveProfile={handleSaveProfile}
+          onThemeChange={setTheme}
         />
       )}
 

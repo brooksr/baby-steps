@@ -18,6 +18,19 @@ export interface CareContact {
 
 export type FeedingType = 'breastmilk' | 'formula' | 'combination';
 
+/**
+ * Recorded because growth standards are sex-specific. Only the WHO boys' curves
+ * are bundled today, so `girl` still charts against them — `GrowthStandards`
+ * says so rather than quietly comparing against the wrong reference.
+ */
+export type BabyGender = 'boy' | 'girl' | 'other';
+
+export const babyGenderLabels: Record<BabyGender, string> = {
+  boy: 'Boy',
+  girl: 'Girl',
+  other: 'Prefer not to say'
+};
+
 export interface CareInfo {
   // Location / routing
   homeAddress?: string;
@@ -62,6 +75,7 @@ export interface BabyProfile extends BaseRecord {
   name: string;
   dueDate: string;
   birthDate?: string;
+  gender?: BabyGender;
   timezone: string;
   careInfo?: CareInfo;
 }
@@ -214,6 +228,12 @@ export type CreateCareEventInput = DistributiveOmit<CareEvent, PersistedCareEven
 export interface TrackerExport {
   version: 1;
   exportedAt: string;
+  profile: BabyProfile;
+  events: CareEvent[];
+}
+
+/** Everything the UI renders, read in one round trip. See `domain/snapshot.ts`. */
+export interface TrackerSnapshot {
   profile: BabyProfile;
   events: CareEvent[];
 }

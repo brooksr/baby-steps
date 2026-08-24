@@ -7,6 +7,31 @@ export function getDeviceTimezone() {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Los_Angeles';
 }
 
+/** Enough of a list to pick from where the browser can't enumerate zones itself. */
+const FALLBACK_TIMEZONES = [
+  'America/Anchorage',
+  'America/Chicago',
+  'America/Denver',
+  'America/Los_Angeles',
+  'America/New_York',
+  'America/Phoenix',
+  'Europe/London',
+  'Pacific/Honolulu',
+  'UTC'
+];
+
+/**
+ * Every zone this browser knows, plus whatever is already saved — a profile set
+ * on another device must stay selectable here even if this browser wouldn't
+ * have offered that zone.
+ */
+export function getTimezoneOptions(current?: string) {
+  const supported = (Intl as { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf;
+  const zones = typeof supported === 'function' ? supported('timeZone') : FALLBACK_TIMEZONES;
+
+  return [...new Set([...zones, getDeviceTimezone(), ...(current ? [current] : [])])].sort();
+}
+
 export function createDefaultBabyProfile(now = new Date()): BabyProfile {
   const timestamp = now.toISOString();
 

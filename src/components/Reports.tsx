@@ -1,14 +1,27 @@
 import { useState } from 'react';
 import { formatDuration, formatShortDate, getLocalDateKey, isSameLocalDate, minutesBetween } from '../domain/dates';
+import { filterEventsByRange, formatRangeLabel, getPresetRange, isDateKeyInRange, type DateRange } from '../domain/dateRange';
 import { getFeedToDiaperLags } from '../domain/diapers';
 import { getFirstYearAnalytics, type FirstYearPoint, type MetricStats } from '../domain/firstYear';
 import { getDailySummary } from '../domain/summary';
 import type { BabyProfile, CareEvent, FeedEvent } from '../domain/types';
+import { DateRangeFilter } from './DateRangeFilter';
 import { GrowthStandards } from './GrowthStandards';
 import { NewbornStatus } from './NewbornStatus';
 import { Timeline } from './Timeline';
 
-type ReportPeriod = 'day' | 'week' | 'month' | 'year';
+type ReportPeriod = 'day' | 'week' | 'month' | 'year' | 'custom';
+
+const REPORT_PERIODS: ReportPeriod[] = ['day', 'week', 'month', 'year', 'custom'];
+
+/** How the insight cards describe what they just measured. */
+function periodScopeLabel(period: ReportPeriod) {
+  if (period === 'day') {
+    return 'today';
+  }
+
+  return period === 'custom' ? 'selected range' : `this ${period}`;
+}
 
 interface ReportsProps {
   events: CareEvent[];
@@ -259,6 +272,7 @@ function periodLabel(points: FirstYearPoint[]): string {
 export function Reports({ events, profile }: ReportsProps) {
   const [period, setPeriod] = useState<ReportPeriod>('day');
   const [dateKey, setDateKey] = useState(() => getLocalDateKey(new Date()));
+  const [range, setRange] = useState<DateRange>(() => getPresetRange('30d'));
 
   const selectedEvents = events.filter((event) => isSameLocalDate(event.startedAt, dateKey));
   const summary = getDailySummary(selectedEvents);
@@ -281,10 +295,14 @@ export function Reports({ events, profile }: ReportsProps) {
     wet: recentPoints.reduce((sum, p) => sum + p.wetDiapers, 0)
   };
 
-  // Period-scoped points and stats
+  // Period-scoped points and stats. The fixed periods count back over the days
+  // that logged something; a custom range is calendar-true, so it can show a
+  // quiet stretch as the gap it actually was.
   const periodCount = period === 'week' ? 7 : period === 'month' ? 30 : analytics.points.length;
-  const periodPoints = analytics.points.slice(-Math.min(periodCount, analytics.points.length));
-  const maxBars = period === 'week' ? 7 : period === 'month' ? 30 : 52;
+  const periodPoints = period === 'custom'
+    ? analytics.points.filter((point) => isDateKeyInRange(point.dateKey, range))
+    : analytics.points.slice(-Math.min(periodCount, analytics.points.length));
+  const maxBars = period === 'week' ? 7 : period === 'month' ? 30 : period === 'custom' ? 31 : 52;
   // Above maxBars the bars average groups of days, so they stop being day totals.
   const sampled = periodPoints.length > maxBars;
 
@@ -316,10 +334,12 @@ export function Reports({ events, profile }: ReportsProps) {
   const periodEndKey = periodPoints.length > 0 ? periodPoints[periodPoints.length - 1].dateKey : '';
   const periodRawEvents = period === 'day'
     ? selectedEvents
-    : events.filter((e) => {
-        const dk = getLocalDateKey(e.startedAt);
-        return dk >= periodStartKey && dk <= periodEndKey;
-      });
+    : period === 'custom'
+      ? filterEventsByRange(events, range)
+      : events.filter((e) => {
+          const dk = getLocalDateKey(e.startedAt);
+          return dk >= periodStartKey && dk <= periodEndKey;
+        });
 
   const longestSleep = longestSleepMinutes(events); // all-time best
   const feedGap = avgFeedGapMinutes(periodRawEvents);
@@ -371,7 +391,7 @@ export function Reports({ events, profile }: ReportsProps) {
         <article className="metric-card">
           <span>Avg feed gap</span>
           <strong>{feedGap > 0 ? formatDuration(Math.round(feedGap)) : '—'}</strong>
-          <small>{period === 'day' ? 'today' : `this ${period}`}</small>
+          <small>{periodScopeLabel(period)}</small>
         </article>
         <article className="metric-card">
           <span>Feed → wet</span>
@@ -390,7 +410,7 @@ export function Reports({ events, profile }: ReportsProps) {
               ? `${Math.round((balance.left / balance.total) * 100)}% · ${Math.round((balance.right / balance.total) * 100)}%`
               : '—'}
           </strong>
-          <small>{period === 'day' ? 'today' : `this ${period}`}</small>
+          <small>{periodScopeLabel(period)}</small>
         </article>
         <article className="metric-card">
           <span>Weight gain</span>
@@ -400,16 +420,14 @@ export function Reports({ events, profile }: ReportsProps) {
       </section>
 
       <section className="section-block">
-        <div className="section-heading">
+        <div className="section-heading wrap">
           <h2>Report</h2>
-          <div
-            className="segmented-control"
-            style={{ gridTemplateColumns: 'repeat(4, minmax(0, 1fr))' }}
-            aria-label="Report period"
-          >
-            {(['day', 'week', 'month', 'year'] as ReportPeriod[]).map((p) => (
+          <div className="segmented-control period-control" aria-label="Report period">
+            {REPORT_PERIODS.map((p) => (
               <button
+                type="button"
                 key={p}
+                aria-pressed={period === p}
                 className={period === p ? 'active' : ''}
                 onClick={() => setPeriod(p)}
               >
@@ -418,8 +436,24 @@ export function Reports({ events, profile }: ReportsProps) {
             ))}
           </div>
         </div>
-        {period !== 'day' && periodPoints.length > 0 && (
-          <p>{periodLabel(periodPoints)} · {periodPoints.length} day{periodPoints.length !== 1 ? 's' : ''}</p>
+
+        {period === 'custom' && (
+          <DateRangeFilter
+            label="Report date range"
+            range={range}
+            summary={`${periodRawEvents.length} entr${periodRawEvents.length === 1 ? 'y' : 'ies'}`}
+            onChange={setRange}
+          />
+        )}
+
+        {period !== 'day' && (
+          periodPoints.length > 0 ? (
+            <p>{periodLabel(periodPoints)} · {periodPoints.length} day{periodPoints.length !== 1 ? 's' : ''} with entries</p>
+          ) : (
+            <p className="empty-state compact">
+              {period === 'custom' ? `Nothing logged in ${formatRangeLabel(range)}.` : 'Nothing logged yet.'}
+            </p>
+          )
         )}
       </section>
 
@@ -485,7 +519,7 @@ export function Reports({ events, profile }: ReportsProps) {
         </>
       ) : (
         <>
-          <section className="metric-grid report-grid" aria-label={`${period} summary`}>
+          <section className="metric-grid report-grid" aria-label={`Summary for ${periodScopeLabel(period)}`}>
             <article className="metric-card">
               <span>Feeds/day</span>
               <strong>{formatStat(periodStats.feeds.average)}</strong>
@@ -509,7 +543,7 @@ export function Reports({ events, profile }: ReportsProps) {
             </article>
           </section>
 
-          <section className="chart-grid" aria-label={`${period} charts`}>
+          <section className="chart-grid" aria-label={`Charts for ${periodScopeLabel(period)}`}>
             <MiniChart label="Feeds/day" sampled={sampled} stats={periodStats.feeds} total={periodTotals.feeds} values={periodFeedValues} />
             <MiniChart label="Sleep/day" sampled={sampled} stats={periodStats.sleepHours} suffix="h" total={periodTotals.sleepHours} values={periodSleepValues} />
             <MiniChart

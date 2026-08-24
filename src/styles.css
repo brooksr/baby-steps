@@ -83,10 +83,18 @@ h3,
 }
 
 :root[data-theme='dark'] .segmented-control button,
+:root[data-theme='dark'] .range-chip,
 :root[data-theme='dark'] .birth-button,
 :root[data-theme='dark'] .bottom-nav {
   background: var(--panel);
   color: var(--ink);
+}
+
+/* Same specificity trap as the segmented control above: without this the
+   selected chip reads as unselected in dark mode. */
+:root[data-theme='dark'] .range-chip.active {
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
 /* The rule above outranks `.segmented-control button.active`, so the selected
@@ -426,18 +434,6 @@ button {
   text-transform: uppercase;
 }
 
-.profile-badge {
-  display: inline-flex;
-  align-items: center;
-  min-width: max-content;
-  gap: 8px;
-  padding: 10px 12px;
-  color: var(--on-accent);
-  background: var(--accent);
-  border-radius: 8px;
-  font-weight: 800;
-}
-
 .hero-side {
   display: grid;
   min-width: min(260px, 100%);
@@ -463,18 +459,11 @@ button {
   height: 20px;
 }
 
-.hero-progress,
 .first-year-block p {
   color: #ffffff;
   font-weight: 800;
 }
 
-.hero-progress {
-  display: grid;
-  gap: 8px;
-}
-
-.hero-progress div,
 .year-progress {
   height: 10px;
   overflow: hidden;
@@ -482,7 +471,6 @@ button {
   border-radius: 999px;
 }
 
-.hero-progress i,
 .year-progress i {
   display: block;
   height: 100%;
@@ -490,7 +478,6 @@ button {
   border-radius: inherit;
 }
 
-.profile-badge svg,
 .quick-button svg,
 .bottom-nav svg,
 .timeline-icon svg,
@@ -724,6 +711,10 @@ button {
 }
 
 .segmented-control button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   min-height: 38px;
   padding: 8px 12px;
   color: var(--muted);
@@ -746,6 +737,95 @@ button {
   width: 148px;
 }
 
+/* Five periods won't fit beside the heading on a phone, so the control drops to
+   its own row — `.wrap` on the heading is what lets it. */
+.section-heading.wrap {
+  flex-wrap: wrap;
+}
+
+.period-control {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  flex: 1 0 100%;
+}
+
+.period-control button {
+  padding: 8px 4px;
+  font-size: 0.9rem;
+}
+
+.date-range {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  margin-bottom: 12px;
+  background: var(--panel-blue);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+/* Grid, not flex-wrap: four presets share one row and shrink together rather
+   than dropping "All time" onto a line of its own on a narrow phone. */
+.date-range-presets {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.range-chip {
+  min-height: 34px;
+  padding: 6px 8px;
+  white-space: nowrap;
+  color: var(--muted);
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.range-chip.active {
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: var(--accent-strong);
+}
+
+.date-range-inputs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.date-range-inputs label {
+  display: grid;
+  gap: 4px;
+}
+
+/* The fixed .date-input width would overflow the two-up grid on a phone. */
+.date-range-inputs .date-input {
+  width: 100%;
+}
+
+.date-range-inputs span {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.date-range-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.date-range-summary strong {
+  color: var(--ink);
+}
+
 .log-controls {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -756,6 +836,33 @@ button {
 .log-filter {
   width: auto;
   min-width: 120px;
+}
+
+.today-totals {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.today-totals article {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  background: var(--panel-blue);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.today-totals span {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.today-totals strong {
+  font-family: var(--font-display);
+  font-size: 1.35rem;
 }
 
 .load-more {
@@ -1465,6 +1572,18 @@ textarea {
   border-radius: 999px;
   font-size: 0.74rem;
   font-weight: 800;
+  white-space: nowrap;
+}
+
+/* Both the heading and the pill read as single phrases. Keep each on one line
+   and let the pill drop to its own row when they can't sit side by side. */
+.newborn-card .section-heading {
+  flex-wrap: wrap;
+}
+
+.newborn-card .section-heading h2 {
+  font-size: 1.2rem;
+  white-space: nowrap;
 }
 
 .assess-pill.band-within {
@@ -1624,12 +1743,20 @@ textarea {
   color: var(--danger);
 }
 
-.learn-item.future {
+.learn-item.derived {
   border-left: 4px solid var(--accent-strong);
 }
 
-.learn-item.future svg {
+.learn-item.derived svg {
   color: var(--accent-strong);
+}
+
+.learn-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
 }
 
 .learn-footnote {
@@ -1876,10 +2003,6 @@ textarea {
   .profile-band-top {
     align-items: stretch;
     flex-direction: column;
-  }
-
-  .profile-badge {
-    justify-content: center;
   }
 
   .timeline-row {

@@ -35,16 +35,35 @@ change done.
   - `domain/cadence.ts` — gentle feed/bath rhythm nudges.
   - `domain/growth/` — WHO standards data + assessment logic.
   - `domain/csv.ts`, `domain/reference.ts` — CSV parsing + typed reference-data accessors.
+  - `domain/dateRange.ts` — the inclusive local-day span behind the Log and
+    Reports date filters, plus its presets. An empty end is open, so `ALL_TIME`
+    needs no separate "filter off" flag, and a reversed pair is read as the span
+    meant rather than as nothing.
   - `domain/download.ts` — client-side file download helper.
 - `src/data/reference/*.csv` — **single source of truth** for reference data.
   Imported as raw text via `?raw` in `src/data/referenceSheets.ts` (bundled, so
   it works offline). Surfaced on the Learn page. Do NOT duplicate into `public/`.
 - `src/components/` — React views. `App.tsx` owns the tab router + store wiring.
+  `DateRangeFilter` is shared by the Log and by the Reports "Custom" period.
 - `src/storage/` — local, Google Sheets, and hybrid stores. New event fields
   must be persisted here (see `googleSheetsStore.ts` column mapping).
+  - `store.snapshot()` reads profile + events together. On the sheets store
+    that's a single `values:batchGet`, so the two halves can never come from
+    different versions of the sheet — this is the read every path should use.
+    **Reads must not write.** `initialize()` seeds the Profile row only when the
+    sheet has none; rewriting it on every read would clobber an edit another
+    device made in between.
 - Style: object keys and array entries are alphabetized; CSS is one big
   `styles.css` using CSS variables (`--font-body` Quicksand, `--font-display`
   Fraunces). Keep edits matching the surrounding idiom.
+
+### Adding a new profile field
+
+`profileHeaders` in `googleSheetsStore.ts` is positional: append the new key at
+the end so existing sheet rows keep their columns, and widen `PROFILE_RANGE`,
+`PROFILE_ROW_RANGE`, and the header write in `initialize()` to match (they are
+`A:J` as of `gender`). The local Dexie store needs no change — it stores the
+whole profile object.
 
 ### Adding a new event type (the common path)
 
@@ -93,10 +112,6 @@ Timeline → Dashboard quick actions).
 3. **Mood / fussiness** — `mood` event (`level` 1–5 from `getMoodScale()`).
    _Follow-up:_ optional mood strip in Reports.
 
-Also shipped: the shared **family calendar** embed (`domain/calendar.ts` +
-`components/FamilyCalendar.tsx`) on the Dashboard, with an "add to your Google
-Calendar" subscribe link.
-
 ### Stage 2 — Checklists & schedules (DONE)
 Added the **Care** tab (`components/Care.tsx`) plus `milestone` and `vaccine`
 event types sharing one `refId` column in the Sheets store. Reference rows carry
@@ -107,8 +122,30 @@ Care view adds/deletes the corresponding event via `App.handleToggleRef`.
 5. **Vaccination schedule** — `getVaccinationSchedule()` anchored to `birthDate`
    (calendar-month due dates), overdue highlighting, and next-due in the header.
 
-Also: the shared Photos album moved from a Dashboard card to a persistent
-**app header link** (`App.tsx` header + `domain/media.ts`).
+### Live sync (outside the staged plan)
+
+The shared sheet has several caregivers writing to it, so the UI polls instead
+of waiting for a reload:
+
+- `App.tsx` polls `trackerStore.snapshot()` every 45s while the tab is visible,
+  and immediately on `visibilitychange` / `focus` / `online`. Chained timeouts
+  (`startPolling`), never `setInterval`, so a slow read can't stack.
+- `domain/snapshot.ts` fingerprints the result. State is only swapped when the
+  fingerprint moves, so a quiet sheet costs zero re-renders and never disturbs
+  someone mid-entry. The stringify is key-order independent on purpose — two
+  reads of the same row must fingerprint the same.
+- Every write bumps `mutationRef` first, and a poll drops its result if that
+  counter moved while it was in flight, so an older read can't reinstate rows
+  from before the write.
+- Sheets requests go out `cache: 'no-store'` — a cached 200 would just hand back
+  the rows we already have.
+
+Sign-in is meant to be a once-per-device event. Three things keep it that way,
+and all three matter: the silent renewal chain in `googleSheetsAuth.ts`
+re-arms itself after a *failed* renewal (otherwise one hiccup lets the token
+lapse), the launch reconnect retries before it will show a sign-in screen, and
+the reconnect screen keeps retrying silently behind itself so it can heal
+without a tap.
 
 ### Outside the staged plan
 - **Bath** — a `bath` event carrying nothing but time and notes, so it needs no
@@ -138,6 +175,22 @@ Also: the shared Photos album moved from a Dashboard card to a persistent
   fires with no earlier event to measure from (an empty log means unknown, not
   overdue). Copy suggests offering a feed or a bath and points at the
   pediatrician — never more than that.
+- **Date range filters** (`domain/dateRange.ts` + `components/DateRangeFilter.tsx`)
+  — presets plus From/To on the Log, and as a fifth **Custom** period on Reports.
+  Custom is the only Reports period that filters by calendar day; Week/Month/Year
+  still count back over the days that logged something, so a quiet stretch shows
+  as a gap under Custom but is skipped by the others.
+- **Theme** — the light/dark control lives in **Settings → Appearance**. The app
+  header holds only the wordmark; Settings is also the only way into **Learn**
+  (still routable at `#learn`, and the bottom nav stays visible there).
+- **Profile gender** (`BabyProfile.gender`) — recorded because growth standards
+  are sex-specific, but only the WHO *boys'* curves are bundled. A profile set to
+  girl is still charted against them, and `GrowthStandards` says so on the card
+  rather than comparing silently. Adding the girls' curves means three more CSVs
+  plus a standards table, and is the real fix.
+- **Timezone** is a select over `Intl.supportedValuesOf('timeZone')`
+  (`getTimezoneOptions`), which always includes the device zone and whatever the
+  profile already holds — a zone chosen on another device must stay selectable.
 - **Hero age** — after birth the profile band headlines `formatAgeSummary()`
   ("2 weeks"): days for the first fortnight, then weeks, then calendar months,
   then years. The exact "N days old" line sits under it only from day 14, since
@@ -150,6 +203,9 @@ Also: the shared Photos album moved from a Dashboard card to a persistent
 V1 is feature-complete and paused. The remaining roadmap items are deferred to a
 future V2 and should not be started without an explicit go-ahead. The reference
 data for several of them already ships (see `domain/reference.ts`).
+
+The Learn page no longer advertises any of this — it lists only what ships, so
+anything added below must not reappear there until it is actually built.
 
 ### V2.1 — Inventory & richer tracking
 - **Milk inventory** — track pumped-milk stash (add on pump, subtract on a bottle
@@ -181,21 +237,25 @@ data for several of them already ships (see `domain/reference.ts`).
 
 - **Sheets API** — already the sync backend (`storage/googleSheetsStore.ts`,
   OAuth in `googleSheetsAuth.ts`). Keep enabled.
-- **Calendar** — the shared calendar is currently an *embed* + subscribe link
-  (`domain/calendar.ts`), which needs no API/quota. Only enable the **Calendar
-  API** (scope `calendar.events`) if we later want to read/write events in-app.
-- **Photos** — shared album is a *link-out* (`domain/media.ts`); Google Photos
-  blocks iframing and, since the 2025 Library API changes, there is no
-  whole-album read scope. If we ever pull photos in-app, use the **Photos
-  Picker API** (user-picked) rather than the Library API. For now, no API needed.
+- **Calendar** — no calendar integration ships today (the Dashboard embed and
+  `domain/calendar.ts` were removed). An embed + subscribe link needs no
+  API/quota if it comes back; only enable the **Calendar API** (scope
+  `calendar.events`) if we want to read/write events in-app.
+- **Photos** — no photo integration ships today (the header album link and
+  `domain/media.ts` were removed). Google Photos blocks iframing and, since the
+  2025 Library API changes, there is no whole-album read scope. If we ever pull
+  photos in-app, use the **Photos Picker API** (user-picked), not the Library API.
 
 ## Sample / seed data
 
 `domain/seed/firstMonthSeed.ts` builds a deterministic first-month dataset with
 planted WARNING (low diapers/feeds on days 3 & 12) and DANGER (fever days 10 &
-30) markers plus growth points above/below range. Load it from
-**Settings → Sample month** (merges via the active store, so it seeds the Google
-Sheet when connected). Markers are asserted in the seed test.
+30) markers plus growth points above/below range; `fullYearSeed.ts` does the
+same across a year. Markers are asserted in the seed test.
+
+These are **test and development fixtures only** — the Settings buttons that
+loaded them into live data were removed, since seeding merges through the active
+store and would write sample rows straight into the shared Google Sheet.
 
 ## Guardrails
 

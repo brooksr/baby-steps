@@ -1,14 +1,16 @@
 import { createDefaultBabyProfile } from '../domain/dates';
 import { migrateStoredEvent, migrateStoredEvents, type StoredCareEventType } from '../domain/legacyEvents';
-import { DEFAULT_PROFILE_ID, type BabyProfile, type BottleContents, type CareInfo, type CareEvent, type CreateCareEventInput, type FeedMethod, type NursingSide, type TrackerExport } from '../domain/types';
+import { DEFAULT_PROFILE_ID, type BabyGender, type BabyProfile, type BottleContents, type CareInfo, type CareEvent, type CreateCareEventInput, type FeedMethod, type NursingSide, type TrackerExport, type TrackerSnapshot } from '../domain/types';
 import { requestGoogleSheetsAccessToken } from './googleSheetsAuth';
 import type { BabyTrackerStore, EventQuery, ImportOptions } from './store';
 
 export const GOOGLE_SHEET_ID = '1VG9px1j-KF29i2J6AG_PP57hOM8V-wLPgP-9VTdURUc';
 export const GOOGLE_SHEET_URL = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/edit`;
 
-const PROFILE_RANGE = 'Profile!A1:I2';
-const PROFILE_ROW_RANGE = 'Profile!A2:I2';
+// Widen these together with `profileHeaders` — a new profile field is a new
+// column, and the range has to reach it.
+const PROFILE_RANGE = 'Profile!A1:J2';
+const PROFILE_ROW_RANGE = 'Profile!A2:J2';
 const EVENTS_RANGE = 'Events!A:AE';
 const EVENTS_BODY_RANGE = 'Events!A2:AE1000';
 const EVENTS_APPEND_RANGE = 'Events!A:AE';
@@ -51,7 +53,8 @@ const eventHeaders = [
 
 type EventColumn = (typeof eventHeaders)[number];
 
-const profileHeaders = ['id', 'name', 'dueDate', 'birthDate', 'timezone', 'createdAt', 'updatedAt', 'syncState', 'careInfo'] as const;
+// New columns append here so existing sheet rows keep their positions.
+const profileHeaders = ['id', 'name', 'dueDate', 'birthDate', 'timezone', 'createdAt', 'updatedAt', 'syncState', 'careInfo', 'gender'] as const;
 
 function createId(prefix: string) {
   if (globalThis.crypto?.randomUUID) {
@@ -111,6 +114,7 @@ function profileFromRow(row: unknown[] | undefined): BabyProfile {
     name: optionalString(record.name) ?? fallback.name,
     dueDate: optionalString(record.dueDate) ?? fallback.dueDate,
     birthDate: optionalString(record.birthDate),
+    gender: optionalString(record.gender) as BabyGender | undefined,
     timezone: optionalString(record.timezone) ?? fallback.timezone,
     createdAt: optionalString(record.createdAt) ?? fallback.createdAt,
     updatedAt: optionalString(record.updatedAt) ?? fallback.updatedAt,
@@ -384,6 +388,9 @@ export class GoogleSheetsApi {
     const token = await this.getAccessToken(forceRefresh);
     const response = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${GOOGLE_SHEET_ID}${path}`, {
       ...init,
+      // Polling only helps if every read hits the network — a cached 200 would
+      // hand back exactly the rows we already have.
+      cache: 'no-store',
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
@@ -412,6 +419,16 @@ export class GoogleSheetsApi {
   async getValues(range: string) {
     const result = await this.request<{ values?: unknown[][] }>(`/values/${encodeRange(range)}?valueRenderOption=UNFORMATTED_VALUE`);
     return result.values ?? [];
+  }
+
+  /** Read several ranges in one request — the whole app state for one poll. */
+  async batchGetValues(ranges: string[]) {
+    const query = ranges.map((range) => `ranges=${encodeRange(range)}`).join('&');
+    const result = await this.request<{ valueRanges?: Array<{ values?: unknown[][] }> }>(
+      `/values:batchGet?${query}&valueRenderOption=UNFORMATTED_VALUE`
+    );
+
+    return ranges.map((_, index) => result.valueRanges?.[index]?.values ?? []);
   }
 
   async updateValues(range: string, values: unknown[][]) {
@@ -456,18 +473,34 @@ export class GoogleSheetsApi {
   }
 }
 
+function rowsFromValues(values: unknown[][]) {
+  const [, ...rows] = values;
+
+  return rows
+    .map((row, index) => ({
+      event: eventFromRow(row),
+      rowNumber: index + 2
+    }))
+    .filter((row): row is { event: CareEvent; rowNumber: number } => Boolean(row.event));
+}
+
+function selectEvents(events: CareEvent[], babyId: string, query: EventQuery) {
+  return events
+    .filter((event) => event.babyId === babyId)
+    .filter((event) => (query.type ? event.type === query.type : true))
+    .filter((event) => (query.from ? event.startedAt >= query.from : true))
+    .filter((event) => (query.to ? event.startedAt <= query.to : true))
+    .sort((a, b) => {
+      const result = new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime();
+      return query.sort === 'asc' ? result : -result;
+    });
+}
+
 export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() => requestGoogleSheetsAccessToken(false))): BabyTrackerStore {
   let headersWritten = false;
 
   async function listRows() {
-    const values = await api.getValues(EVENTS_RANGE);
-    const [, ...rows] = values;
-    return rows
-      .map((row, index) => ({
-        event: eventFromRow(row),
-        rowNumber: index + 2
-      }))
-      .filter((row): row is { event: CareEvent; rowNumber: number } => Boolean(row.event));
+    return rowsFromValues(await api.getValues(EVENTS_RANGE));
   }
 
   async function getProfile() {
@@ -476,13 +509,38 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
   }
 
   async function initialize() {
-    const profile = await getProfile();
-    await api.updateValues(PROFILE_ROW_RANGE, [profileToRow(profile)]);
+    const values = await api.getValues(PROFILE_RANGE);
+    const row = values[1];
+    const profile = profileFromRow(row);
+
+    // Seed the row only when the sheet has none. Writing it back on every read
+    // would clobber a profile edit another device made since we read it — and
+    // reads happen on every poll now.
+    if (!row || row.length === 0) {
+      await api.updateValues(PROFILE_ROW_RANGE, [profileToRow(profile)]);
+    }
+
     if (!headersWritten) {
       await api.updateValues('Events!A1:AE1', [[...eventHeaders]]);
+      await api.updateValues('Profile!A1:J1', [[...profileHeaders]]);
       headersWritten = true;
     }
+
     return profile;
+  }
+
+  /**
+   * Profile + events in a single request, so a background poll costs one round
+   * trip and can't read the two halves from different versions of the sheet.
+   */
+  async function snapshot(query: EventQuery = {}): Promise<TrackerSnapshot> {
+    const [profileValues, eventValues] = await api.batchGetValues([PROFILE_RANGE, EVENTS_RANGE]);
+    const profile = profileFromRow(profileValues[1]);
+
+    return {
+      events: selectEvents(rowsFromValues(eventValues).map((row) => row.event), query.babyId ?? profile.id, query),
+      profile
+    };
   }
 
   async function saveProfile(profilePatch: Partial<BabyProfile>) {
@@ -545,25 +603,12 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
   }
 
   async function listEvents(query: EventQuery = {}) {
-    const profile = await initialize();
-    const babyId = query.babyId ?? profile.id;
-    const rows = await listRows();
-
-    return rows
-      .map((row) => row.event)
-      .filter((event) => event.babyId === babyId)
-      .filter((event) => (query.type ? event.type === query.type : true))
-      .filter((event) => (query.from ? event.startedAt >= query.from : true))
-      .filter((event) => (query.to ? event.startedAt <= query.to : true))
-      .sort((a, b) => {
-        const result = new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime();
-        return query.sort === 'asc' ? result : -result;
-      });
+    const { events } = await snapshot(query);
+    return events;
   }
 
   async function exportData(): Promise<TrackerExport> {
-    const profile = await initialize();
-    const events = await listEvents({ sort: 'asc' });
+    const { events, profile } = await snapshot({ sort: 'asc' });
 
     return {
       events,
@@ -612,6 +657,7 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
     initialize,
     listEvents,
     saveProfile,
+    snapshot,
     updateEvent
   };
 }

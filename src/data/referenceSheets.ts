@@ -58,7 +58,7 @@ export const referenceSheets: ReferenceSheet[] = [
   },
   {
     category: 'feature',
-    description: 'CDC-style developmental milestones by age (for the milestones feature).',
+    description: 'CDC-style developmental milestones by age — the Care tab checklist.',
     filename: 'developmental-milestones.csv',
     id: 'milestones',
     text: milestones,
@@ -66,7 +66,7 @@ export const referenceSheets: ReferenceSheet[] = [
   },
   {
     category: 'feature',
-    description: 'Infant body-temperature bands and guidance (for temperature logging).',
+    description: 'Infant body-temperature bands and guidance — the bands behind the fever flag.',
     filename: 'temperature-ranges.csv',
     id: 'temperature',
     text: temperatureRanges,
@@ -74,7 +74,7 @@ export const referenceSheets: ReferenceSheet[] = [
   },
   {
     category: 'feature',
-    description: 'Recommended daily tummy-time minutes by age (for tummy-time tracking).',
+    description: 'Recommended daily tummy-time minutes by age.',
     filename: 'tummy-time-by-age.csv',
     id: 'tummy-time',
     text: tummyTime,
@@ -82,7 +82,7 @@ export const referenceSheets: ReferenceSheet[] = [
   },
   {
     category: 'feature',
-    description: 'CDC-style childhood immunization schedule (for the vaccine reminder feature).',
+    description: 'CDC-style childhood immunization schedule — the Care tab due/overdue dates.',
     filename: 'vaccination-schedule.csv',
     id: 'vaccinations',
     text: vaccinationSchedule,
@@ -90,7 +90,7 @@ export const referenceSheets: ReferenceSheet[] = [
   },
   {
     category: 'feature',
-    description: 'Simple mood / fussiness scale (for mood logging).',
+    description: 'Simple mood / fussiness scale — the 1\u20135 levels used when logging mood.',
     filename: 'mood-scale.csv',
     id: 'mood',
     text: moodScale,

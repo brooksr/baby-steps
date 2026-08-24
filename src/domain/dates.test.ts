@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createDefaultBabyProfile, formatAgeSummary, formatDaysAgo } from './dates';
+import { createDefaultBabyProfile, formatAgeSummary, formatDaysAgo, getDeviceTimezone, getTimezoneOptions } from './dates';
 
 describe('formatDaysAgo', () => {
   const now = new Date('2026-09-10T09:00:00');
@@ -48,5 +48,19 @@ describe('formatAgeSummary', () => {
 
   it('says nothing before birth', () => {
     expect(formatAgeSummary(createDefaultBabyProfile(new Date('2026-06-19T12:00:00')))).toBe('');
+  });
+});
+
+describe('timezone options', () => {
+  it('always offers the device zone and whatever is already saved', () => {
+    const saved = 'Antarctica/Troll';
+    const options = getTimezoneOptions(saved);
+
+    // A profile set on another device must stay selectable here even if this
+    // browser would not have listed that zone.
+    expect(options).toContain(saved);
+    expect(options).toContain(getDeviceTimezone());
+    expect(options).toEqual([...options].sort());
+    expect(new Set(options).size).toBe(options.length);
   });
 });
