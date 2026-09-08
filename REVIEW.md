@@ -26,7 +26,7 @@ tummy time, mood) ships as bundled CSVs with typed getters.
 
 **Risks / debt** (carry into V2)
 - **Sheets-as-database is brittle.** Columns are positional; adding a field
-  means widening ranges (`A:AE`) and appending columns in lock-step across
+  means widening ranges (`A:AF`) and appending columns in lock-step across
   `eventHeaders` / `eventFromRow` / `eventToRow`. Easy to misalign.
 - **Naive concurrency.** Merge is by id; `updateEvent` overwrites. Two
   caregivers editing the same entry can clobber each other. `syncState` exists

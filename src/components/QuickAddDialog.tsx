@@ -3,7 +3,8 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { addMinutes, fromDateTimeInputValue, toDateTimeInputValue } from '../domain/dates';
 import { getMoodScale } from '../domain/reference';
 import { type ActiveTimers, type TimerType, formatElapsed, getElapsedSeconds, isTimerType } from '../domain/timers';
-import { careEventLabels, type CareEvent, type CareEventType, type CreateCareEventInput, type FeedMethod } from '../domain/types';
+import { careEventLabels, type BabyProfile, type CareEvent, type CareEventType, type CreateCareEventInput, type DiaperKind, type DiaperPoopSize, type FeedMethod } from '../domain/types';
+import { getPreferredUnits, toStoredLength, toStoredVolume, toStoredWeight, toUnitLength, toUnitVolume, toUnitWeight } from '../domain/units';
 
 const moodLevels = getMoodScale();
 
@@ -17,6 +18,7 @@ interface QuickAddDialogProps {
   onSave: (input: CreateCareEventInput) => Promise<void>;
   onTimerStart: (type: TimerType) => void;
   onTimerStop: (type: TimerType) => void;
+  profile?: BabyProfile;
 }
 
 function numberOrUndefined(value: string) {
@@ -31,7 +33,13 @@ function numberInputValue(value: number | undefined) {
   return value == null ? '' : String(value);
 }
 
-export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, onClose, onSave, onTimerStart, onTimerStop }: QuickAddDialogProps) {
+function roundedInputValue(value: number, fractionDigits: number) {
+  return String(Number(value.toFixed(fractionDigits)));
+}
+
+export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, onClose, onSave, onTimerStart, onTimerStop, profile }: QuickAddDialogProps) {
+  const preferredUnits = getPreferredUnits(profile);
+  const unitSystem = preferredUnits.system;
   const [startedAt, setStartedAt] = useState(() => toDateTimeInputValue(new Date().toISOString()));
   const [endedAt, setEndedAt] = useState('');
   const [notes, setNotes] = useState('');
@@ -42,6 +50,7 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
   const [feedMethod, setFeedMethod] = useState<FeedMethod>('nursing');
   const [diaperKind, setDiaperKind] = useState('wet');
   const [diaperColor, setDiaperColor] = useState('');
+  const [poopSize, setPoopSize] = useState<DiaperPoopSize | ''>('');
   const [medicationName, setMedicationName] = useState('');
   const [dose, setDose] = useState('');
   const [medicationStatus, setMedicationStatus] = useState('given');
@@ -49,6 +58,7 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
   const [location, setLocation] = useState('');
   const [reason, setReason] = useState('Checkup');
   const [weightOz, setWeightOz] = useState('');
+  const [weightPounds, setWeightPounds] = useState('');
   const [lengthIn, setLengthIn] = useState('');
   const [headIn, setHeadIn] = useState('');
   const [title, setTitle] = useState('');
@@ -91,11 +101,12 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
     setDurationMinutes(eventType === 'sleep' ? '60' : eventType === 'tummytime' ? '5' : '15');
     setSide('left');
     // A feed opens on nursing, where the amount is unknown until a bottle is picked.
-    setAmountOz(eventType === 'pump' ? '3' : eventType === 'feed' ? '' : '2');
+    setAmountOz(eventType === 'pump' ? roundedInputValue(toUnitVolume(3, unitSystem), 0) : eventType === 'feed' ? '' : roundedInputValue(toUnitVolume(2, unitSystem), 0));
     setContents('breastmilk');
     setFeedMethod('nursing');
     setDiaperKind('wet');
     setDiaperColor('');
+    setPoopSize('');
     setMedicationName('');
     setDose('');
     setMedicationStatus('given');
@@ -103,11 +114,12 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
     setLocation('');
     setReason('Checkup');
     setWeightOz('');
+    setWeightPounds('');
     setLengthIn('');
     setHeadIn('');
     setTitle('');
-    setTemperature('98.6');
-    setTemperatureUnit('f');
+    setTemperature(unitSystem === 'metric' ? '37' : '98.6');
+    setTemperatureUnit(unitSystem === 'metric' ? 'c' : 'f');
     setMoodLevel('2');
 
     if (!editEvent) {
@@ -116,19 +128,20 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
 
     switch (editEvent.type) {
       case 'feed':
-        setAmountOz(numberInputValue(editEvent.amountOz));
+        setAmountOz(editEvent.amountOz == null ? '' : roundedInputValue(toUnitVolume(editEvent.amountOz, unitSystem), unitSystem === 'metric' ? 0 : 2));
         setContents(editEvent.contents ?? 'breastmilk');
         setDurationMinutes(numberInputValue(editEvent.durationMinutes));
         setFeedMethod(editEvent.method);
         setSide(editEvent.side ?? 'left');
         break;
       case 'pump':
-        setAmountOz(String(editEvent.amountOz));
+        setAmountOz(roundedInputValue(toUnitVolume(editEvent.amountOz, unitSystem), unitSystem === 'metric' ? 0 : 2));
         setSide(editEvent.side);
         break;
       case 'diaper':
         setDiaperKind(editEvent.kind);
         setDiaperColor(editEvent.color ?? '');
+        setPoopSize(editEvent.poopSize ?? '');
         break;
       case 'medication':
         setMedicationName(editEvent.medicationName);
@@ -141,17 +154,24 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
         setLocation(editEvent.location ?? '');
         break;
       case 'birth':
-      case 'growth':
-        setWeightOz(numberInputValue(editEvent.weightOz));
-        setLengthIn(numberInputValue(editEvent.lengthIn));
-        setHeadIn(numberInputValue(editEvent.headCircumferenceIn));
+      case 'growth': {
+        if (editEvent.weightOz != null && unitSystem === 'american' && preferredUnits.weightDisplay === 'pounds-ounces') {
+          const pounds = Math.floor(editEvent.weightOz / 16);
+          setWeightPounds(String(pounds));
+          setWeightOz(roundedInputValue(editEvent.weightOz - pounds * 16, 1));
+        } else {
+          setWeightOz(editEvent.weightOz == null ? '' : roundedInputValue(toUnitWeight(editEvent.weightOz, unitSystem), unitSystem === 'metric' ? 3 : 1));
+        }
+        setLengthIn(editEvent.lengthIn == null ? '' : roundedInputValue(toUnitLength(editEvent.lengthIn, unitSystem), 1));
+        setHeadIn(editEvent.headCircumferenceIn == null ? '' : roundedInputValue(toUnitLength(editEvent.headCircumferenceIn, unitSystem), 1));
         break;
+      }
       case 'note':
         setTitle(editEvent.title ?? '');
         break;
       case 'temperature':
-        setTemperature(String(Math.round((editEvent.celsius * (9 / 5) + 32) * 10) / 10));
-        setTemperatureUnit('f');
+        setTemperature(roundedInputValue(unitSystem === 'metric' ? editEvent.celsius : editEvent.celsius * (9 / 5) + 32, 1));
+        setTemperatureUnit(unitSystem === 'metric' ? 'c' : 'f');
         break;
       case 'tummytime':
         setDurationMinutes(String(editEvent.durationMinutes));
@@ -162,7 +182,7 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
       default:
         break;
     }
-  }, [eventType, editEvent]);
+  }, [eventType, editEvent, preferredUnits.weightDisplay, unitSystem]);
 
   const titleText = useMemo(() => {
     if (!eventType) {
@@ -196,8 +216,26 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
       setDurationMinutes((current) => current || '15');
     } else {
       setDurationMinutes('');
-      setAmountOz((current) => current || '2');
+      setAmountOz((current) => current || roundedInputValue(toUnitVolume(2, unitSystem), 0));
     }
+  }
+
+  function handleDiaperKind(next: DiaperKind) {
+    setDiaperKind(next);
+    setPoopSize((current) => (next === 'wet' ? '' : current || 'medium'));
+  }
+
+  function storedWeightOrUndefined() {
+    if (unitSystem === 'american' && preferredUnits.weightDisplay === 'pounds-ounces') {
+      if (!weightPounds.trim() && !weightOz.trim()) {
+        return undefined;
+      }
+
+      return Number(weightPounds || 0) * 16 + Number(weightOz || 0);
+    }
+
+    const value = numberOrUndefined(weightOz);
+    return value == null ? undefined : toStoredWeight(value, unitSystem);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -217,7 +255,7 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
         const nursing = feedMethod === 'nursing';
         payload = {
           type: 'feed',
-          amountOz: numberOrUndefined(amountOz),
+          amountOz: numberOrUndefined(amountOz) == null ? undefined : toStoredVolume(Number(amountOz), unitSystem),
           contents: nursing ? undefined : (contents as 'breastmilk' | 'formula' | 'mixed' | 'other'),
           durationMinutes: duration,
           endedAt: duration != null ? addMinutes(startedAtIso, duration) : endedAt ? fromDateTimeInputValue(endedAt) : undefined,
@@ -231,17 +269,17 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
       case 'birth':
         payload = {
           type: 'birth',
-          headCircumferenceIn: numberOrUndefined(headIn),
-          lengthIn: numberOrUndefined(lengthIn),
+          headCircumferenceIn: numberOrUndefined(headIn) == null ? undefined : toStoredLength(Number(headIn), unitSystem),
+          lengthIn: numberOrUndefined(lengthIn) == null ? undefined : toStoredLength(Number(lengthIn), unitSystem),
           notes: trimmedNotes,
           startedAt: startedAtIso,
-          weightOz: numberOrUndefined(weightOz)
+          weightOz: storedWeightOrUndefined()
         };
         break;
       case 'pump':
         payload = {
           type: 'pump',
-          amountOz: Number(amountOz),
+          amountOz: toStoredVolume(Number(amountOz), unitSystem),
           endedAt: endedAt ? fromDateTimeInputValue(endedAt) : undefined,
           notes: trimmedNotes,
           side: side as 'left' | 'right' | 'both',
@@ -254,6 +292,7 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
           color: diaperColor.trim() || undefined,
           kind: diaperKind as 'wet' | 'dirty' | 'both',
           notes: trimmedNotes,
+          poopSize: diaperKind === 'wet' ? undefined : poopSize || undefined,
           startedAt: startedAtIso
         };
         break;
@@ -298,11 +337,11 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
       case 'growth':
         payload = {
           type: 'growth',
-          headCircumferenceIn: numberOrUndefined(headIn),
-          lengthIn: numberOrUndefined(lengthIn),
+          headCircumferenceIn: numberOrUndefined(headIn) == null ? undefined : toStoredLength(Number(headIn), unitSystem),
+          lengthIn: numberOrUndefined(lengthIn) == null ? undefined : toStoredLength(Number(lengthIn), unitSystem),
           notes: trimmedNotes,
           startedAt: startedAtIso,
-          weightOz: numberOrUndefined(weightOz)
+          weightOz: storedWeightOrUndefined()
         };
         break;
       case 'note':
@@ -440,8 +479,8 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
                 <input min="1" step="1" type="number" value={durationMinutes} onChange={(event) => setDurationMinutes(event.target.value)} />
               </label>
               <label>
-                Ounces <small>optional</small>
-                <input min="0" step="0.25" type="number" value={amountOz} onChange={(event) => setAmountOz(event.target.value)} />
+                {unitSystem === 'metric' ? 'Milliliters' : 'Ounces'} <small>optional</small>
+                <input min="0" step={unitSystem === 'metric' ? '1' : '0.25'} type="number" value={amountOz} onChange={(event) => setAmountOz(event.target.value)} />
               </label>
             </>
           )}
@@ -449,8 +488,8 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
           {eventType === 'pump' && (
             <>
               <label>
-                Ounces
-                <input min="0" step="0.25" type="number" value={amountOz} onChange={(event) => setAmountOz(event.target.value)} required />
+                {unitSystem === 'metric' ? 'Milliliters' : 'Ounces'}
+                <input min="0" step={unitSystem === 'metric' ? '1' : '0.25'} type="number" value={amountOz} onChange={(event) => setAmountOz(event.target.value)} required />
               </label>
               <label>
                 Side
@@ -467,7 +506,7 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
             <>
               <label>
                 Type
-                <select value={diaperKind} onChange={(event) => setDiaperKind(event.target.value)}>
+                <select value={diaperKind} onChange={(event) => handleDiaperKind(event.target.value as DiaperKind)}>
                   <option value="wet">Wet</option>
                   <option value="dirty">Dirty</option>
                   <option value="both">Both</option>
@@ -477,6 +516,25 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
                 Color
                 <input value={diaperColor} onChange={(event) => setDiaperColor(event.target.value)} />
               </label>
+              {diaperKind !== 'wet' && (
+                <div className="form-grid-wide option-field">
+                  <span>Poop size</span>
+                  <div className="segmented-control three-option" role="radiogroup" aria-label="Poop size">
+                    {(['small', 'medium', 'large'] as DiaperPoopSize[]).map((size) => (
+                      <button
+                        key={size}
+                        type="button"
+                        role="radio"
+                        aria-checked={poopSize === size}
+                        className={poopSize === size ? 'active' : ''}
+                        onClick={() => setPoopSize(size)}
+                      >
+                        {size.charAt(0).toUpperCase() + size.slice(1)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </>
           )}
 
@@ -527,16 +585,45 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
 
           {(eventType === 'birth' || eventType === 'growth') && (
             <>
+              {unitSystem === 'american' && preferredUnits.weightDisplay === 'pounds-ounces' ? (
+                <div className="option-field">
+                  <span id="weight-pair-label">Weight</span>
+                  <div className="unit-pair" role="group" aria-labelledby="weight-pair-label">
+                    <span className="unit-pair-part">
+                      <input
+                        aria-label="Weight lb"
+                        min="0"
+                        step="1"
+                        type="number"
+                        value={weightPounds}
+                        onChange={(event) => setWeightPounds(event.target.value)} />
+                      <span className="unit-pair-suffix">lb</span>
+                    </span>
+                    <span className="unit-pair-part">
+                      <input
+                        aria-label="Weight oz"
+                        min="0"
+                        max="15.9"
+                        step="0.1"
+                        type="number"
+                        value={weightOz}
+                        onChange={(event) => setWeightOz(event.target.value)} />
+                      <span className="unit-pair-suffix">oz</span>
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <label>
+                  Weight {unitSystem === 'metric' ? 'kg' : 'oz'}
+                  <input min="0" step={unitSystem === 'metric' ? '0.001' : '0.1'} type="number" value={weightOz} onChange={(event) => setWeightOz(event.target.value)} />
+                </label>
+              )}
               <label>
-                Weight oz
-                <input min="0" step="0.1" type="number" value={weightOz} onChange={(event) => setWeightOz(event.target.value)} />
-              </label>
-              <label>
-                Length in
+                Length {unitSystem === 'metric' ? 'cm' : 'in'}
                 <input min="0" step="0.1" type="number" value={lengthIn} onChange={(event) => setLengthIn(event.target.value)} />
               </label>
               <label>
-                Head in
+                Head {unitSystem === 'metric' ? 'cm' : 'in'}
                 <input min="0" step="0.1" type="number" value={headIn} onChange={(event) => setHeadIn(event.target.value)} />
               </label>
             </>

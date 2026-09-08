@@ -1,6 +1,6 @@
 import { createDefaultBabyProfile } from '../domain/dates';
 import { migrateStoredEvent, migrateStoredEvents, type StoredCareEventType } from '../domain/legacyEvents';
-import { DEFAULT_PROFILE_ID, type BabyGender, type BabyProfile, type BottleContents, type CareInfo, type CareEvent, type CreateCareEventInput, type FeedMethod, type NursingSide, type TrackerExport, type TrackerSnapshot } from '../domain/types';
+import { DEFAULT_PROFILE_ID, type BabyGender, type BabyProfile, type BottleContents, type CareInfo, type CareEvent, type CreateCareEventInput, type DiaperPoopSize, type FeedMethod, type NursingSide, type PreferredUnits, type TrackerExport, type TrackerSnapshot } from '../domain/types';
 import { requestGoogleSheetsAccessToken } from './googleSheetsAuth';
 import type { BabyTrackerStore, EventQuery, ImportOptions } from './store';
 
@@ -9,11 +9,11 @@ export const GOOGLE_SHEET_URL = `https://docs.google.com/spreadsheets/d/${GOOGLE
 
 // Widen these together with `profileHeaders` — a new profile field is a new
 // column, and the range has to reach it.
-const PROFILE_RANGE = 'Profile!A1:J2';
-const PROFILE_ROW_RANGE = 'Profile!A2:J2';
-const EVENTS_RANGE = 'Events!A:AE';
-const EVENTS_BODY_RANGE = 'Events!A2:AE1000';
-const EVENTS_APPEND_RANGE = 'Events!A:AE';
+const PROFILE_RANGE = 'Profile!A1:K2';
+const PROFILE_ROW_RANGE = 'Profile!A2:K2';
+const EVENTS_RANGE = 'Events!A:AF';
+const EVENTS_BODY_RANGE = 'Events!A2:AF1000';
+const EVENTS_APPEND_RANGE = 'Events!A:AF';
 const EVENTS_SHEET_ID = 0;
 
 /**
@@ -61,13 +61,14 @@ const eventHeaders = [
   'moodLevel',
   'refId',
   // New columns append here so existing sheet rows keep their positions.
-  'method'
+  'method',
+  'poopSize'
 ] as const;
 
 type EventColumn = (typeof eventHeaders)[number];
 
 // New columns append here so existing sheet rows keep their positions.
-const profileHeaders = ['id', 'name', 'dueDate', 'birthDate', 'timezone', 'createdAt', 'updatedAt', 'syncState', 'careInfo', 'gender'] as const;
+const profileHeaders = ['id', 'name', 'dueDate', 'birthDate', 'timezone', 'createdAt', 'updatedAt', 'syncState', 'careInfo', 'gender', 'preferredUnits'] as const;
 
 function createId(prefix: string) {
   if (globalThis.crypto?.randomUUID) {
@@ -142,17 +143,24 @@ function profileFromRow(row: unknown[] | undefined): BabyProfile {
     try { careInfo = JSON.parse(careInfoStr) as CareInfo; } catch { /* ignore malformed JSON */ }
   }
 
+  let preferredUnits: PreferredUnits | undefined;
+  const preferredUnitsStr = optionalString(record.preferredUnits);
+  if (preferredUnitsStr) {
+    try { preferredUnits = JSON.parse(preferredUnitsStr) as PreferredUnits; } catch { /* ignore malformed JSON */ }
+  }
+
   return {
+    birthDate: optionalDateString(record.birthDate),
+    careInfo,
+    createdAt: optionalDateString(record.createdAt) ?? fallback.createdAt,
+    dueDate: optionalDateString(record.dueDate) ?? fallback.dueDate,
+    gender: optionalString(record.gender) as BabyGender | undefined,
     id: optionalString(record.id) ?? DEFAULT_PROFILE_ID,
     name: optionalString(record.name) ?? fallback.name,
-    dueDate: optionalDateString(record.dueDate) ?? fallback.dueDate,
-    birthDate: optionalDateString(record.birthDate),
-    gender: optionalString(record.gender) as BabyGender | undefined,
-    timezone: optionalString(record.timezone) ?? fallback.timezone,
-    createdAt: optionalDateString(record.createdAt) ?? fallback.createdAt,
-    updatedAt: optionalDateString(record.updatedAt) ?? fallback.updatedAt,
+    preferredUnits: preferredUnits ?? fallback.preferredUnits,
     syncState: 'synced',
-    careInfo
+    timezone: optionalString(record.timezone) ?? fallback.timezone,
+    updatedAt: optionalDateString(record.updatedAt) ?? fallback.updatedAt
   };
 }
 
@@ -226,6 +234,7 @@ function eventFromRow(row: unknown[]): CareEvent | null {
         ...base,
         color: optionalString(record.color),
         kind: (optionalString(record.kind) ?? 'wet') as 'wet' | 'dirty' | 'both',
+        poopSize: optionalString(record.poopSize) as DiaperPoopSize | undefined,
         type
       };
     // Neither carries anything beyond the base row.
@@ -321,9 +330,10 @@ function eventToRow(event: CareEvent) {
     method: '',
     moodLevel: '',
     notes: event.notes ?? '',
-    refId: '',
+    poopSize: '',
     provider: '',
     reason: '',
+    refId: '',
     scheduledAt: '',
     side: '',
     startedAt: event.startedAt,
@@ -355,6 +365,7 @@ function eventToRow(event: CareEvent) {
     case 'diaper':
       values.color = event.color ?? '';
       values.kind = event.kind;
+      values.poopSize = event.poopSize ?? '';
       break;
     case 'medication':
       values.dose = event.dose;
@@ -401,8 +412,9 @@ function eventToRow(event: CareEvent) {
 
 function profileToRow(profile: BabyProfile) {
   return profileHeaders.map((header) => {
-    if (header === 'careInfo') {
-      return profile.careInfo ? JSON.stringify(profile.careInfo) : '';
+    if (header === 'careInfo' || header === 'preferredUnits') {
+      const value = profile[header];
+      return value ? JSON.stringify(value) : '';
     }
     return normalizeCell(profile[header as keyof BabyProfile]);
   });
@@ -554,8 +566,8 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
     }
 
     if (!headersWritten) {
-      await api.updateValues('Events!A1:AE1', [[...eventHeaders]]);
-      await api.updateValues('Profile!A1:J1', [[...profileHeaders]]);
+      await api.updateValues('Events!A1:AF1', [[...eventHeaders]]);
+      await api.updateValues('Profile!A1:K1', [[...profileHeaders]]);
       headersWritten = true;
     }
 
@@ -622,7 +634,7 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
       updatedAt: new Date().toISOString()
     };
 
-    await api.updateValues(`Events!A${match.rowNumber}:AE${match.rowNumber}`, [eventToRow(updated)]);
+    await api.updateValues(`Events!A${match.rowNumber}:AF${match.rowNumber}`, [eventToRow(updated)]);
     return updated;
   }
 
@@ -661,7 +673,7 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
     if (options.mode === 'replace') {
       await api.clearValues(EVENTS_BODY_RANGE);
       if (incoming.length > 0) {
-        await api.updateValues('Events!A2:AE', incoming.map((event) => eventToRow({ ...event, syncState: 'synced' })));
+        await api.updateValues('Events!A2:AF', incoming.map((event) => eventToRow({ ...event, syncState: 'synced' })));
       }
       return;
     }

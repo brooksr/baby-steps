@@ -8,6 +8,7 @@ import { HOSPITAL } from '../domain/medicalInfo';
 import { formatTemperature } from '../domain/temperature';
 import { type ActiveTimers, formatElapsed, getElapsedSeconds, isTimerType } from '../domain/timers';
 import type { BabyProfile, CareEvent, CareEventType, TemperatureEvent } from '../domain/types';
+import { formatVolume, getPreferredUnits } from '../domain/units';
 import { NewbornStatus } from './NewbornStatus';
 import { Timeline } from './Timeline';
 
@@ -35,6 +36,7 @@ const actions = [
 ] satisfies Array<{ icon: typeof Plus; label: string; type: CareEventType }>;
 
 export function Dashboard({ activeTimers, events, profile, todayKey, onAdd }: DashboardProps) {
+  const preferredUnits = getPreferredUnits(profile);
   const isBorn = Boolean(profile.birthDate);
   const daysUntilDue = getDaysUntilDue(profile);
   const ageDays = getAgeDays(profile);
@@ -138,7 +140,7 @@ export function Dashboard({ activeTimers, events, profile, todayKey, onAdd }: Da
         </article>
         <article className="metric-card">
           <span>Milk out</span>
-          <strong>{summary.pumpOunces.toFixed(1)} oz</strong>
+          <strong>{formatVolume(summary.pumpOunces, preferredUnits.system)}</strong>
         </article>
         <article className="metric-card">
           <span>Last bath</span>
@@ -152,7 +154,7 @@ export function Dashboard({ activeTimers, events, profile, todayKey, onAdd }: Da
           <article className="status-row urgent">
             <TriangleAlert aria-hidden="true" />
             <div>
-              <strong>Theo has a fever — {formatTemperature(lastTemperature.celsius)}</strong>
+              <strong>Theo has a fever — {formatTemperature(lastTemperature.celsius, preferredUnits.system)}</strong>
               <span>
                 {ageDays < 90 ? 'Under 3 months, a fever is worth a call to your doctor now.' : 'Keep Theo comfortable and hydrated; call your doctor if it climbs or persists.'} · {formatClock(lastTemperature.startedAt)}
               </span>
@@ -235,7 +237,7 @@ export function Dashboard({ activeTimers, events, profile, todayKey, onAdd }: Da
             <strong>{summary.dirtyDiapers}</strong>
           </article>
         </div>
-        <Timeline events={todayEvents.slice(0, 8)} emptyMessage="No entries for today." />
+        <Timeline events={todayEvents.slice(0, 8)} emptyMessage="No entries for today." profile={profile} />
       </section>
     </main>
   );

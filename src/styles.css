@@ -263,6 +263,19 @@ button {
   gap: 10px;
 }
 
+.legal-links {
+  display: flex;
+  justify-content: center;
+  gap: 18px;
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.legal-links a {
+  color: inherit;
+}
+
 .splash-continue {
   min-height: 52px;
   font-size: 1rem;
@@ -708,6 +721,10 @@ button {
   overflow: hidden;
   border: 1px solid var(--line-strong);
   border-radius: 8px;
+}
+
+.segmented-control.three-option {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .segmented-control button {
@@ -1239,6 +1256,54 @@ button {
 
 .form-grid-wide {
   grid-column: 1 / -1;
+}
+
+.option-field {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+/* Pounds and ounces are one measurement, so the two boxes share a single frame. */
+.unit-pair {
+  display: flex;
+  align-items: stretch;
+  background: var(--panel-blue);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+}
+
+.unit-pair-part {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  min-width: 0;
+}
+
+.unit-pair-part + .unit-pair-part {
+  border-left: 1px solid var(--line-strong);
+}
+
+.unit-pair input {
+  padding-right: 4px;
+  text-align: right;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+}
+
+/* The frame clips a default ring, so pull the focus outline inside the box. */
+.unit-pair input:focus-visible {
+  outline-offset: -3px;
+}
+
+.unit-pair-suffix {
+  padding-right: 11px;
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 800;
 }
 
 .timer-row {

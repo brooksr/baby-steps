@@ -30,7 +30,7 @@ function searchText(event: CareEvent): string {
       parts.push(`${event.amountOz} oz`, event.side);
       break;
     case 'diaper':
-      parts.push(event.kind, event.color ?? '');
+      parts.push(event.kind, event.poopSize ?? '', event.color ?? '');
       break;
     case 'medication':
       parts.push(event.medicationName, event.dose, event.status);
@@ -162,6 +162,7 @@ export function Log({ events, firstYearEvents, profile, onAdd, onDelete, onEdit 
 
         <Timeline
           events={visible}
+          profile={profile}
           onDelete={onDelete}
           onEdit={onEdit}
           emptyMessage={search || filter !== 'all' || isRangeActive(range) ? 'No matching entries.' : 'No entries yet.'}

@@ -92,6 +92,10 @@ export function LoginSplash({ error, loading, restoring, sessionExpired, storeSt
             {!configured && <p className="splash-footnote">Google login is not configured in this build, so offline mode is available.</p>}
           </>
         )}
+        <p className="legal-links">
+          <a href={`${import.meta.env.BASE_URL}privacy/index.html`}>Privacy</a>
+          <a href={`${import.meta.env.BASE_URL}terms/index.html`}>Terms</a>
+        </p>
       </section>
     </main>
   );

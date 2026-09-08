@@ -36,13 +36,17 @@ export function createDefaultBabyProfile(now = new Date()): BabyProfile {
   const timestamp = now.toISOString();
 
   return {
+    createdAt: timestamp,
+    dueDate: THEO_DUE_DATE,
     id: DEFAULT_PROFILE_ID,
     name: 'Theo Roche',
-    dueDate: THEO_DUE_DATE,
+    preferredUnits: {
+      system: 'american',
+      weightDisplay: 'pounds-ounces'
+    },
+    syncState: 'local',
     timezone: getDeviceTimezone(),
-    createdAt: timestamp,
-    updatedAt: timestamp,
-    syncState: 'local'
+    updatedAt: timestamp
   };
 }
 

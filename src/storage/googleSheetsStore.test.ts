@@ -105,9 +105,9 @@ describe('Google Sheets tracker store', () => {
 
     // Header rows only — never the profile row itself.
     expect(api.updateValues).toHaveBeenCalledTimes(2);
-    expect(api.updateValues).toHaveBeenCalledWith('Events!A1:AE1', [expect.arrayContaining(['id', 'babyId', 'type'])]);
-    expect(api.updateValues).toHaveBeenCalledWith('Profile!A1:J1', [expect.arrayContaining(['id', 'name', 'gender'])]);
-    expect(api.updateValues).not.toHaveBeenCalledWith('Profile!A2:J2', expect.anything());
+    expect(api.updateValues).toHaveBeenCalledWith('Events!A1:AF1', [expect.arrayContaining(['id', 'babyId', 'type', 'poopSize'])]);
+    expect(api.updateValues).toHaveBeenCalledWith('Profile!A1:K1', [expect.arrayContaining(['id', 'name', 'gender', 'preferredUnits'])]);
+    expect(api.updateValues).not.toHaveBeenCalledWith('Profile!A2:K2', expect.anything());
   });
 
   // Regression: the Settings form saves a bare `YYYY-MM-DD`, which USER_ENTERED
@@ -140,7 +140,20 @@ describe('Google Sheets tracker store', () => {
     const saved = await store.saveProfile({ gender: 'girl' });
 
     expect(saved.gender).toBe('girl');
-    expect(api.updateValues).toHaveBeenCalledWith('Profile!A2:J2', [expect.arrayContaining(['theo-roche', 'Theo Roche', 'girl'])]);
+    expect(api.updateValues).toHaveBeenCalledWith('Profile!A2:K2', [expect.arrayContaining(['theo-roche', 'Theo Roche', 'girl'])]);
+  });
+
+  it('round-trips preferred units through the profile row', async () => {
+    const api = makeApi();
+    const store = createGoogleSheetsBabyTrackerStore(api);
+
+    const saved = await store.saveProfile({ preferredUnits: { system: 'metric', weightDisplay: 'ounces' } });
+
+    expect(saved.preferredUnits).toEqual({ system: 'metric', weightDisplay: 'ounces' });
+    expect(api.updateValues).toHaveBeenCalledWith(
+      'Profile!A2:K2',
+      [expect.arrayContaining(['{"system":"metric","weightDisplay":"ounces"}'])]
+    );
   });
 
   it('appends new events to the Events tab', async () => {
@@ -154,7 +167,7 @@ describe('Google Sheets tracker store', () => {
     });
 
     expect(api.appendValues).toHaveBeenCalledWith(
-      'Events!A:AE',
+      'Events!A:AF',
       [
         expect.arrayContaining([
           expect.stringMatching(/^event_/),
@@ -164,6 +177,20 @@ describe('Google Sheets tracker store', () => {
         ])
       ]
     );
+  });
+
+  it('persists diaper poop size in the appended event column', async () => {
+    const api = makeApi();
+    const store = createGoogleSheetsBabyTrackerStore(api);
+
+    await store.addEvent({
+      kind: 'dirty',
+      poopSize: 'large',
+      startedAt: '2026-09-02T11:00:00.000Z',
+      type: 'diaper'
+    });
+
+    expect(api.appendValues).toHaveBeenCalledWith('Events!A:AF', [expect.arrayContaining(['diaper', 'dirty', 'large'])]);
   });
 
   it('maps birth rows into birth events', async () => {
@@ -237,8 +264,8 @@ describe('Google Sheets API writes', () => {
     });
 
     const api = new GoogleSheetsApi(async () => 'token');
-    await api.updateValues('Profile!A2:J2', [['theo-roche']]);
-    await api.appendValues('Events!A:AE', [['event_1']]);
+    await api.updateValues('Profile!A2:K2', [['theo-roche']]);
+    await api.appendValues('Events!A:AF', [['event_1']]);
 
     expect(urls).toHaveLength(2);
 

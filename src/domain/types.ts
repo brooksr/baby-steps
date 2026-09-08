@@ -24,12 +24,19 @@ export type FeedingType = 'breastmilk' | 'formula' | 'combination';
  * says so rather than quietly comparing against the wrong reference.
  */
 export type BabyGender = 'boy' | 'girl' | 'other';
+export type MeasurementSystem = 'american' | 'metric';
+export type WeightDisplay = 'pounds-ounces' | 'ounces';
 
 export const babyGenderLabels: Record<BabyGender, string> = {
   boy: 'Boy',
   girl: 'Girl',
   other: 'Prefer not to say'
 };
+
+export interface PreferredUnits {
+  system: MeasurementSystem;
+  weightDisplay: WeightDisplay;
+}
 
 export interface CareInfo {
   // Location / routing
@@ -72,12 +79,13 @@ export interface CareInfo {
 }
 
 export interface BabyProfile extends BaseRecord {
-  name: string;
-  dueDate: string;
   birthDate?: string;
-  gender?: BabyGender;
-  timezone: string;
   careInfo?: CareInfo;
+  dueDate: string;
+  gender?: BabyGender;
+  name: string;
+  preferredUnits?: PreferredUnits;
+  timezone: string;
 }
 
 interface BaseCareEvent extends BaseRecord {
@@ -90,6 +98,7 @@ interface BaseCareEvent extends BaseRecord {
 export type NursingSide = 'left' | 'right' | 'both';
 export type BottleContents = 'breastmilk' | 'formula' | 'mixed' | 'other';
 export type DiaperKind = 'wet' | 'dirty' | 'both';
+export type DiaperPoopSize = 'small' | 'medium' | 'large';
 export type FeedMethod = 'nursing' | 'bottle';
 export type MedicationStatus = 'scheduled' | 'given' | 'skipped';
 
@@ -119,9 +128,10 @@ export interface PumpEvent extends BaseCareEvent {
 }
 
 export interface DiaperEvent extends BaseCareEvent {
-  type: 'diaper';
-  kind: DiaperKind;
   color?: string;
+  kind: DiaperKind;
+  poopSize?: DiaperPoopSize;
+  type: 'diaper';
 }
 
 export interface SleepEvent extends BaseCareEvent {

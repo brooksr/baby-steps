@@ -12,8 +12,8 @@ const sheetGroups: Array<{ category: SheetCategory; title: string; blurb: string
 /** Things you enter by hand. One row per event type the log accepts. */
 const tracked: Array<{ title: string; detail: string }> = [
   { detail: 'Nursing (side and duration) or bottle (volume and contents), as one feeding entry. Start a timer and it fills the duration in for you.', title: 'Feeding' },
-  { detail: 'Pumping output in ounces, per side or both.', title: 'Pumping' },
-  { detail: 'Wet, dirty, or both, with an optional colour note.', title: 'Diapers' },
+  { detail: 'Pumping output in your preferred units, per side or both.', title: 'Pumping' },
+  { detail: 'Wet, dirty, or both, with optional poop size and colour.', title: 'Diapers' },
   { detail: 'Sleep sessions, with a running timer for a nap in progress.', title: 'Sleep' },
   { detail: 'Bath entries, counted in days rather than hours.', title: 'Baths' },
   { detail: 'Weight, length, and head circumference, plus the birth measurements.', title: 'Growth measurements' },

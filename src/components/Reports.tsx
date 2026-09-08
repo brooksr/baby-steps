@@ -5,6 +5,7 @@ import { getFeedToDiaperLags } from '../domain/diapers';
 import { getFirstYearAnalytics, type FirstYearPoint, type MetricStats } from '../domain/firstYear';
 import { getDailySummary } from '../domain/summary';
 import type { BabyProfile, CareEvent, FeedEvent } from '../domain/types';
+import { formatVolume, getPreferredUnits, ouncesToKilograms, toUnitVolume } from '../domain/units';
 import { DateRangeFilter } from './DateRangeFilter';
 import { GrowthStandards } from './GrowthStandards';
 import { NewbornStatus } from './NewbornStatus';
@@ -66,6 +67,14 @@ const BAR_LABEL_LIMIT = 7;
 function formatStat(value: number, suffix = '') {
   const rounded = Number.isInteger(value) ? value : Number(value >= 10 ? value.toFixed(1) : value.toFixed(2));
   return `${rounded.toLocaleString()}${suffix}`;
+}
+
+function convertStats(stats: MetricStats, convert: (value: number) => number): MetricStats {
+  return {
+    average: convert(stats.average),
+    max: convert(stats.max),
+    min: convert(stats.min)
+  };
 }
 
 function formatBarValue(value: number) {
@@ -273,6 +282,9 @@ export function Reports({ events, profile }: ReportsProps) {
   const [period, setPeriod] = useState<ReportPeriod>('day');
   const [dateKey, setDateKey] = useState(() => getLocalDateKey(new Date()));
   const [range, setRange] = useState<DateRange>(() => getPresetRange('30d'));
+  const preferredUnits = getPreferredUnits(profile);
+  const milkSuffix = preferredUnits.system === 'metric' ? ' mL' : ' oz';
+  const toPreferredVolume = (ounces: number) => toUnitVolume(ounces, preferredUnits.system);
 
   const selectedEvents = events.filter((event) => isSameLocalDate(event.startedAt, dateKey));
   const summary = getDailySummary(selectedEvents);
@@ -283,14 +295,15 @@ export function Reports({ events, profile }: ReportsProps) {
   const recentFeedValues = recentPoints.map((p) => ({ label: p.dateKey, value: p.feeds }));
   const recentDiaperValues = diaperPoints(recentPoints);
   const recentSleepValues = recentPoints.map((p) => ({ label: p.dateKey, value: p.sleepMinutes / 60 }));
-  const recentMilkValues = recentPoints.map((p) => ({ label: p.dateKey, value: p.bottleOunces + p.pumpOunces }));
+  const recentMilkValues = recentPoints.map((p) => ({ label: p.dateKey, value: toPreferredVolume(p.bottleOunces + p.pumpOunces) }));
+  const recentMilkStats = convertStats(analytics.stats.milkOunces, toPreferredVolume);
 
   const sumValues = (values: Array<{ value: number }>) => values.reduce((sum, point) => sum + point.value, 0);
   const recentTotals = {
     diapers: sumValues(recentDiaperValues),
     dirty: recentPoints.reduce((sum, p) => sum + p.dirtyDiapers, 0),
     feeds: sumValues(recentFeedValues),
-    milkOz: sumValues(recentMilkValues),
+    milk: sumValues(recentMilkValues),
     sleepHours: sumValues(recentSleepValues),
     wet: recentPoints.reduce((sum, p) => sum + p.wetDiapers, 0)
   };
@@ -309,7 +322,7 @@ export function Reports({ events, profile }: ReportsProps) {
   const periodFeedValues = samplePoints(periodPoints.map((p) => ({ label: p.dateKey, value: p.feeds })), maxBars);
   const periodDiaperValues = samplePoints(diaperPoints(periodPoints), maxBars);
   const periodSleepValues = samplePoints(periodPoints.map((p) => ({ label: p.dateKey, value: p.sleepMinutes / 60 })), maxBars);
-  const periodMilkValues = samplePoints(periodPoints.map((p) => ({ label: p.dateKey, value: p.bottleOunces + p.pumpOunces })), maxBars);
+  const periodMilkValues = samplePoints(periodPoints.map((p) => ({ label: p.dateKey, value: toPreferredVolume(p.bottleOunces + p.pumpOunces) })), maxBars);
 
   const periodDiaperAverages = diaperSplitAverages(periodPoints);
 
@@ -317,7 +330,7 @@ export function Reports({ events, profile }: ReportsProps) {
     feeds: computeStats(periodPoints.map((p) => p.feeds)),
     diapers: computeStats(periodPoints.map((p) => p.diapers)),
     sleepHours: computeStats(periodPoints.map((p) => (p.sleepMinutes > 0 ? p.sleepMinutes / 60 : 0))),
-    milkOz: computeStats(periodPoints.map((p) => p.bottleOunces + p.pumpOunces))
+    milk: computeStats(periodPoints.map((p) => toPreferredVolume(p.bottleOunces + p.pumpOunces)))
   };
 
   const periodTotals = {
@@ -325,7 +338,7 @@ export function Reports({ events, profile }: ReportsProps) {
     diapers: periodPoints.reduce((s, p) => s + p.diapers, 0),
     dirty: periodPoints.reduce((s, p) => s + p.dirtyDiapers, 0),
     sleepHours: periodPoints.reduce((s, p) => s + p.sleepMinutes, 0) / 60,
-    milkOz: periodPoints.reduce((s, p) => s + p.bottleOunces + p.pumpOunces, 0),
+    milk: toPreferredVolume(periodPoints.reduce((s, p) => s + p.bottleOunces + p.pumpOunces, 0)),
     wet: periodPoints.reduce((s, p) => s + p.wetDiapers, 0)
   };
 
@@ -377,7 +390,7 @@ export function Reports({ events, profile }: ReportsProps) {
           total={recentTotals.diapers}
           values={recentDiaperValues}
         />
-        <MiniChart label="Milk/day" stats={analytics.stats.milkOunces} suffix=" oz" total={recentTotals.milkOz} values={recentMilkValues} />
+        <MiniChart label="Milk/day" stats={recentMilkStats} suffix={milkSuffix} total={recentTotals.milk} values={recentMilkValues} />
       </section>
 
       <GrowthStandards events={events} profile={profile} />
@@ -414,7 +427,13 @@ export function Reports({ events, profile }: ReportsProps) {
         </article>
         <article className="metric-card">
           <span>Weight gain</span>
-          <strong>{weightRate !== null ? `${weightRate >= 0 ? '+' : ''}${weightRate.toFixed(1)} oz` : '—'}</strong>
+          <strong>
+            {weightRate !== null
+              ? preferredUnits.system === 'metric'
+                ? `${weightRate >= 0 ? '+' : ''}${Math.round(ouncesToKilograms(weightRate) * 1000)} g`
+                : `${weightRate >= 0 ? '+' : ''}${weightRate.toFixed(1)} oz`
+              : '—'}
+          </strong>
           <small>per week</small>
         </article>
       </section>
@@ -485,11 +504,11 @@ export function Reports({ events, profile }: ReportsProps) {
             </article>
             <article className="metric-card">
               <span>Bottle</span>
-              <strong>{summary.bottleOunces.toFixed(1)} oz</strong>
+              <strong>{formatVolume(summary.bottleOunces, preferredUnits.system)}</strong>
             </article>
             <article className="metric-card">
               <span>Pumped</span>
-              <strong>{summary.pumpOunces.toFixed(1)} oz</strong>
+              <strong>{formatVolume(summary.pumpOunces, preferredUnits.system)}</strong>
             </article>
             <article className="metric-card">
               <span>Wet</span>
@@ -514,7 +533,7 @@ export function Reports({ events, profile }: ReportsProps) {
               <h2>Entries</h2>
               <span>{selectedEvents.length}</span>
             </div>
-            <Timeline events={selectedEvents} emptyMessage="No entries on this date." />
+            <Timeline events={selectedEvents} emptyMessage="No entries on this date." profile={profile} />
           </section>
         </>
       ) : (
@@ -538,8 +557,8 @@ export function Reports({ events, profile }: ReportsProps) {
             </article>
             <article className="metric-card">
               <span>Milk/day</span>
-              <strong>{formatStat(periodStats.milkOz.average, ' oz')}</strong>
-              <small>{formatStat(periodTotals.milkOz, ' oz')} total</small>
+              <strong>{formatStat(periodStats.milk.average, milkSuffix)}</strong>
+              <small>{formatStat(periodTotals.milk, milkSuffix)} total</small>
             </article>
           </section>
 
@@ -556,7 +575,7 @@ export function Reports({ events, profile }: ReportsProps) {
               total={periodTotals.diapers}
               values={periodDiaperValues}
             />
-            <MiniChart label="Milk/day" sampled={sampled} stats={periodStats.milkOz} suffix=" oz" total={periodTotals.milkOz} values={periodMilkValues} />
+            <MiniChart label="Milk/day" sampled={sampled} stats={periodStats.milk} suffix={milkSuffix} total={periodTotals.milk} values={periodMilkValues} />
           </section>
         </>
       )}

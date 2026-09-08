@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { assessLatestGrowth, getGestationInfo, getGrowthMeasurements, getMetricPlots, type AgeBasis, type GrowthBand } from '../domain/growth/assess';
-import { boyGrowthStandards, type GrowthMetric } from '../domain/growth/whoBoyStandards';
-import type { BabyProfile, CareEvent } from '../domain/types';
+import { assessLatestGrowth, getGestationInfo, getGrowthMeasurements, getMetricPlots, type AgeBasis, type GrowthBand, type MetricPlot } from '../domain/growth/assess';
+import { boyGrowthStandards, type GrowthMetric, type GrowthStandard } from '../domain/growth/whoBoyStandards';
+import type { BabyProfile, CareEvent, PreferredUnits } from '../domain/types';
+import { centimetersToInches, formatLength, formatWeight, getPreferredUnits, kilogramsToOunces } from '../domain/units';
 import { GrowthChart } from './GrowthChart';
 
 interface GrowthStandardsProps {
@@ -17,8 +18,58 @@ const bandLabel: Record<GrowthBand, string> = {
   within: 'On track'
 };
 
+/** WHO standards are canonical in kg/cm; charts plot whatever the profile reads in. */
+function convertGrowthValue(metric: GrowthMetric, value: number, preferredUnits: PreferredUnits) {
+  if (preferredUnits.system === 'metric') {
+    return value;
+  }
+
+  if (metric !== 'weight') {
+    return centimetersToInches(value);
+  }
+
+  const ounces = kilogramsToOunces(value);
+  return preferredUnits.weightDisplay === 'ounces' ? ounces : ounces / 16;
+}
+
+function growthUnitLabel(metric: GrowthMetric, preferredUnits: PreferredUnits) {
+  if (metric !== 'weight') {
+    return 'in';
+  }
+
+  return preferredUnits.weightDisplay === 'ounces' ? 'oz' : 'lb';
+}
+
+function displayGrowthValue(metric: GrowthMetric, value: number, preferredUnits: PreferredUnits) {
+  return metric === 'weight'
+    ? formatWeight(kilogramsToOunces(value), preferredUnits)
+    : formatLength(centimetersToInches(value), preferredUnits.system);
+}
+
+function displayPlots(plots: MetricPlot[], metric: GrowthMetric, preferredUnits: PreferredUnits): MetricPlot[] {
+  return plots.map((plot) => ({ ...plot, value: convertGrowthValue(metric, plot.value, preferredUnits) }));
+}
+
+function displayStandard(standard: GrowthStandard, preferredUnits: PreferredUnits): GrowthStandard {
+  if (preferredUnits.system === 'metric') {
+    return standard;
+  }
+
+  return {
+    ...standard,
+    points: standard.points.map((point) => ({
+      median: convertGrowthValue(standard.metric, point.median, preferredUnits),
+      month: point.month,
+      p2: convertGrowthValue(standard.metric, point.p2, preferredUnits),
+      p98: convertGrowthValue(standard.metric, point.p98, preferredUnits)
+    })),
+    unit: growthUnitLabel(standard.metric, preferredUnits)
+  };
+}
+
 export function GrowthStandards({ events, profile }: GrowthStandardsProps) {
   const [basis, setBasis] = useState<AgeBasis>('actual');
+  const preferredUnits = getPreferredUnits(profile);
 
   if (!profile.birthDate) {
     return (
@@ -92,10 +143,11 @@ export function GrowthStandards({ events, profile }: GrowthStandardsProps) {
                   <span className={`assess-pill band-${assessment.band}`}>{bandLabel[assessment.band]}</span>
                 </div>
                 <p>
-                  {assessment.value.toFixed(1)} {assessment.unit} at {assessment.ageMonths.toFixed(1)} mo
+                  {displayGrowthValue(assessment.metric, assessment.value, preferredUnits)} at {assessment.ageMonths.toFixed(1)} mo
                   {activeBasis === 'corrected' ? ' corrected' : ''} · median{' '}
-                  {assessment.standard.median.toFixed(1)} {assessment.unit} (range {assessment.standard.p2.toFixed(1)}–
-                  {assessment.standard.p98.toFixed(1)})
+                  {displayGrowthValue(assessment.metric, assessment.standard.median, preferredUnits)} (range{' '}
+                  {displayGrowthValue(assessment.metric, assessment.standard.p2, preferredUnits)}–
+                  {displayGrowthValue(assessment.metric, assessment.standard.p98, preferredUnits)})
                 </p>
                 <small>{assessment.summary}</small>
               </article>
@@ -106,8 +158,8 @@ export function GrowthStandards({ events, profile }: GrowthStandardsProps) {
 
       <section className="chart-grid" aria-label="WHO growth standard charts">
         {METRIC_ORDER.map((metric) => {
-          const standard = boyGrowthStandards[metric];
-          const plots = getMetricPlots(measurements, metric);
+          const standard = displayStandard(boyGrowthStandards[metric], preferredUnits);
+          const plots = displayPlots(getMetricPlots(measurements, metric), metric, preferredUnits);
 
           return (
             <article className="chart-card" key={metric}>

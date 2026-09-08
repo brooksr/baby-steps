@@ -1,7 +1,8 @@
 import { Bed, Milk, Navigation, Pencil, Phone, Pill, Stethoscope, Wind, X } from 'lucide-react';
 import { FormEvent, useState } from 'react';
 import { EMERGENCY_LINES, HOSPITAL, OB } from '../domain/medicalInfo';
-import type { BabyProfile, CareContact, CareInfo, FeedingType } from '../domain/types';
+import type { BabyProfile, CareContact, CareInfo, FeedingType, MeasurementSystem } from '../domain/types';
+import { formatVolume, getPreferredUnits, toStoredVolume, toUnitVolume } from '../domain/units';
 
 interface KeyInfoProps {
   profile: BabyProfile;
@@ -106,7 +107,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 
 // ── initial draft from profile ────────────────────────────────────────────────
 
-function makeDraft(info: CareInfo) {
+function makeDraft(info: CareInfo, unitSystem: MeasurementSystem) {
   return {
     homeAddress: info.homeAddress ?? '',
     // guardians
@@ -141,7 +142,9 @@ function makeDraft(info: CareInfo) {
     // feeding
     feedingType: info.feedingType ?? '' as FeedingType | '',
     formulaBrand: info.formulaBrand ?? '',
-    bottleAmountOz: info.bottleAmountOz != null ? String(info.bottleAmountOz) : '',
+    bottleAmountOz: info.bottleAmountOz != null
+      ? String(Number(toUnitVolume(info.bottleAmountOz, unitSystem).toFixed(unitSystem === 'metric' ? 0 : 2)))
+      : '',
     feedingNotes: info.feedingNotes ?? '',
     // sleep
     safeSleep: info.safeSleep ?? '',
@@ -155,7 +158,7 @@ function makeDraft(info: CareInfo) {
 
 type Draft = ReturnType<typeof makeDraft>;
 
-function draftToCareInfo(d: Draft): CareInfo {
+function draftToCareInfo(d: Draft, unitSystem: MeasurementSystem): CareInfo {
   const guardians: CareContact[] = [];
   if (d.g1Name) guardians.push({ name: d.g1Name, phone: d.g1Phone || undefined });
   if (d.g2Name) guardians.push({ name: d.g2Name, phone: d.g2Phone || undefined });
@@ -178,7 +181,7 @@ function draftToCareInfo(d: Draft): CareInfo {
     babyAllergies: d.babyAllergies || undefined,
     feedingType: (d.feedingType || undefined) as FeedingType | undefined,
     formulaBrand: d.formulaBrand || undefined,
-    bottleAmountOz: d.bottleAmountOz ? Number(d.bottleAmountOz) : undefined,
+    bottleAmountOz: d.bottleAmountOz ? toStoredVolume(Number(d.bottleAmountOz), unitSystem) : undefined,
     feedingNotes: d.feedingNotes || undefined,
     safeSleep: d.safeSleep || undefined,
     sleepRoutine: d.sleepRoutine || undefined,
@@ -195,7 +198,10 @@ export function KeyInfo({ profile, onSave }: KeyInfoProps) {
   const [saving, setSaving] = useState(false);
 
   const info = profile.careInfo ?? {};
-  const [d, setD] = useState<Draft>(() => makeDraft(info));
+  const preferredUnits = getPreferredUnits(profile);
+  const unitSystem = preferredUnits.system;
+  const metric = unitSystem === 'metric';
+  const [d, setD] = useState<Draft>(() => makeDraft(info, unitSystem));
 
   const set = (key: keyof Draft) => (v: string) => setD((prev) => ({ ...prev, [key]: v }));
 
@@ -203,7 +209,7 @@ export function KeyInfo({ profile, onSave }: KeyInfoProps) {
     e.preventDefault();
     setSaving(true);
     try {
-      await onSave({ careInfo: draftToCareInfo(d) });
+      await onSave({ careInfo: draftToCareInfo(d, unitSystem) });
       setEditing(false);
     } finally {
       setSaving(false);
@@ -211,7 +217,7 @@ export function KeyInfo({ profile, onSave }: KeyInfoProps) {
   }
 
   function handleEdit() {
-    setD(makeDraft(profile.careInfo ?? {}));
+    setD(makeDraft(profile.careInfo ?? {}, unitSystem));
     setEditing(true);
   }
 
@@ -294,8 +300,8 @@ export function KeyInfo({ profile, onSave }: KeyInfoProps) {
             <Field label="Formula brand / type" name="formulaBrand" value={d.formulaBrand} onChange={set('formulaBrand')}
               placeholder="e.g. Similac Pro-Advance" />
           )}
-          <Field label="Typical bottle amount (oz)" name="bottleAmountOz" value={d.bottleAmountOz}
-            onChange={set('bottleAmountOz')} type="number" placeholder="e.g. 4" />
+          <Field label={`Typical bottle amount (${metric ? 'mL' : 'oz'})`} name="bottleAmountOz" value={d.bottleAmountOz}
+            onChange={set('bottleAmountOz')} type="number" placeholder={metric ? 'e.g. 120' : 'e.g. 4'} />
           <TextareaField label="Feeding notes" name="feedingNotes" value={d.feedingNotes} onChange={set('feedingNotes')}
             placeholder="Schedule, burping method, positions, reflux notes…" />
 
@@ -378,7 +384,7 @@ export function KeyInfo({ profile, onSave }: KeyInfoProps) {
             <InfoCard icon={<Milk aria-hidden="true" />} title={FEEDING_LABELS[info.feedingType]}
               lines={[
                 info.formulaBrand ? `Formula: ${info.formulaBrand}` : undefined,
-                info.bottleAmountOz ? `${info.bottleAmountOz} oz per feed` : undefined,
+                info.bottleAmountOz ? `${formatVolume(info.bottleAmountOz, preferredUnits.system)} per feed` : undefined,
                 info.feedingNotes
               ]} />
           )}

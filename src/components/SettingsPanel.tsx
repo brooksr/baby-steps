@@ -2,7 +2,8 @@ import { BookOpen, Download, Moon, Sun, Upload } from 'lucide-react';
 import { ChangeEvent, FormEvent, useMemo, useState } from 'react';
 import { getTimezoneOptions } from '../domain/dates';
 import type { Theme } from '../domain/theme';
-import { babyGenderLabels, type BabyGender, type BabyProfile, type CareEvent, type TrackerExport } from '../domain/types';
+import { babyGenderLabels, type BabyGender, type BabyProfile, type CareEvent, type MeasurementSystem, type TrackerExport, type WeightDisplay } from '../domain/types';
+import { getPreferredUnits } from '../domain/units';
 import type { StoreStatus } from '../storage/store';
 
 interface SettingsPanelProps {
@@ -66,11 +67,14 @@ function eventsToCsv(events: CareEvent[]) {
 }
 
 export function SettingsPanel({ events, profile, storeStatus, theme, onConnectSheet, onExport, onImport, onOpenLearn, onSaveProfile, onThemeChange }: SettingsPanelProps) {
+  const savedUnits = getPreferredUnits(profile);
   const [name, setName] = useState(profile.name);
   const [dueDate, setDueDate] = useState(profile.dueDate);
   const [birthDate, setBirthDate] = useState(profile.birthDate?.slice(0, 10) ?? '');
   const [gender, setGender] = useState<BabyGender | ''>(profile.gender ?? '');
   const [timezone, setTimezone] = useState(profile.timezone);
+  const [unitSystem, setUnitSystem] = useState<MeasurementSystem>(savedUnits.system);
+  const [weightDisplay, setWeightDisplay] = useState<WeightDisplay>(savedUnits.weightDisplay);
   const [status, setStatus] = useState('');
   const [connecting, setConnecting] = useState(false);
 
@@ -80,7 +84,14 @@ export function SettingsPanel({ events, profile, storeStatus, theme, onConnectSh
 
   async function handleSaveProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await onSaveProfile({ birthDate: birthDate || undefined, dueDate, gender: gender || undefined, name, timezone });
+    await onSaveProfile({
+      birthDate: birthDate || undefined,
+      dueDate,
+      gender: gender || undefined,
+      name,
+      preferredUnits: { system: unitSystem, weightDisplay },
+      timezone
+    });
     setStatus('Profile saved.');
   }
 
@@ -154,6 +165,24 @@ export function SettingsPanel({ events, profile, storeStatus, theme, onConnectSh
               {timezones.map((zone) => (
                 <option key={zone} value={zone}>{zone.replace(/_/g, ' ')}</option>
               ))}
+            </select>
+          </label>
+          <label>
+            Preferred units
+            <select value={unitSystem} onChange={(event) => setUnitSystem(event.target.value as MeasurementSystem)}>
+              <option value="american">American (oz, in, °F)</option>
+              <option value="metric">Metric (mL, cm, °C)</option>
+            </select>
+          </label>
+          <label>
+            Weight display
+            <select
+              value={weightDisplay}
+              onChange={(event) => setWeightDisplay(event.target.value as WeightDisplay)}
+              disabled={unitSystem === 'metric'}
+            >
+              <option value="pounds-ounces">Pounds &amp; ounces</option>
+              <option value="ounces">Ounces only</option>
             </select>
           </label>
           <button className="primary-button form-grid-wide" type="submit">
@@ -232,6 +261,11 @@ export function SettingsPanel({ events, profile, storeStatus, theme, onConnectSh
           </button>
         )}
       </section>
+
+      <p className="legal-links">
+        <a href={`${import.meta.env.BASE_URL}privacy/index.html`}>Privacy Policy</a>
+        <a href={`${import.meta.env.BASE_URL}terms/index.html`}>Terms of Service</a>
+      </p>
 
       {status && <p className="toast" role="status">{status}</p>}
     </main>

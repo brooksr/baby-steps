@@ -76,7 +76,7 @@ converts a numeric cell back to a date string on read (Sheets epoch is
 `profileHeaders` in `googleSheetsStore.ts` is positional: append the new key at
 the end so existing sheet rows keep their columns, and widen `PROFILE_RANGE`,
 `PROFILE_ROW_RANGE`, and the header write in `initialize()` to match (they are
-`A:J` as of `gender`). The local Dexie store needs no change — it stores the
+`A:K` as of `preferredUnits`). The local Dexie store needs no change — it stores the
 whole profile object.
 
 ### Adding a new event type (the common path)
@@ -205,6 +205,10 @@ without a tap.
 - **Timezone** is a select over `Intl.supportedValuesOf('timeZone')`
   (`getTimezoneOptions`), which always includes the device zone and whatever the
   profile already holds — a zone chosen on another device must stay selectable.
+- **Preferred units** (`BabyProfile.preferredUnits`) — American is the default;
+  metric display/input converts at the UI boundary while stored event fields
+  remain canonical ounces, inches, and Celsius. American weight can be shown as
+  pounds + ounces or ounces only.
 - **Hero age** — after birth the profile band headlines `formatAgeSummary()`
   ("2 weeks"): days for the first fortnight, then weeks, then calendar months,
   then years. The exact "N days old" line sits under it only from day 14, since

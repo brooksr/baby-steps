@@ -470,6 +470,7 @@ function App() {
         onSave={handleSaveEvent}
         onTimerStart={handleTimerStart}
         onTimerStop={handleTimerStop}
+        profile={profile}
       />
     </div>
   );

@@ -3,13 +3,15 @@ import { formatClock, formatDuration, formatShortDate } from '../domain/dates';
 import { getMilestoneById, getMoodScale, getVaccinationById } from '../domain/reference';
 import { getEventDurationMinutes } from '../domain/summary';
 import { formatTemperature } from '../domain/temperature';
-import { careEventLabels, type CareEvent, type CareEventType } from '../domain/types';
+import { careEventLabels, type BabyProfile, type CareEvent, type CareEventType } from '../domain/types';
+import { formatLength, formatVolume, formatWeight, getPreferredUnits } from '../domain/units';
 
 interface TimelineProps {
   events: CareEvent[];
   emptyMessage?: string;
   onDelete?: (id: string) => void;
   onEdit?: (event: CareEvent) => void;
+  profile?: BabyProfile;
 }
 
 const icons = {
@@ -30,7 +32,9 @@ const icons = {
   vaccine: Syringe
 } satisfies Record<CareEventType, typeof Milk>;
 
-function eventDetail(event: CareEvent) {
+function eventDetail(event: CareEvent, profile?: BabyProfile) {
+  const preferredUnits = getPreferredUnits(profile);
+
   switch (event.type) {
     case 'bath':
       return 'Bath time';
@@ -38,22 +42,22 @@ function eventDetail(event: CareEvent) {
       const parts = [
         event.method === 'nursing' ? `nursing${event.side ? ` · ${event.side} side` : ''}` : `bottle${event.contents ? ` · ${event.contents}` : ''}`,
         event.durationMinutes != null ? formatDuration(event.durationMinutes) : undefined,
-        event.amountOz != null ? `${event.amountOz} oz` : undefined
+        event.amountOz != null ? formatVolume(event.amountOz, preferredUnits.system) : undefined
       ];
       return parts.filter(Boolean).join(' · ');
     }
     case 'birth': {
       const measures = [
-        event.weightOz ? `${event.weightOz} oz` : undefined,
-        event.lengthIn ? `${event.lengthIn} in` : undefined,
-        event.headCircumferenceIn ? `${event.headCircumferenceIn} in head` : undefined
+        event.weightOz != null ? formatWeight(event.weightOz, preferredUnits) : undefined,
+        event.lengthIn != null ? formatLength(event.lengthIn, preferredUnits.system) : undefined,
+        event.headCircumferenceIn != null ? `${formatLength(event.headCircumferenceIn, preferredUnits.system)} head` : undefined
       ];
       return measures.filter(Boolean).join(' · ') || 'Birth logged';
     }
     case 'pump':
-      return `${event.amountOz} oz · ${event.side}`;
+      return `${formatVolume(event.amountOz, preferredUnits.system)} · ${event.side}`;
     case 'diaper':
-      return [event.kind, event.color].filter(Boolean).join(' · ');
+      return [event.kind, event.poopSize ? `${event.poopSize} poop` : undefined, event.color].filter(Boolean).join(' · ');
     case 'sleep': {
       const minutes = getEventDurationMinutes(event);
       return event.endedAt ? formatDuration(minutes) : 'In progress';
@@ -64,16 +68,16 @@ function eventDetail(event: CareEvent) {
       return [event.reason, event.provider, event.location].filter(Boolean).join(' · ');
     case 'growth': {
       const measures = [
-        event.weightOz ? `${event.weightOz} oz` : undefined,
-        event.lengthIn ? `${event.lengthIn} in` : undefined,
-        event.headCircumferenceIn ? `${event.headCircumferenceIn} in head` : undefined
+        event.weightOz != null ? formatWeight(event.weightOz, preferredUnits) : undefined,
+        event.lengthIn != null ? formatLength(event.lengthIn, preferredUnits.system) : undefined,
+        event.headCircumferenceIn != null ? `${formatLength(event.headCircumferenceIn, preferredUnits.system)} head` : undefined
       ];
       return measures.filter(Boolean).join(' · ') || 'Measurement';
     }
     case 'note':
       return event.title || event.notes || 'Note';
     case 'temperature':
-      return formatTemperature(event.celsius);
+      return formatTemperature(event.celsius, preferredUnits.system);
     case 'tummytime':
       return formatDuration(event.durationMinutes);
     case 'mood': {
@@ -89,7 +93,7 @@ function eventDetail(event: CareEvent) {
   }
 }
 
-export function Timeline({ events, emptyMessage = 'No entries yet.', onDelete, onEdit }: TimelineProps) {
+export function Timeline({ events, emptyMessage = 'No entries yet.', onDelete, onEdit, profile }: TimelineProps) {
   if (events.length === 0) {
     return <p className="empty-state">{emptyMessage}</p>;
   }
@@ -111,7 +115,7 @@ export function Timeline({ events, emptyMessage = 'No entries yet.', onDelete, o
                   {formatShortDate(event.startedAt)} · {formatClock(event.startedAt)}
                 </time>
               </div>
-              <p>{eventDetail(event)}</p>
+              <p>{eventDetail(event, profile)}</p>
               {event.notes && event.type !== 'note' && <small>{event.notes}</small>}
             </div>
             {(onEdit || onDelete) && (
