@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { createDefaultBabyProfile } from '../domain/dates';
+import { createDefaultBabyProfile, getLocalDateKey } from '../domain/dates';
 import type { FeedEvent } from '../domain/types';
 import { QuickAddDialog } from './QuickAddDialog';
 
@@ -121,7 +121,39 @@ describe('QuickAddDialog', () => {
     await user.click(screen.getByRole('radio', { name: /large/i }));
     await user.click(screen.getByRole('button', { name: /save/i }));
 
-    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ kind: 'dirty', poopSize: 'large', type: 'diaper' }));
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ color: 'normal', kind: 'dirty', poopSize: 'large', type: 'diaper' }));
+  });
+
+  it('leaves a wet diaper with neither a color nor a size', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+
+    render(<QuickAddDialog activeTimers={{}} eventType="diaper" onClose={vi.fn()} onSave={onSave} onTimerStart={vi.fn()} onTimerStop={vi.fn()} />);
+
+    expect(screen.queryByLabelText(/color/i)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /save/i }));
+
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ color: undefined, kind: 'wet', poopSize: undefined, type: 'diaper' }));
+  });
+
+  it('flags black stool only once the first week is past', async () => {
+    const user = userEvent.setup();
+    const dayOld = { ...createDefaultBabyProfile(), birthDate: getLocalDateKey(new Date()) };
+    const monthOld = { ...createDefaultBabyProfile(), birthDate: getLocalDateKey(new Date(Date.now() - 30 * 24 * 60 * 60_000)) };
+
+    const { rerender } = render(
+      <QuickAddDialog activeTimers={{}} eventType="diaper" onClose={vi.fn()} onSave={vi.fn()} onTimerStart={vi.fn()} onTimerStop={vi.fn()} profile={dayOld} />
+    );
+
+    await user.selectOptions(screen.getByLabelText(/type/i), 'dirty');
+    await user.selectOptions(screen.getByLabelText(/color/i), 'black');
+    expect(screen.getByText(/meconium/i)).not.toHaveClass('flagged');
+
+    rerender(
+      <QuickAddDialog activeTimers={{}} eventType="diaper" onClose={vi.fn()} onSave={vi.fn()} onTimerStart={vi.fn()} onTimerStop={vi.fn()} profile={monthOld} />
+    );
+
+    expect(screen.getByText(/meconium/i)).toHaveClass('flagged');
   });
 
   it('accepts pounds and ounces for American growth entries', async () => {

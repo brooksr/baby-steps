@@ -1,6 +1,6 @@
 import { Award, Bath, Bed, Calendar, Droplets, Dumbbell, FileText, Heart, Milk, Pencil, Pill, Ruler, Smile, Syringe, Thermometer, Trash2, Wind } from 'lucide-react';
 import { formatClock, formatDuration, formatShortDate } from '../domain/dates';
-import { getMilestoneById, getMoodScale, getVaccinationById } from '../domain/reference';
+import { getMilestoneById, getMoodScale, getStoolColorById, getVaccinationById } from '../domain/reference';
 import { getEventDurationMinutes } from '../domain/summary';
 import { formatTemperature } from '../domain/temperature';
 import { careEventLabels, type BabyProfile, type CareEvent, type CareEventType } from '../domain/types';
@@ -57,7 +57,9 @@ function eventDetail(event: CareEvent, profile?: BabyProfile) {
     case 'pump':
       return `${formatVolume(event.amountOz, preferredUnits.system)} · ${event.side}`;
     case 'diaper':
-      return [event.kind, event.poopSize ? `${event.poopSize} poop` : undefined, event.color].filter(Boolean).join(' · ');
+      return [event.kind, event.poopSize ? `${event.poopSize} poop` : undefined, event.color ? getStoolColorById(event.color)?.label ?? event.color : undefined]
+        .filter(Boolean)
+        .join(' · ');
     case 'sleep': {
       const minutes = getEventDurationMinutes(event);
       return event.endedAt ? formatDuration(minutes) : 'In progress';

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ALL_TIME, filterEventsByRange, isRangeActive, type DateRange } from '../domain/dateRange';
+import { getStoolColorById } from '../domain/reference';
 import { careEventLabels, type BabyProfile, type CareEvent, type CareEventType } from '../domain/types';
 import { DateRangeFilter } from './DateRangeFilter';
 import { Timeline } from './Timeline';
@@ -30,7 +31,7 @@ function searchText(event: CareEvent): string {
       parts.push(`${event.amountOz} oz`, event.side);
       break;
     case 'diaper':
-      parts.push(event.kind, event.poopSize ?? '', event.color ?? '');
+      parts.push(event.kind, event.poopSize ?? '', event.color ? getStoolColorById(event.color)?.label ?? event.color : '');
       break;
     case 'medication':
       parts.push(event.medicationName, event.dose, event.status);

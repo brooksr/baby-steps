@@ -6,14 +6,14 @@ import { CsvTable } from './CsvTable';
 const sheetGroups: Array<{ category: SheetCategory; title: string; blurb: string }> = [
   { blurb: 'WHO Child Growth Standards (2006), boys — the curves the growth charts compare against.', category: 'growth', title: 'Growth standards' },
   { blurb: 'Typical newborn output used for the first-weeks diaper & feed checks.', category: 'newborn', title: 'Newborn expectations' },
-  { blurb: 'The tables behind the milestone, vaccine, temperature, tummy-time and mood features.', category: 'feature', title: 'Feature reference data' }
+  { blurb: 'The tables behind the milestone, vaccine, temperature, tummy-time, mood and stool-color features.', category: 'feature', title: 'Feature reference data' }
 ];
 
 /** Things you enter by hand. One row per event type the log accepts. */
 const tracked: Array<{ title: string; detail: string }> = [
   { detail: 'Nursing (side and duration) or bottle (volume and contents), as one feeding entry. Start a timer and it fills the duration in for you.', title: 'Feeding' },
   { detail: 'Pumping output in your preferred units, per side or both.', title: 'Pumping' },
-  { detail: 'Wet, dirty, or both, with optional poop size and colour.', title: 'Diapers' },
+  { detail: 'Wet, dirty, or both, and for anything dirty a poop size and a stool color — with the reference note for that color, flagged when it is one worth a call.', title: 'Diapers' },
   { detail: 'Sleep sessions, with a running timer for a nap in progress.', title: 'Sleep' },
   { detail: 'Bath entries, counted in days rather than hours.', title: 'Baths' },
   { detail: 'Weight, length, and head circumference, plus the birth measurements.', title: 'Growth measurements' },

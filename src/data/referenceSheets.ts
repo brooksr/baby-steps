@@ -7,6 +7,7 @@ import lengthForAge from './reference/length-for-age-boys.csv?raw';
 import milestones from './reference/developmental-milestones.csv?raw';
 import moodScale from './reference/mood-scale.csv?raw';
 import newbornExpectations from './reference/newborn-daily-expectations.csv?raw';
+import stoolColors from './reference/stool-colors.csv?raw';
 import temperatureRanges from './reference/temperature-ranges.csv?raw';
 import tummyTime from './reference/tummy-time-by-age.csv?raw';
 import vaccinationSchedule from './reference/vaccination-schedule.csv?raw';
@@ -95,6 +96,14 @@ export const referenceSheets: ReferenceSheet[] = [
     id: 'mood',
     text: moodScale,
     title: 'Mood scale'
+  },
+  {
+    category: 'feature',
+    description: 'Stool colors offered when logging a diaper, and which ones are worth a call.',
+    filename: 'stool-colors.csv',
+    id: 'stool-colors',
+    text: stoolColors,
+    title: 'Stool colors'
   }
 ];
 

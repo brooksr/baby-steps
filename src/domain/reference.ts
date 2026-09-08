@@ -135,3 +135,34 @@ export function getMoodScale(): MoodLevel[] {
     level: Number(row.level)
   }));
 }
+
+export interface StoolColor {
+  /**
+   * Day of life from which this color is worth a call — 0 flags it at any age,
+   * and an empty column (undefined here) never flags. Black is the reason the
+   * column is a number rather than a yes/no: meconium is expected in the first
+   * week and only means something after it.
+   */
+  flagFromDay?: number;
+  guidance: string;
+  id: string;
+  label: string;
+}
+
+export function getStoolColors(): StoolColor[] {
+  return records('stool-colors').map((row) => ({
+    flagFromDay: num(row.flag_from_day),
+    guidance: row.guidance,
+    id: row.id,
+    label: row.label
+  }));
+}
+
+export function getStoolColorById(id: string): StoolColor | undefined {
+  return getStoolColors().find((color) => color.id === id);
+}
+
+/** Informational only — it repeats the reference row, it does not diagnose. */
+export function isStoolColorFlagged(color: StoolColor, ageDays: number): boolean {
+  return color.flagFromDay !== undefined && ageDays >= color.flagFromDay;
+}

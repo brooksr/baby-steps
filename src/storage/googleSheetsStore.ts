@@ -1,6 +1,6 @@
 import { createDefaultBabyProfile } from '../domain/dates';
 import { migrateStoredEvent, migrateStoredEvents, type StoredCareEventType } from '../domain/legacyEvents';
-import { DEFAULT_PROFILE_ID, type BabyGender, type BabyProfile, type BottleContents, type CareInfo, type CareEvent, type CreateCareEventInput, type DiaperPoopSize, type FeedMethod, type NursingSide, type PreferredUnits, type TrackerExport, type TrackerSnapshot } from '../domain/types';
+import { DEFAULT_PROFILE_ID, type BabyGender, type BabyProfile, type BottleContents, type CareInfo, type CareEvent, type CreateCareEventInput, type FeedMethod, type NursingSide, type PreferredUnits, type TrackerExport, type TrackerSnapshot } from '../domain/types';
 import { requestGoogleSheetsAccessToken } from './googleSheetsAuth';
 import type { BabyTrackerStore, EventQuery, ImportOptions } from './store';
 
@@ -229,14 +229,16 @@ function eventFromRow(row: unknown[]): CareEvent | null {
         side: (optionalString(record.side) ?? 'both') as 'left' | 'right' | 'both',
         type
       };
+    // Color was free text and size is newer than the log, so the row goes
+    // through the migration that resolves both (notes included).
     case 'diaper':
-      return {
+      return migrateStoredEvent({
         ...base,
         color: optionalString(record.color),
         kind: (optionalString(record.kind) ?? 'wet') as 'wet' | 'dirty' | 'both',
-        poopSize: optionalString(record.poopSize) as DiaperPoopSize | undefined,
+        poopSize: optionalString(record.poopSize),
         type
-      };
+      });
     // Neither carries anything beyond the base row.
     case 'bath':
     case 'sleep':

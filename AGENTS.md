@@ -32,6 +32,9 @@ change done.
     history. Retire a variant the same way — never mutate stored rows in place.
   - `domain/dates.ts`, `domain/summary.ts`, `domain/firstYear.ts` — derived stats.
   - `domain/diapers.ts` — feed → diaper lags and the next-change prediction.
+  - `domain/diaperDetails.ts` — stool color and poop size as fields: resolves a
+    stored value to a `stool-colors.csv` id, and reads both out of a note for
+    rows logged before either field existed.
   - `domain/cadence.ts` — gentle feed/bath rhythm nudges.
   - `domain/growth/` — WHO standards data + assessment logic.
   - `domain/csv.ts`, `domain/reference.ts` — CSV parsing + typed reference-data accessors.
@@ -101,6 +104,7 @@ data is ready:
 - `tummy-time-by-age.csv` → `getTummyTimeGuide()`
 - `vaccination-schedule.csv` → `getVaccinationSchedule()`
 - `mood-scale.csv` → `getMoodScale()`
+- `stool-colors.csv` → `getStoolColors()`, `isStoolColorFlagged()`
 
 ## Staged roadmap — feasible features
 
@@ -167,6 +171,17 @@ without a tap.
   has a quick action plus a "Last bath" status card. Baths are counted in days,
   not hours, so it uses `formatDaysAgo` (calendar-day diff — "Yesterday", not
   "14h ago") rather than `formatAgo`.
+- **Diaper color & size** — a dirty (or both) change carries `poopSize`
+  (small/medium/large) and `color`, a `stool-colors.csv` id. The reference row's
+  guidance shows under the selector, styled `.field-note.flagged` when
+  `flagFromDay` has passed — black only after the first week (meconium before
+  it), red/white/gray at any age, normal and green never. Age is taken at the
+  *entry's* time, so back-dating moves the line. Wet-only changes carry neither
+  field. Color used to be a free-text box and size was never a field, so
+  `migrateStoredEvent` resolves old spellings ("mustard" → `normal`) and reads
+  both out of the note ("big yellow blowout") on the way in — an unrecognized
+  word is kept as written, and history is never rewritten. See Guardrails: the
+  note repeats the reference row and points at the pediatrician, nothing more.
 - **Diaper rhythm** (`domain/diapers.ts`) — no new event type, all derived from
   the `diaper` and `feed` events already logged.
   - `getFeedToDiaperLags()` — mean wait from a feed to the next wet / next dirty

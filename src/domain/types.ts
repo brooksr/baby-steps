@@ -128,6 +128,11 @@ export interface PumpEvent extends BaseCareEvent {
 }
 
 export interface DiaperEvent extends BaseCareEvent {
+  /**
+   * Stool color as a `stool-colors.csv` id (see `getStoolColors`). Rows logged
+   * against the old free-text box can still hold anything, so reads resolve it
+   * through `domain/diaperDetails.ts` and keep an unrecognized word as written.
+   */
   color?: string;
   kind: DiaperKind;
   poopSize?: DiaperPoopSize;

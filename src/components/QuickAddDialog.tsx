@@ -1,12 +1,14 @@
 import { Play, Square, X } from 'lucide-react';
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { addMinutes, fromDateTimeInputValue, toDateTimeInputValue } from '../domain/dates';
-import { getMoodScale } from '../domain/reference';
+import { addMinutes, fromDateTimeInputValue, getAgeDays, toDateTimeInputValue } from '../domain/dates';
+import { DEFAULT_STOOL_COLOR } from '../domain/diaperDetails';
+import { getMoodScale, getStoolColorById, getStoolColors, isStoolColorFlagged } from '../domain/reference';
 import { type ActiveTimers, type TimerType, formatElapsed, getElapsedSeconds, isTimerType } from '../domain/timers';
 import { careEventLabels, type BabyProfile, type CareEvent, type CareEventType, type CreateCareEventInput, type DiaperKind, type DiaperPoopSize, type FeedMethod } from '../domain/types';
 import { getPreferredUnits, toStoredLength, toStoredVolume, toStoredWeight, toUnitLength, toUnitVolume, toUnitWeight } from '../domain/units';
 
 const moodLevels = getMoodScale();
+const stoolColors = getStoolColors();
 
 interface QuickAddDialogProps {
   activeTimers: ActiveTimers;
@@ -140,7 +142,9 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
         break;
       case 'diaper':
         setDiaperKind(editEvent.kind);
-        setDiaperColor(editEvent.color ?? '');
+        // Falling back to the default keeps the select honest: an empty value
+        // would still *display* the first option while saving nothing.
+        setDiaperColor(editEvent.color ?? (editEvent.kind === 'wet' ? '' : DEFAULT_STOOL_COLOR));
         setPoopSize(editEvent.poopSize ?? '');
         break;
       case 'medication':
@@ -192,6 +196,21 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
     return `${editing ? 'Edit' : 'Add'} ${careEventLabels[eventType]}`;
   }, [editing, eventType]);
 
+  // Read against the age *on the day of the entry*: black is meconium in the
+  // first week and something else after it, so back-dating has to move the line.
+  const colorGuidance = useMemo(() => {
+    const color = eventType === 'diaper' && diaperKind !== 'wet' ? getStoolColorById(diaperColor) : undefined;
+
+    if (!color) {
+      return null;
+    }
+
+    const loggedAt = new Date(startedAt);
+    const ageDays = profile ? getAgeDays(profile, Number.isNaN(loggedAt.getTime()) ? new Date() : loggedAt) : 0;
+
+    return { flagged: isStoolColorFlagged(color, ageDays), text: color.guidance };
+  }, [diaperColor, diaperKind, eventType, profile, startedAt]);
+
   if (!eventType) {
     return null;
   }
@@ -220,8 +239,11 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
     }
   }
 
+  // A wet-only change has no stool to describe, so both stool fields clear; the
+  // moment one is expected they open on the ordinary answer.
   function handleDiaperKind(next: DiaperKind) {
     setDiaperKind(next);
+    setDiaperColor((current) => (next === 'wet' ? '' : current || DEFAULT_STOOL_COLOR));
     setPoopSize((current) => (next === 'wet' ? '' : current || 'medium'));
   }
 
@@ -289,7 +311,7 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
       case 'diaper':
         payload = {
           type: 'diaper',
-          color: diaperColor.trim() || undefined,
+          color: diaperKind === 'wet' ? undefined : diaperColor || undefined,
           kind: diaperKind as 'wet' | 'dirty' | 'both',
           notes: trimmedNotes,
           poopSize: diaperKind === 'wet' ? undefined : poopSize || undefined,
@@ -512,28 +534,42 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
                   <option value="both">Both</option>
                 </select>
               </label>
-              <label>
-                Color
-                <input value={diaperColor} onChange={(event) => setDiaperColor(event.target.value)} />
-              </label>
               {diaperKind !== 'wet' && (
-                <div className="form-grid-wide option-field">
-                  <span>Poop size</span>
-                  <div className="segmented-control three-option" role="radiogroup" aria-label="Poop size">
-                    {(['small', 'medium', 'large'] as DiaperPoopSize[]).map((size) => (
-                      <button
-                        key={size}
-                        type="button"
-                        role="radio"
-                        aria-checked={poopSize === size}
-                        className={poopSize === size ? 'active' : ''}
-                        onClick={() => setPoopSize(size)}
-                      >
-                        {size.charAt(0).toUpperCase() + size.slice(1)}
-                      </button>
-                    ))}
+                <>
+                  <label>
+                    Color
+                    <select value={diaperColor} onChange={(event) => setDiaperColor(event.target.value)}>
+                      {stoolColors.map((color) => (
+                        <option key={color.id} value={color.id}>
+                          {color.label}
+                        </option>
+                      ))}
+                      {/* A color typed into the old free-text box, kept selectable so editing an
+                          old entry cannot silently rewrite what someone wrote. */}
+                      {diaperColor && !getStoolColorById(diaperColor) && <option value={diaperColor}>{diaperColor}</option>}
+                    </select>
+                  </label>
+                  <div className="form-grid-wide option-field">
+                    <span>Poop size</span>
+                    <div className="segmented-control three-option" role="radiogroup" aria-label="Poop size">
+                      {(['small', 'medium', 'large'] as DiaperPoopSize[]).map((size) => (
+                        <button
+                          key={size}
+                          type="button"
+                          role="radio"
+                          aria-checked={poopSize === size}
+                          className={poopSize === size ? 'active' : ''}
+                          onClick={() => setPoopSize(size)}
+                        >
+                          {size.charAt(0).toUpperCase() + size.slice(1)}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                  {colorGuidance && (
+                    <p className={colorGuidance.flagged ? 'form-grid-wide field-note flagged' : 'form-grid-wide field-note'}>{colorGuidance.text}</p>
+                  )}
+                </>
               )}
             </>
           )}
