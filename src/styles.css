@@ -1166,6 +1166,12 @@ button {
   gap: 10px;
 }
 
+/* Eight bands need the full width for their hour ticks to stay legible, so the
+   feed-clock pair stacks on a phone rather than sharing the 2-up chart grid. */
+.clock-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .chart-card {
   display: grid;
   gap: 12px;
@@ -1348,6 +1354,98 @@ button {
   color: var(--muted);
   font-size: 0.86rem;
   font-weight: 800;
+}
+
+/* Feed order — one row per feed index, every row on the same 24-hour track so
+   the shape of a day reads straight down the column. The bar is the earliest-to-
+   latest spread that index has run to and the mark inside it is the average, so
+   an unsettled feed shows as a wide bar instead of hiding inside its own mean.
+   Colors come from the `[data-event='feed']` pair the section already carries. */
+.feed-order-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.feed-order-row {
+  display: grid;
+  gap: 6px;
+}
+
+/* An index only a day or two ever reached still shows, but reads as the thinner
+   evidence it is. */
+.feed-order-row.sparse {
+  opacity: 0.55;
+}
+
+.feed-order-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.feed-order-head span {
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.feed-order-head strong {
+  color: var(--ink);
+  font-size: 1.05rem;
+}
+
+.feed-order-head small {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.feed-order-track {
+  position: relative;
+  height: 10px;
+  background: var(--event-fill, var(--blue-100));
+  border-radius: 999px;
+}
+
+.feed-order-span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--event-tint, var(--blue-400));
+  border-radius: inherit;
+  opacity: 0.45;
+}
+
+/* The average stands proud of the spread it sits in. */
+.feed-order-mark {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 3px;
+  margin-left: -1px;
+  background: var(--event-tint, var(--blue-400));
+  border-radius: 2px;
+}
+
+/* Which days the rows above are actually about — every number in this section
+   is about them, not about the whole span, so it says so under the summary. */
+.feed-order-scope {
+  margin: -4px 0 10px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.feed-order-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
 }
 
 .bottom-nav {
@@ -1755,6 +1853,10 @@ textarea {
 
   .chart-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .clock-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .modal-backdrop {

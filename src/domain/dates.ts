@@ -124,6 +124,22 @@ export function formatClock(iso: string) {
   }).format(new Date(iso));
 }
 
+/**
+ * The same clock, from minutes after local midnight rather than an instant —
+ * for an average time of day, which belongs to no particular date. Formatted
+ * off a fixed UTC instant so a DST transition cannot shift it, while still
+ * following the reader's 12- or 24-hour locale.
+ */
+export function formatMinutesOfDay(minutes: number) {
+  const total = ((Math.round(minutes) % 1440) + 1440) % 1440;
+
+  return new Intl.DateTimeFormat(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: 'UTC'
+  }).format(new Date(Date.UTC(2000, 0, 1, Math.floor(total / 60), total % 60)));
+}
+
 export function formatShortDate(isoOrDate: string | Date) {
   return new Intl.DateTimeFormat(undefined, {
     month: 'short',

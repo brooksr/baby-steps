@@ -42,6 +42,12 @@ change done.
   - `domain/diaperDetails.ts` — stool color and poop size as fields: resolves a
     stored value to a `stool-colors.csv` id, and reads both out of a note for
     rows logged before either field existed.
+  - `domain/feedClock.ts` — when feeds happen across the day and how long they
+    run at each of those times, in bands of 1, 2, or 3 hours.
+  - `domain/feedOrder.ts` — the same day read by feed *order* instead: the
+    average clock time of the first feed of the day, the second, and so on,
+    over a feeding day that runs 5am to 5am and only over days whose feed count
+    was an ordinary one.
   - `domain/cadence.ts` — gentle feed/bath rhythm nudges.
   - `domain/growth/` — WHO standards data + assessment logic.
   - `domain/csv.ts`, `domain/reference.ts` — CSV parsing + typed reference-data accessors.
@@ -213,6 +219,83 @@ without a tap.
     as a Dashboard status row. Informational only — see Guardrails.
   - Wet/dirty per-day averages ride along in `firstYearAnalytics.stats`, averaged
     over the days that logged any diaper so the splits add up to the total.
+- **Feed clock** (`domain/feedClock.ts` + `components/FeedClock.tsx`) — no new
+  event type: the shape of the feeding day, derived from the `feed` events
+  already logged, scoped by the selected Reports period.
+  - Two charts over the same bands, so a bar on the left and a bar on the right
+    are the same stretch of clock: **Feeds by time of day** (counts) and **Feed
+    length by time** (mean length of the feeds that started there). Feeds are
+    bucketed by the hour they *started*, so a session running past its band
+    still belongs to the time it was offered.
+  - Band width is a 1h/2h/3h control on the section heading. Three is the
+    default — eight bands fit a phone and each holds enough feeds for its
+    average to mean something. At 24 bands there is no room for a number over
+    each bar, so the per-bar values drop and the hour ticks thin to every third;
+    the tap readout still names any band.
+  - Length comes from `getEventDurationMinutes`, so a nursing `durationMinutes`
+    or an `endedAt` span both count and an untimed bottle does not — the card
+    says "N of M timed" rather than averaging a missing length as zero. Over
+    `MAX_FEED_MINUTES` (4h) is a timer left running, not a feeding, and is
+    dropped the way `feedGapStats` drops an overnight gap.
+  - `feedsPerDay` divides by how much of that band was actually *observed*:
+    whole days count 1, a band later today counts the fraction of it that has
+    passed, and one still to come counts 0 — the `getDayFraction` reasoning
+    applied to a slice of the day, so the evening does not read quiet every
+    morning. Under a quarter of a band observed it returns null rather than
+    extrapolating. Bars stay raw counts (an empty hour draws no bar at all);
+    the rate that corrects for a partial day is on the readout.
+  - `busiest` needs only a feed, but `longest`/`shortest` need
+    `MIN_BAND_SAMPLES` (3) timed feeds — like `predictNextDiaper`, it declines
+    rather than naming a band off one session. Informational only, see Guardrails.
+- **Feed order** (`domain/feedOrder.ts` + `components/FeedOrder.tsx`) — the
+  companion cut to the feed clock, over the same `feed` events and the same
+  Reports period. The clock asks "how busy is 9am?"; this asks "what time is the
+  third feed usually?" — feeds are numbered within their local day and each
+  index is averaged across days.
+  - One row per index on a shared 24-hour track, so the shape of a day reads
+    straight down the column. The bar is the earliest-to-latest spread that
+    index has run to and the mark inside it is the average, so an unsettled feed
+    shows as a wide bar rather than hiding inside its own mean. Each row also
+    carries the mean wait since that day's previous feed, and the day count
+    behind it.
+  - **The feeding day starts at `FEED_DAY_START_HOUR` (5am), not midnight** —
+    this module only. Counting from midnight made a 1am feed the *first* feed of
+    a new day when it is really the tail of the night before, which put a Feed 1
+    in the small hours and pushed the whole sequence out of step. Five is past
+    the night feeds and early enough that a real morning start still lands on
+    the right day. The day key shifts the *calendar date* rather than
+    subtracting hours, so a DST change cannot move the boundary. Everywhere else
+    in the app still uses `getLocalDateKey`'s midnight.
+  - Slot stats are **offsets from the day start** (0–1440), not clock times, so
+    they sort and plot in the order the day happens and a day can cross midnight
+    — 11pm and 1am are 18h and 20h into the same day. `toClockMinutes` converts
+    one back for reading; the track and its axis both run start-hour to
+    start-hour, so a late feed sits at the right-hand end where it belongs.
+  - Each index averages only the days that actually reached it, so a day still
+    in progress contributes the feeds it has had without dragging down the ones
+    it has not — no partial-day weighting is needed here, unlike the feed clock.
+  - **Only ordinary days count**: a feeding day is included when it logged
+    between `FEED_DAY_MIN_FEEDS` (9) and `FEED_DAY_MAX_FEEDS` (11) feeds. A day
+    holding three is a hole in the log or the ragged end of the selected range,
+    and folding one in stretched every index across the clock — its lone morning
+    feed is "feed 1" exactly like a proper day's, and its afternoon one is
+    "feed 2" where a full day is on its fifth. Trimming is what makes a row's
+    spread mean "when this feed happens" rather than "how uneven the logging
+    was". Days are dropped whole, never trimmed feed by feed.
+    **These bounds are tuned to a newborn's ~10 feeds a day and will need
+    revisiting as feeding drops off** — once a typical day is seven feeds, no
+    day clears 9 and the section says so instead of charting.
+  - `days` is the counted days and `loggedDays` every day in the span; the
+    `.feed-order-scope` line under the summary says "8 of 22 days · only days
+    with 9–11 feeds · day starts 5:00 AM", because every number in the section
+    is about that subset rather than about the whole period.
+  - Under `MIN_ORDER_DAYS` (3) days an index still shows, dimmed via
+    `.feed-order-row.sparse`, and `typicalCount` stops the summary sentence at
+    the first thin index so one long day cannot stretch the sequence.
+  - `formatMinutesOfDay` in `domain/dates.ts` renders an average time of day —
+    it belongs to no date, so it formats off a fixed UTC instant (a DST
+    transition must not shift it) while still following the reader's 12/24-hour
+    locale.
 - **Cadence nudges** (`domain/cadence.ts`) — `getCadenceReminders()` flags a feed
   past 3h (`FEED_CADENCE_HOURS` 2–3, day and night) and a bath past 3 calendar
   days (`BATH_CADENCE_DAYS` 2–3). Rendered as `.status-row.gentle` rows on the
@@ -222,6 +305,14 @@ without a tap.
   fires with no earlier event to measure from (an empty log means unknown, not
   overdue). Copy suggests offering a feed or a bath and points at the
   pediatrician — never more than that.
+- **Reports page order** — the period control sits directly above the first
+  thing it changes. Everything above it (First Year, recent trends, growth
+  standards) is period-independent; everything below (Insights, Feed clock, Feed
+  order, and the day/period summary) reads from the selected period. The control
+  block carries the Custom date picker and the Check-Up summary with it, since
+  those are part of choosing a period rather than results of one. Two Insights
+  cards are deliberately all-time (Longest sleep, Weight gain) and say so on the
+  card.
 - **Date range filters** (`domain/dateRange.ts` + `components/DateRangeFilter.tsx`)
   — presets plus From/To on the Log, and as a **Custom** period on Reports.
   Custom and Check-Up are the Reports periods that filter by calendar day;

@@ -8,6 +8,8 @@ import { getDailySummary } from '../domain/summary';
 import type { BabyProfile, CareEvent, CareEventType, FeedEvent, MeasurementSystem } from '../domain/types';
 import { formatLength, formatVolume, formatWeight, getPreferredUnits, ouncesToKilograms, toUnitVolume } from '../domain/units';
 import { DateRangeFilter } from './DateRangeFilter';
+import { FeedClock } from './FeedClock';
+import { FeedOrder } from './FeedOrder';
 import { GrowthStandards } from './GrowthStandards';
 import { NewbornStatus } from './NewbornStatus';
 import { Timeline } from './Timeline';
@@ -525,54 +527,6 @@ export function Reports({ events, profile }: ReportsProps) {
 
       <GrowthStandards events={events} profile={profile} />
 
-      <section className="metric-grid report-grid" aria-label="Insights">
-        <article className="metric-card" data-event="sleep">
-          <span>Longest sleep</span>
-          <strong>{longestSleep > 0 ? formatDuration(longestSleep) : '—'}</strong>
-          <small>all time</small>
-        </article>
-        <article className="metric-card" data-event="feed">
-          <span>Avg feed gap</span>
-          <strong>{feedGap.average > 0 ? formatDuration(Math.round(feedGap.average)) : '—'}</strong>
-          {feedGap.average > 0 && <small>{formatDurationRange(feedGap.min, feedGap.max)} range</small>}
-          <small>{periodScopeLabel(period)}</small>
-        </article>
-        {(['wet', 'dirty'] as const).map((kind) => {
-          const lag = diaperLags[kind];
-
-          return (
-            <article className="metric-card" data-event="diaper" key={kind}>
-              <span>Feed → {kind}</span>
-              <strong>{lag.averageMinutes !== null ? formatDuration(Math.round(lag.averageMinutes)) : '—'}</strong>
-              {lag.minMinutes !== null && lag.maxMinutes !== null && (
-                <small>{formatDurationRange(lag.minMinutes, lag.maxMinutes)} range</small>
-              )}
-              <small>{lag.samples > 0 ? `${lag.samples} feeds` : 'no pairs yet'}</small>
-            </article>
-          );
-        })}
-        <article className="metric-card" data-event="feed">
-          <span>Nursing L/R</span>
-          <strong>
-            {balance.total > 0
-              ? `${Math.round((balance.left / balance.total) * 100)}% · ${Math.round((balance.right / balance.total) * 100)}%`
-              : '—'}
-          </strong>
-          <small>{periodScopeLabel(period)}</small>
-        </article>
-        <article className="metric-card" data-event="growth">
-          <span>Weight gain</span>
-          <strong>{weightRate ? formatWeightRate(weightRate.latest, preferredUnits.system) : '—'}</strong>
-          {weightRate && weightRate.stats.min !== weightRate.stats.max && (
-            <small>
-              {formatWeightRate(weightRate.stats.min, preferredUnits.system)}–
-              {formatWeightRate(weightRate.stats.max, preferredUnits.system)} range
-            </small>
-          )}
-          <small>per week</small>
-        </article>
-      </section>
-
       <section className="section-block">
         <div className="section-heading wrap">
           <h2>Report</h2>
@@ -626,6 +580,58 @@ export function Reports({ events, profile }: ReportsProps) {
           )
         )}
       </section>
+
+      <section className="metric-grid report-grid" aria-label="Insights">
+        <article className="metric-card" data-event="sleep">
+          <span>Longest sleep</span>
+          <strong>{longestSleep > 0 ? formatDuration(longestSleep) : '—'}</strong>
+          <small>all time</small>
+        </article>
+        <article className="metric-card" data-event="feed">
+          <span>Avg feed gap</span>
+          <strong>{feedGap.average > 0 ? formatDuration(Math.round(feedGap.average)) : '—'}</strong>
+          {feedGap.average > 0 && <small>{formatDurationRange(feedGap.min, feedGap.max)} range</small>}
+          <small>{periodScopeLabel(period)}</small>
+        </article>
+        {(['wet', 'dirty'] as const).map((kind) => {
+          const lag = diaperLags[kind];
+
+          return (
+            <article className="metric-card" data-event="diaper" key={kind}>
+              <span>Feed → {kind}</span>
+              <strong>{lag.averageMinutes !== null ? formatDuration(Math.round(lag.averageMinutes)) : '—'}</strong>
+              {lag.minMinutes !== null && lag.maxMinutes !== null && (
+                <small>{formatDurationRange(lag.minMinutes, lag.maxMinutes)} range</small>
+              )}
+              <small>{lag.samples > 0 ? `${lag.samples} feeds` : 'no pairs yet'}</small>
+            </article>
+          );
+        })}
+        <article className="metric-card" data-event="feed">
+          <span>Nursing L/R</span>
+          <strong>
+            {balance.total > 0
+              ? `${Math.round((balance.left / balance.total) * 100)}% · ${Math.round((balance.right / balance.total) * 100)}%`
+              : '—'}
+          </strong>
+          <small>{periodScopeLabel(period)}</small>
+        </article>
+        <article className="metric-card" data-event="growth">
+          <span>Weight gain</span>
+          <strong>{weightRate ? formatWeightRate(weightRate.latest, preferredUnits.system) : '—'}</strong>
+          {weightRate && weightRate.stats.min !== weightRate.stats.max && (
+            <small>
+              {formatWeightRate(weightRate.stats.min, preferredUnits.system)}–
+              {formatWeightRate(weightRate.stats.max, preferredUnits.system)} range
+            </small>
+          )}
+          <small>per week</small>
+        </article>
+      </section>
+
+      <FeedClock events={periodRawEvents} scopeLabel={periodScopeLabel(period)} />
+
+      <FeedOrder events={periodRawEvents} scopeLabel={periodScopeLabel(period)} />
 
       {period === 'day' ? (
         <>
