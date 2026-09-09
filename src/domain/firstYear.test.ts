@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createDefaultBabyProfile } from './dates';
-import { getFirstYearAnalytics } from './firstYear';
+import { getDayMetricStats, getFirstYearAnalytics } from './firstYear';
 import type { CareEvent } from './types';
 
 const base = {
@@ -101,5 +101,48 @@ describe('first year analytics', () => {
     expect(stats.diapers).toMatchObject({ average: 2.5, max: 3, min: 2 });
     expect(stats.wetDiapers).toMatchObject({ average: 1.5, max: 2, min: 1 });
     expect(stats.dirtyDiapers).toMatchObject({ average: 1, max: 2, min: 0 });
+  });
+
+  it('weights dirty changes by size and keeps the counts behind them', () => {
+    const profile = {
+      ...createDefaultBabyProfile(new Date('2026-06-20T12:00:00.000Z')),
+      birthDate: '2026-09-02T06:30:00.000Z'
+    };
+    const events: CareEvent[] = [
+      { ...base, id: 'p-1', kind: 'dirty', poopSize: 'large', startedAt: '2026-09-02T09:00:00.000Z', type: 'diaper' },
+      { ...base, id: 'p-2', kind: 'both', poopSize: 'medium', startedAt: '2026-09-02T12:00:00.000Z', type: 'diaper' },
+      { ...base, id: 'p-3', kind: 'dirty', poopSize: 'small', startedAt: '2026-09-02T15:00:00.000Z', type: 'diaper' },
+      // No size on it: a change nobody sized counts as a medium one.
+      { ...base, id: 'p-4', kind: 'dirty', startedAt: '2026-09-02T18:00:00.000Z', type: 'diaper' }
+    ];
+
+    const [day] = getFirstYearAnalytics(profile, events, new Date('2026-09-03T12:00:00.000Z')).points;
+
+    expect(day).toMatchObject({ dirtyDiapers: 4, dirtyLarge: 1, dirtyMedium: 1, dirtySmall: 1 });
+    expect(day.poopLoad).toBeCloseTo(1 + 2 / 3 + 1 / 3 + 2 / 3, 5);
+  });
+});
+
+describe('per-day stats', () => {
+  const entries = [
+    { dateKey: '2026-09-02', value: 8 },
+    { dateKey: '2026-09-03', value: 4 }
+  ];
+
+  // Four feeds by 6am is a pace of sixteen a day, not a four-feed day.
+  it('counts the day in progress as the part of it that has happened', () => {
+    const stats = getDayMetricStats(entries, new Date('2026-09-03T06:00:00'));
+
+    expect(stats.average).toBeCloseTo(12 / 1.25, 5);
+  });
+
+  it('leaves the day in progress out of min and max while a finished day exists', () => {
+    expect(getDayMetricStats(entries, new Date('2026-09-03T06:00:00'))).toMatchObject({ max: 8, min: 8 });
+    // ...but a single unfinished day is all there is to report.
+    expect(getDayMetricStats(entries.slice(1), new Date('2026-09-03T06:00:00'))).toMatchObject({ max: 4, min: 4 });
+  });
+
+  it('averages finished days plainly', () => {
+    expect(getDayMetricStats(entries, new Date('2026-09-04T06:00:00')).average).toBe(6);
   });
 });

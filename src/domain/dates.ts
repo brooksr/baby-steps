@@ -89,6 +89,34 @@ export function isSameLocalDate(iso: string, dateKey: string) {
   return getLocalDateKey(iso) === dateKey;
 }
 
+/**
+ * Below this, the day has barely started and dividing a count by it would turn
+ * one 00:30 feed into a wild daily rate. The first six hours therefore count as
+ * a quarter of a day — an under-estimate of the pace, never a fantasy.
+ */
+const MIN_DAY_FRACTION = 0.25;
+
+/**
+ * How much of a local day has actually happened, 0–1. Today is only partly over,
+ * so counting it as a whole day drags every per-day average down; a future day
+ * has not started at all.
+ */
+export function getDayFraction(dateKey: string, now = new Date()) {
+  const today = getLocalDateKey(now);
+
+  if (dateKey < today) {
+    return 1;
+  }
+
+  if (dateKey > today) {
+    return 0;
+  }
+
+  const elapsed = (now.getTime() - new Date(`${dateKey}T00:00:00`).getTime()) / DAY;
+
+  return Math.min(1, Math.max(MIN_DAY_FRACTION, elapsed));
+}
+
 export function formatClock(iso: string) {
   return new Intl.DateTimeFormat(undefined, {
     hour: 'numeric',

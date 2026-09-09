@@ -39,8 +39,8 @@ describe('feed to diaper lags', () => {
     const diapers = buildDiapers(20);
     const lags = getFeedToDiaperLags([...diapers, ...buildFeedsBefore(diapers, 45)]);
 
-    expect(lags.wet).toEqual({ averageMinutes: 45, samples: 20 });
-    expect(lags.dirty).toEqual({ averageMinutes: null, samples: 0 });
+    expect(lags.wet).toEqual({ averageMinutes: 45, maxMinutes: 45, minMinutes: 45, samples: 20 });
+    expect(lags.dirty).toEqual({ averageMinutes: null, maxMinutes: null, minMinutes: null, samples: 0 });
   });
 
   it('averages the longer wait to the next dirty diaper', () => {
@@ -49,13 +49,14 @@ describe('feed to diaper lags', () => {
     const diapers = buildDiapers(20, (index) => (index % 4 === 3 ? 'dirty' : 'wet'));
     const lags = getFeedToDiaperLags([...diapers, ...buildFeedsBefore(diapers, 45)]);
 
-    expect(lags.dirty).toEqual({ averageMinutes: 135, samples: 10 });
+    // The mean sits between the two waits the pattern actually produces.
+    expect(lags.dirty).toEqual({ averageMinutes: 135, maxMinutes: 225, minMinutes: 45, samples: 10 });
   });
 
   it('reports no average when nothing pairs up', () => {
     expect(getFeedToDiaperLags([])).toEqual({
-      dirty: { averageMinutes: null, samples: 0 },
-      wet: { averageMinutes: null, samples: 0 }
+      dirty: { averageMinutes: null, maxMinutes: null, minMinutes: null, samples: 0 },
+      wet: { averageMinutes: null, maxMinutes: null, minMinutes: null, samples: 0 }
     });
   });
 });

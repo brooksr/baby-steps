@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createDefaultBabyProfile, formatAgeSummary, formatDaysAgo, getDeviceTimezone, getTimezoneOptions } from './dates';
+import { createDefaultBabyProfile, formatAgeSummary, formatDaysAgo, getDayFraction, getDeviceTimezone, getTimezoneOptions } from './dates';
 
 describe('formatDaysAgo', () => {
   const now = new Date('2026-09-10T09:00:00');
@@ -48,6 +48,22 @@ describe('formatAgeSummary', () => {
 
   it('says nothing before birth', () => {
     expect(formatAgeSummary(createDefaultBabyProfile(new Date('2026-06-19T12:00:00')))).toBe('');
+  });
+});
+
+describe('day fraction', () => {
+  it('is whole for a finished day and nothing for one still ahead', () => {
+    expect(getDayFraction('2026-09-02', new Date('2026-09-03T06:00:00'))).toBe(1);
+    expect(getDayFraction('2026-09-04', new Date('2026-09-03T06:00:00'))).toBe(0);
+  });
+
+  it('is the part of today that has elapsed', () => {
+    expect(getDayFraction('2026-09-03', new Date('2026-09-03T18:00:00'))).toBeCloseTo(0.75, 5);
+  });
+
+  // Dividing a count by a sliver of a day would invent a wild daily rate.
+  it('floors the earliest hours at a quarter day', () => {
+    expect(getDayFraction('2026-09-03', new Date('2026-09-03T00:30:00'))).toBe(0.25);
   });
 });
 

@@ -1,4 +1,5 @@
-import { getAgeDays, getLocalDateKey, minutesBetween } from './dates';
+import { getAgeDays, getDayFraction, getLocalDateKey, minutesBetween } from './dates';
+import { getPoopWeight } from './diaperDetails';
 import type { BabyProfile, CareEvent } from './types';
 
 const FIRST_YEAR_DAYS = 365;
@@ -12,6 +13,12 @@ export interface FirstYearPoint {
   diapers: number;
   wetDiapers: number;
   dirtyDiapers: number;
+  /** Dirty changes by recorded size. One logged without a size is in none of these. */
+  dirtyLarge: number;
+  dirtyMedium: number;
+  dirtySmall: number;
+  /** Dirty changes weighted by size (see `POOP_SIZE_WEIGHTS`). */
+  poopLoad: number;
   sleepMinutes: number;
   bottleOunces: number;
   pumpOunces: number;
@@ -62,14 +69,51 @@ function emptyPoint(anchorDate: string, dateKey: string): FirstYearPoint {
     dayNumber,
     diapers: 0,
     dirtyDiapers: 0,
+    dirtyLarge: 0,
+    dirtyMedium: 0,
+    dirtySmall: 0,
     feeds: 0,
+    poopLoad: 0,
     pumpOunces: 0,
     sleepMinutes: 0,
     wetDiapers: 0
   };
 }
 
-function getMetricStats(values: number[]): MetricStats {
+/** One day's worth of a metric, kept with its day so today can count as partial. */
+export interface DayValue {
+  dateKey: string;
+  value: number;
+}
+
+/**
+ * Per-day stats where today counts only as the fraction of it that has already
+ * happened: three feeds by 9am is a pace of twelve a day, not a three-feed day,
+ * and averaging it as a whole day would pull every average down all morning.
+ *
+ * Min and max stay off the day in progress while any finished day is available
+ * — a day that isn't over yet has no total to be the lowest.
+ */
+export function getDayMetricStats(entries: DayValue[], now = new Date()): MetricStats {
+  if (entries.length === 0) {
+    return { average: 0, max: 0, min: 0 };
+  }
+
+  const weights = entries.map((entry) => getDayFraction(entry.dateKey, now));
+  const totalWeight = weights.reduce((total, weight) => total + weight, 0);
+  const total = entries.reduce((sum, entry) => sum + entry.value, 0);
+  const complete = entries.filter((_, index) => weights[index] >= 1).map((entry) => entry.value);
+  const extremes = complete.length > 0 ? complete : entries.map((entry) => entry.value);
+
+  return {
+    average: totalWeight > 0 ? total / totalWeight : 0,
+    max: Math.max(...extremes),
+    min: Math.min(...extremes)
+  };
+}
+
+/** A plain mean, for a metric that is a level rather than a per-day rate. */
+function getLevelStats(values: number[]): MetricStats {
   if (values.length === 0) {
     return { average: 0, max: 0, min: 0 };
   }
@@ -81,8 +125,10 @@ function getMetricStats(values: number[]): MetricStats {
   };
 }
 
-function valuesFor(points: FirstYearPoint[], selector: (point: FirstYearPoint) => number | undefined) {
-  return points.map(selector).filter((value): value is number => value !== undefined);
+function valuesFor(points: FirstYearPoint[], selector: (point: FirstYearPoint) => number | undefined): DayValue[] {
+  return points
+    .map((point) => ({ dateKey: point.dateKey, value: selector(point) }))
+    .filter((entry): entry is DayValue => entry.value !== undefined);
 }
 
 export function getFirstYearEvents(profile: BabyProfile, events: CareEvent[]) {
@@ -115,6 +161,15 @@ export function getFirstYearAnalytics(profile: BabyProfile, events: CareEvent[],
         if (event.kind === 'dirty' || event.kind === 'both') {
           point.dirtyDiapers += 1;
           point.diapers += 1;
+          point.poopLoad += getPoopWeight(event.poopSize);
+
+          if (event.poopSize === 'large') {
+            point.dirtyLarge += 1;
+          } else if (event.poopSize === 'medium') {
+            point.dirtyMedium += 1;
+          } else if (event.poopSize === 'small') {
+            point.dirtySmall += 1;
+          }
         }
         break;
       case 'sleep':
@@ -138,6 +193,7 @@ export function getFirstYearAnalytics(profile: BabyProfile, events: CareEvent[],
 
   const points = [...pointMap.values()].sort((a, b) => a.dayNumber - b.dayNumber);
   const daysElapsed = profile.birthDate ? Math.min(FIRST_YEAR_DAYS, getAgeDays(profile, now) + 1) : 0;
+  const dayStats = (selector: (point: FirstYearPoint) => number | undefined) => getDayMetricStats(valuesFor(points, selector), now);
 
   return {
     anchorDate,
@@ -145,16 +201,18 @@ export function getFirstYearAnalytics(profile: BabyProfile, events: CareEvent[],
     points,
     progressPercent: Math.round((daysElapsed / FIRST_YEAR_DAYS) * 100),
     stats: {
-      diapers: getMetricStats(valuesFor(points, (point) => (point.diapers > 0 ? point.diapers : undefined))),
-      dirtyDiapers: getMetricStats(valuesFor(points, (point) => (point.diapers > 0 ? point.dirtyDiapers : undefined))),
-      feeds: getMetricStats(valuesFor(points, (point) => (point.feeds > 0 ? point.feeds : undefined))),
-      milkOunces: getMetricStats(valuesFor(points, (point) => {
+      diapers: dayStats((point) => (point.diapers > 0 ? point.diapers : undefined)),
+      dirtyDiapers: dayStats((point) => (point.diapers > 0 ? point.dirtyDiapers : undefined)),
+      feeds: dayStats((point) => (point.feeds > 0 ? point.feeds : undefined)),
+      milkOunces: dayStats((point) => {
         const ounces = point.bottleOunces + point.pumpOunces;
         return ounces > 0 ? ounces : undefined;
-      })),
-      sleepHours: getMetricStats(valuesFor(points, (point) => (point.sleepMinutes > 0 ? point.sleepMinutes / 60 : undefined))),
-      weightOz: getMetricStats(valuesFor(points, (point) => point.weightOz)),
-      wetDiapers: getMetricStats(valuesFor(points, (point) => (point.diapers > 0 ? point.wetDiapers : undefined)))
+      }),
+      sleepHours: dayStats((point) => (point.sleepMinutes > 0 ? point.sleepMinutes / 60 : undefined)),
+      // A weight is a level, not a per-day rate, so a reading taken this morning
+      // must not be scaled up the way a half-day of feeds is.
+      weightOz: getLevelStats(valuesFor(points, (point) => point.weightOz).map((entry) => entry.value)),
+      wetDiapers: dayStats((point) => (point.diapers > 0 ? point.wetDiapers : undefined))
     },
     totalLogs: firstYearEvents.length
   };

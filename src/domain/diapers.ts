@@ -32,6 +32,9 @@ export type DiaperConfidence = 'high' | 'low' | 'medium';
 export interface FeedToDiaperLag {
   /** Mean minutes from a feed to the next diaper of this kind, or null with no pairs. */
   averageMinutes: number | null;
+  /** Slowest and quickest of those waits, so the mean is read with its spread. */
+  maxMinutes: number | null;
+  minMinutes: number | null;
   /** Feeds that were followed by such a diaper inside the window. */
   samples: number;
 }
@@ -169,7 +172,16 @@ function getLag(feeds: FeedEvent[], diaperTimes: number[]): FeedToDiaperLag {
     }
   }
 
-  return { averageMinutes: lags.length > 0 ? mean(lags) : null, samples: lags.length };
+  if (lags.length === 0) {
+    return { averageMinutes: null, maxMinutes: null, minMinutes: null, samples: 0 };
+  }
+
+  return {
+    averageMinutes: mean(lags),
+    maxMinutes: Math.max(...lags),
+    minMinutes: Math.min(...lags),
+    samples: lags.length
+  };
 }
 
 /**

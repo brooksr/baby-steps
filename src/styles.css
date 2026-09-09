@@ -90,6 +90,88 @@ h3,
   color: var(--ink);
 }
 
+/* Deepening a bar reads as brightening it on the dark surfaces. */
+:root[data-theme='dark'] .chart-column.active .chart-bar > i,
+:root[data-theme='dark'] .chart-column.active .chart-bar-stack i {
+  filter: brightness(1.2);
+}
+
+/* The event hues above are picked to read on white; on the dark surfaces the
+   mark goes lighter and the fill behind it goes deep, the way `--blue-100` and
+   `--blue-700` already trade places between the themes. */
+:root[data-theme='dark'] [data-event='feed'],
+:root[data-theme='dark'] [data-event='pump'] {
+  --event-fill: #1f3245;
+  --event-tint: #7cc0f5;
+}
+
+:root[data-theme='dark'] [data-event='diaper'] {
+  --event-fill: #372c17;
+  --event-tint: #e2b360;
+}
+
+:root[data-theme='dark'] [data-event='tummytime'] {
+  --event-fill: #12332c;
+  --event-tint: #6fd3b8;
+}
+
+:root[data-theme='dark'] [data-event='bath'] {
+  --event-fill: #143039;
+  --event-tint: #79c7e4;
+}
+
+:root[data-theme='dark'] [data-event='sleep'] {
+  --event-fill: #262147;
+  --event-tint: #a79bf0;
+}
+
+:root[data-theme='dark'] [data-event='medication'],
+:root[data-theme='dark'] [data-event='temperature'],
+:root[data-theme='dark'] [data-event='vaccine'] {
+  --event-fill: #3a201c;
+  --event-tint: #ff9b8f;
+}
+
+:root[data-theme='dark'] [data-event='birth'],
+:root[data-theme='dark'] [data-event='growth'],
+:root[data-theme='dark'] [data-event='milestone'] {
+  --event-fill: #1c3320;
+  --event-tint: #86c98d;
+}
+
+:root[data-theme='dark'] [data-event='mood'] {
+  --event-fill: #38213a;
+  --event-tint: #eda2cc;
+}
+
+:root[data-theme='dark'] [data-event='appointment'],
+:root[data-theme='dark'] [data-event='note'] {
+  --event-fill: #232f3c;
+  --event-tint: #9fb2c4;
+}
+
+/* The idle tints are picked to read on white; on the dark panel they go lighter.
+   The pastel fills stay put, since the selected pill keeps its dark ink. */
+:root[data-theme='dark'] .bottom-nav button[data-nav='dashboard'] {
+  --nav-tint: #c9abe6;
+}
+
+:root[data-theme='dark'] .bottom-nav button[data-nav='log'] {
+  --nav-tint: #7cc0f5;
+}
+
+:root[data-theme='dark'] .bottom-nav button[data-nav='reports'] {
+  --nav-tint: #6fd3b8;
+}
+
+:root[data-theme='dark'] .bottom-nav button[data-nav='care'] {
+  --nav-tint: #ff9b8f;
+}
+
+:root[data-theme='dark'] .bottom-nav button[data-nav='settings'] {
+  --nav-tint: #9fb2c4;
+}
+
 /* Same specificity trap as the segmented control above: without this the
    selected chip reads as unselected in dark mode. */
 :root[data-theme='dark'] .range-chip.active {
@@ -492,6 +574,10 @@ button {
   border-radius: inherit;
 }
 
+.quick-button svg {
+  color: var(--event-tint);
+}
+
 .quick-button svg,
 .bottom-nav svg,
 .timeline-icon svg,
@@ -518,6 +604,63 @@ button {
   border-radius: 8px;
 }
 
+/* Care events are color-coded by family, so a kind of entry is recognizable by
+   its hue before its label is read. The pair rides on the element as custom
+   properties — `--event-tint` for the mark, `--event-fill` for the surface
+   behind it — so the Home quick-add grid and the Log timeline stay in step from
+   one place. Dark-mode counterparts sit with the other dark overrides up top.
+   Both fall back to the old flat blue, so an untagged element is unchanged. */
+[data-event='feed'],
+[data-event='pump'] {
+  --event-fill: #d7ecfb;
+  --event-tint: #2f80c4;
+}
+
+[data-event='diaper'] {
+  --event-fill: #f7e3bc;
+  --event-tint: #9a6912;
+}
+
+[data-event='tummytime'] {
+  --event-fill: #c4ece0;
+  --event-tint: #1f8a76;
+}
+
+[data-event='bath'] {
+  --event-fill: #cbe9f4;
+  --event-tint: #21789b;
+}
+
+[data-event='sleep'] {
+  --event-fill: #dcd8f6;
+  --event-tint: #6558bd;
+}
+
+[data-event='medication'],
+[data-event='temperature'],
+[data-event='vaccine'] {
+  --event-fill: #fbd9d2;
+  --event-tint: #c1543f;
+}
+
+[data-event='birth'],
+[data-event='growth'],
+[data-event='milestone'] {
+  --event-fill: #d3ead4;
+  --event-tint: #3d8046;
+}
+
+[data-event='mood'] {
+  --event-fill: #f7d5e8;
+  --event-tint: #b0517f;
+}
+
+[data-event='appointment'],
+[data-event='note'] {
+  --event-fill: #dbe4ec;
+  --event-tint: #566e82;
+}
+
 .quick-button {
   display: grid;
   min-height: 82px;
@@ -525,7 +668,9 @@ button {
   gap: 8px;
   padding: 12px 8px;
   color: var(--ink);
-  background: var(--panel);
+  /* Set here, not on the `[data-event]` rules above: those would outrank
+     `.timer-active`, and a running timer must still be able to take the tile. */
+  background: var(--event-fill, var(--panel));
   border: 1px solid var(--line);
   box-shadow: 0 1px 0 rgba(34, 75, 112, 0.06);
   font-weight: 800;
@@ -570,6 +715,15 @@ button {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 8px;
+}
+
+/* A card or section that belongs to one kind of entry wears the family hue on
+   its leading edge. Cards carry no icon to tint, so the edge is what does the
+   coding — the same `--event-tint` the Home tiles and timeline chips use. */
+.metric-card[data-event],
+.chart-card[data-event],
+.section-block[data-event] {
+  border-left: 3px solid var(--event-tint);
 }
 
 .metric-card {
@@ -755,21 +909,46 @@ button {
   width: 148px;
 }
 
-/* Five periods won't fit beside the heading on a phone, so the control drops to
+/* Six periods won't fit beside the heading on a phone, so the control drops to
    its own row — `.wrap` on the heading is what lets it. */
 .section-heading.wrap {
   flex-wrap: wrap;
 }
 
+/* Three-up on two rows: "Check-Up" is too long to read at a sixth of a phone. */
 .period-control {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   flex: 1 0 100%;
 }
 
 .period-control button {
   padding: 8px 4px;
   font-size: 0.9rem;
+}
+
+@media (min-width: 480px) {
+  .period-control {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+
+/* Check-Up is anchored to a measurement rather than picked, so it states its own
+   start where the custom period shows its date pickers. */
+.checkup-summary {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  margin-bottom: 12px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  background: var(--panel-blue);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.checkup-summary strong {
+  color: var(--ink);
 }
 
 .date-range {
@@ -909,8 +1088,8 @@ button {
   width: 38px;
   height: 38px;
   place-items: center;
-  color: var(--blue-700);
-  background: var(--blue-100);
+  color: var(--event-tint, var(--blue-700));
+  background: var(--event-fill, var(--blue-100));
   border-radius: 8px;
 }
 
@@ -1047,19 +1226,22 @@ button {
   align-items: end;
   width: 100%;
   height: 110px;
-  background: var(--blue-100);
+  background: var(--event-fill, var(--blue-100));
   border-radius: 999px;
 }
 
 .chart-bar i {
   display: block;
   width: 100%;
-  background: var(--blue-400);
+  background: var(--event-tint, var(--blue-400));
   border-radius: inherit;
 }
 
-.chart-column.active .chart-bar > i {
-  background: var(--blue-700);
+/* The selected bar deepens rather than switching to a fixed blue, so it keeps
+   whichever family hue the chart is drawn in. */
+.chart-column.active .chart-bar > i,
+.chart-column.active .chart-bar-stack i {
+  filter: brightness(0.82);
 }
 
 /* Stacked bar (wet under dirty) — column-reverse so parts fill from the base. */
@@ -1077,16 +1259,15 @@ button {
   border-radius: 0;
 }
 
+/* The one stacked chart splits diapers into wet and dirty, which is a different
+   dimension from the family hue — so the two parts keep their own pair: water
+   blue under the amber the diaper family already uses everywhere else. */
 .chart-bar-part-0 {
   background: var(--blue-400);
 }
 
 .chart-bar-part-1 {
-  background: var(--accent-strong);
-}
-
-.chart-column.active .chart-bar-part-0 {
-  background: var(--blue-700);
+  background: #b87c15;
 }
 
 .chart-legend {
@@ -1117,7 +1298,7 @@ button {
 }
 
 .chart-legend-item.chart-bar-part-1::before {
-  background: var(--accent-strong);
+  background: #b87c15;
 }
 
 .chart-bar-value,
@@ -1199,9 +1380,47 @@ button {
   font-weight: 800;
 }
 
+/* Each tab owns a hue, so the section you are in is recognizable before the
+   label is read: the icon carries it while idle, the whole pill once selected.
+   Fills stay pastel in both themes — the same trick `--accent` already plays —
+   so one dark ink reads on all five. */
+.bottom-nav button[data-nav='dashboard'] {
+  --nav-fill: var(--accent);
+  --nav-tint: #8f63c4;
+}
+
+.bottom-nav button[data-nav='log'] {
+  --nav-fill: #b9dffa;
+  --nav-tint: #2f80c4;
+}
+
+.bottom-nav button[data-nav='reports'] {
+  --nav-fill: #a8e5d3;
+  --nav-tint: #1f8a76;
+}
+
+.bottom-nav button[data-nav='care'] {
+  --nav-fill: #ffc4b8;
+  --nav-tint: #cf5f4e;
+}
+
+.bottom-nav button[data-nav='settings'] {
+  --nav-fill: #ccd8e4;
+  --nav-tint: #5b7285;
+}
+
+.bottom-nav button svg {
+  color: var(--nav-tint);
+}
+
 .bottom-nav button.active {
   color: var(--on-accent);
-  background: var(--accent);
+  background: var(--nav-fill, var(--accent));
+}
+
+/* The selected pill is one block of color — the icon drops its own tint. */
+.bottom-nav button.active svg {
+  color: inherit;
 }
 
 .modal-backdrop {
@@ -1911,7 +2130,9 @@ textarea {
   width: 26px;
   height: 26px;
   flex: 0 0 auto;
-  color: var(--blue-700);
+  /* Inherited from the section, so milestones and vaccinations read apart. The
+     done and overdue states are more specific and still take the box over. */
+  color: var(--event-tint, var(--blue-700));
   background: #ffffff;
   border: 1px solid var(--line-strong);
   border-radius: 7px;

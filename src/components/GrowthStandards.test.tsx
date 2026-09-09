@@ -42,6 +42,23 @@ describe('GrowthStandards units', () => {
     expect(screen.getByText(/116 oz/)).toBeInTheDocument();
   });
 
+  // The WHO curves are built on term births, so a preterm baby opens corrected.
+  it('opens on corrected age when there is gestation to correct for', () => {
+    const profile = { ...createDefaultBabyProfile(), birthDate: '2026-08-04T06:30:00.000Z', dueDate: '2026-09-01' };
+
+    render(<GrowthStandards events={[{ ...birth, startedAt: '2026-08-04T06:30:00.000Z' }]} profile={profile} />);
+
+    expect(screen.getByRole('button', { name: 'Corrected' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('offers no age basis to correct for a term birth', () => {
+    const profile = { ...createDefaultBabyProfile(), birthDate: birth.startedAt };
+
+    render(<GrowthStandards events={[birth]} profile={profile} />);
+
+    expect(screen.queryByRole('button', { name: 'Corrected' })).not.toBeInTheDocument();
+  });
+
   it('keeps the WHO kilogram and centimeter labels for metric profiles', () => {
     const profile = {
       ...createDefaultBabyProfile(),

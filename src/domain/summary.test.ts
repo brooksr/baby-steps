@@ -86,6 +86,19 @@ describe('daily summaries', () => {
 
     expect(getDailySummary(events)).toMatchObject({ bottleOunces: 0, feedCount: 2, nursingMinutes: 0 });
   });
+
+  it('weights dirty changes by size, counting an unsized one as medium', () => {
+    const events: CareEvent[] = [
+      { ...base, id: 'p-1', kind: 'dirty', poopSize: 'small', startedAt: '2026-09-02T09:00:00.000Z', type: 'diaper' },
+      { ...base, id: 'p-2', kind: 'dirty', poopSize: 'medium', startedAt: '2026-09-02T12:00:00.000Z', type: 'diaper' },
+      { ...base, id: 'p-3', kind: 'dirty', startedAt: '2026-09-02T15:00:00.000Z', type: 'diaper' }
+    ];
+
+    const summary = getDailySummary(events);
+
+    expect(summary).toMatchObject({ dirtyDiapers: 3, dirtyLarge: 0, dirtyMedium: 1, dirtySmall: 1 });
+    expect(summary.poopLoad).toBeCloseTo(1 / 3 + 2 / 3 + 2 / 3, 5);
+  });
 });
 
 describe('upcoming medications', () => {

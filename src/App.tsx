@@ -454,7 +454,14 @@ function App() {
           const selected = activeView === tab.id;
 
           return (
-            <button type="button" key={tab.id} aria-pressed={selected} className={selected ? 'active' : ''} onClick={() => navigate(tab.id)}>
+            <button
+              type="button"
+              key={tab.id}
+              aria-pressed={selected}
+              className={selected ? 'active' : ''}
+              data-nav={tab.id}
+              onClick={() => navigate(tab.id)}
+            >
               <Icon aria-hidden="true" />
               <span>{tab.label}</span>
             </button>

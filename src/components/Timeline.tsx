@@ -107,7 +107,7 @@ export function Timeline({ events, emptyMessage = 'No entries yet.', onDelete, o
 
         return (
           <li className="timeline-item" key={event.id}>
-            <span className="timeline-icon">
+            <span className="timeline-icon" data-event={event.type}>
               <Icon aria-hidden="true" />
             </span>
             <div className="timeline-body">

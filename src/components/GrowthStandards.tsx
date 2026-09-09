@@ -68,7 +68,10 @@ function displayStandard(standard: GrowthStandard, preferredUnits: PreferredUnit
 }
 
 export function GrowthStandards({ events, profile }: GrowthStandardsProps) {
-  const [basis, setBasis] = useState<AgeBasis>('actual');
+  // Corrected age is the honest default for a preterm baby: the WHO curves are
+  // built on term births. `activeBasis` falls back to actual when there is no
+  // gestation to correct for, so a term profile never sees the difference.
+  const [basis, setBasis] = useState<AgeBasis>('corrected');
   const preferredUnits = getPreferredUnits(profile);
 
   if (!profile.birthDate) {
@@ -100,10 +103,20 @@ export function GrowthStandards({ events, profile }: GrowthStandardsProps) {
           </div>
           {showCorrected && gestation && (
             <div className="segmented-control" aria-label="Age basis">
-              <button type="button" className={activeBasis === 'actual' ? 'active' : ''} onClick={() => setBasis('actual')}>
+              <button
+                type="button"
+                aria-pressed={activeBasis === 'actual'}
+                className={activeBasis === 'actual' ? 'active' : ''}
+                onClick={() => setBasis('actual')}
+              >
                 Actual age
               </button>
-              <button type="button" className={activeBasis === 'corrected' ? 'active' : ''} onClick={() => setBasis('corrected')}>
+              <button
+                type="button"
+                aria-pressed={activeBasis === 'corrected'}
+                className={activeBasis === 'corrected' ? 'active' : ''}
+                onClick={() => setBasis('corrected')}
+              >
                 Corrected
               </button>
             </div>

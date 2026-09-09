@@ -31,7 +31,14 @@ change done.
     sheet and in IndexedDB, so both stores migrate on read rather than rewriting
     history. Retire a variant the same way — never mutate stored rows in place.
   - `domain/dates.ts`, `domain/summary.ts`, `domain/firstYear.ts` — derived stats.
-  - `domain/diapers.ts` — feed → diaper lags and the next-change prediction.
+    Per-day averages go through `getDayMetricStats`, which counts today as the
+    fraction of it that has elapsed (`getDayFraction`) rather than as a whole day
+    — otherwise every average sags all morning. That fraction is floored at a
+    quarter day so a 00:30 entry can't be extrapolated into a wild rate, min/max
+    skip the day in progress while any finished day exists, and a *level* like
+    `weightOz` is averaged plainly, since it is not a per-day rate.
+  - `domain/diapers.ts` — feed → diaper lags (mean plus the quickest/slowest of
+    them) and the next-change prediction.
   - `domain/diaperDetails.ts` — stool color and poop size as fields: resolves a
     stored value to a `stool-colors.csv` id, and reads both out of a note for
     rows logged before either field existed.
@@ -42,6 +49,8 @@ change done.
     Reports date filters, plus its presets. An empty end is open, so `ALL_TIME`
     needs no separate "filter off" flag, and a reversed pair is read as the span
     meant rather than as nothing.
+  - `domain/checkup.ts` — the span since the last growth measurement, behind the
+    Reports "Check-Up" period.
   - `domain/download.ts` — client-side file download helper.
 - `src/data/reference/*.csv` — **single source of truth** for reference data.
   Imported as raw text via `?raw` in `src/data/referenceSheets.ts` (bundled, so
@@ -177,7 +186,16 @@ without a tap.
   `flagFromDay` has passed — black only after the first week (meconium before
   it), red/white/gray at any age, normal and green never. Age is taken at the
   *entry's* time, so back-dating moves the line. Wet-only changes carry neither
-  field. Color used to be a free-text box and size was never a field, so
+  field. Sizes are weighted for reporting by `POOP_SIZE_WEIGHTS` — large 1,
+  medium 2/3, small 1/3, and a change logged without a size counts as a medium
+  one — the middle of the scale is the honest guess, where either extreme would
+  bias the daily figure. `FirstYearPoint` and `DailySummary` both
+  carry the size counts plus the weighted `poopLoad`; Reports shows a Poops/day
+  card (weighted average, size breakdown, weighted total vs. raw change count)
+  and the daily Dirty card adds the same breakdown once anything that day is
+  sized. Every per-day Reports card carries its min–max range under the average;
+  a range collapses to one number when the span never varied, and it is left off
+  where it would be meaningless (a longest-sleep max, an L/R split). Color used to be a free-text box and size was never a field, so
   `migrateStoredEvent` resolves old spellings ("mustard" → `normal`) and reads
   both out of the note ("big yellow blowout") on the way in — an unrecognized
   word is kept as written, and history is never rewritten. See Guardrails: the
@@ -205,13 +223,49 @@ without a tap.
   overdue). Copy suggests offering a feed or a bath and points at the
   pediatrician — never more than that.
 - **Date range filters** (`domain/dateRange.ts` + `components/DateRangeFilter.tsx`)
-  — presets plus From/To on the Log, and as a fifth **Custom** period on Reports.
-  Custom is the only Reports period that filters by calendar day; Week/Month/Year
-  still count back over the days that logged something, so a quiet stretch shows
-  as a gap under Custom but is skipped by the others.
+  — presets plus From/To on the Log, and as a **Custom** period on Reports.
+  Custom and Check-Up are the Reports periods that filter by calendar day;
+  Week/Month/Year still count back over the days that logged something, so a
+  quiet stretch shows as a gap under those two but is skipped by the others.
+- **Check-Up period** (`domain/checkup.ts`) — a Reports period spanning the last
+  growth measurement through today, so a visit can be described as "since last
+  time". Weights and lengths are taken at the appointment, so the last
+  measurement *is* the last appointment; `birth` counts as one so the first span
+  starts at the hospital, a row with no numbers on it can't anchor, and a
+  measurement dated ahead of today is skipped rather than collapsing the span.
+  Needs no new event type or column. The card above the charts names the anchor
+  date and what was measured then; with nothing measured yet the period says so
+  instead of charting all time.
 - **Theme** — the light/dark control lives in **Settings → Appearance**. The app
   header holds only the wordmark; Settings is also the only way into **Learn**
   (still routable at `#learn`, and the bottom nav stays visible there).
+- **Event colors** — care events are color-coded by family (feeds blue, diapers
+  amber, tummy teal, bath cyan, sleep indigo, meds/temp/vaccines coral,
+  birth/growth/milestones green, mood pink, appointments/notes slate). The pair
+  rides on the element as `data-event={type}` plus two custom properties:
+  `--event-tint` for the mark, `--event-fill` for the surface behind it. The
+  Home quick-add grid and the Log timeline chip both read them, so one block
+  keeps the four surfaces in step. Reports tags each metric card and `MiniChart`
+  (which takes an `event` prop) — cards carry no icon, so a 3px leading edge does
+  the coding, and the chart bars draw in the family tint over its fill. Care tags
+  its Milestones and Vaccinations sections, which tints the idle `.check-box`;
+  the done and overdue states are more specific and still take the box over. The
+  one stacked chart is the exception: wet vs dirty is a different dimension from
+  the family hue, so those two parts keep their own blue/amber pair, and the
+  selected bar deepens with a `filter` rather than switching to a fixed blue. Both fall back to the old flat blue, so an untagged
+  element is unchanged, and `.quick-button` takes the fill on *itself* rather
+  than on the `[data-event]` rules — those would outrank `.timer-active` and a
+  running timer must still be able to take the tile.
+- **Nav colors** — each bottom-nav tab owns a hue, keyed off `data-nav={tab.id}`
+  and carried by two custom properties: `--nav-tint` colors the idle icon,
+  `--nav-fill` fills the selected pill. Fills stay pastel in both themes (the
+  trick `--accent` already plays) so one dark ink reads on all five; only the
+  tints are re-picked under `[data-theme='dark']`, where the light ones would
+  disappear into the panel.
+- **Age basis** — `GrowthStandards` opens on **corrected** age, since the WHO
+  curves are built on term births. The control only appears when there is
+  gestation to correct for, and `activeBasis` falls back to actual otherwise, so
+  a term profile never sees it.
 - **Profile gender** (`BabyProfile.gender`) — recorded because growth standards
   are sex-specific, but only the WHO *boys'* curves are bundled. A profile set to
   girl is still charted against them, and `GrowthStandards` says so on the card

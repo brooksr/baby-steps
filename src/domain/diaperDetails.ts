@@ -12,6 +12,26 @@ export const DEFAULT_STOOL_COLOR = 'normal';
 const poopSizes: DiaperPoopSize[] = ['small', 'medium', 'large'];
 
 /**
+ * How much of a poop each size is worth. A smear and a blowout both log as one
+ * dirty change, which flatters the smear — weighting them is what makes a daily
+ * poop figure comparable across days.
+ */
+export const POOP_SIZE_WEIGHTS: Record<DiaperPoopSize, number> = {
+  large: 1,
+  medium: 2 / 3,
+  small: 1 / 3
+};
+
+/**
+ * A change logged without a size counts as a medium one — the middle of the
+ * scale is the honest guess at a poop nobody sized, where either extreme would
+ * bias the daily figure.
+ */
+export function getPoopWeight(size: DiaperPoopSize | undefined) {
+  return POOP_SIZE_WEIGHTS[size ?? 'medium'];
+}
+
+/**
  * Words caregivers actually type. Colors were free text before the selector
  * existed, and size was never a field at all — both mostly ended up in the
  * note ("big yellow blowout"), which is the only place that history survives.

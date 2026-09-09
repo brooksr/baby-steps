@@ -1,24 +1,43 @@
 import { useState } from 'react';
 import { formatDuration, formatShortDate, getLocalDateKey, isSameLocalDate, minutesBetween } from '../domain/dates';
+import { getCheckupSpan } from '../domain/checkup';
 import { filterEventsByRange, formatRangeLabel, getPresetRange, isDateKeyInRange, type DateRange } from '../domain/dateRange';
 import { getFeedToDiaperLags } from '../domain/diapers';
-import { getFirstYearAnalytics, type FirstYearPoint, type MetricStats } from '../domain/firstYear';
+import { getDayMetricStats, getFirstYearAnalytics, type FirstYearPoint, type MetricStats } from '../domain/firstYear';
 import { getDailySummary } from '../domain/summary';
-import type { BabyProfile, CareEvent, FeedEvent } from '../domain/types';
-import { formatVolume, getPreferredUnits, ouncesToKilograms, toUnitVolume } from '../domain/units';
+import type { BabyProfile, CareEvent, CareEventType, FeedEvent, MeasurementSystem } from '../domain/types';
+import { formatLength, formatVolume, formatWeight, getPreferredUnits, ouncesToKilograms, toUnitVolume } from '../domain/units';
 import { DateRangeFilter } from './DateRangeFilter';
 import { GrowthStandards } from './GrowthStandards';
 import { NewbornStatus } from './NewbornStatus';
 import { Timeline } from './Timeline';
 
-type ReportPeriod = 'day' | 'week' | 'month' | 'year' | 'custom';
+type ReportPeriod = 'day' | 'week' | 'month' | 'year' | 'checkup' | 'custom';
 
-const REPORT_PERIODS: ReportPeriod[] = ['day', 'week', 'month', 'year', 'custom'];
+const REPORT_PERIODS: ReportPeriod[] = ['day', 'week', 'month', 'year', 'checkup', 'custom'];
+
+const PERIOD_LABELS: Record<ReportPeriod, string> = {
+  checkup: 'Check-Up',
+  custom: 'Custom',
+  day: 'Day',
+  month: 'Month',
+  week: 'Week',
+  year: 'Year'
+};
+
+/** The periods scoped by calendar day rather than by days that logged something. */
+function isCalendarPeriod(period: ReportPeriod) {
+  return period === 'checkup' || period === 'custom';
+}
 
 /** How the insight cards describe what they just measured. */
 function periodScopeLabel(period: ReportPeriod) {
   if (period === 'day') {
     return 'today';
+  }
+
+  if (period === 'checkup') {
+    return 'since last check-up';
   }
 
   return period === 'custom' ? 'selected range' : `this ${period}`;
@@ -37,6 +56,8 @@ interface ChartPoint {
 }
 
 interface MiniChartProps {
+  /** Which care event the chart is about — it colors the bars by family. */
+  event: CareEventType;
   label: string;
   stats: MetricStats;
   suffix?: string;
@@ -65,7 +86,9 @@ function formatParts(point: ChartPoint, partLabels: string[] | undefined) {
 const BAR_LABEL_LIMIT = 7;
 
 function formatStat(value: number, suffix = '') {
-  const rounded = Number.isInteger(value) ? value : Number(value >= 10 ? value.toFixed(1) : value.toFixed(2));
+  // One decimal throughout: a second one is false precision on a count of
+  // diapers, and it made the same number read two ways across the page.
+  const rounded = Number(value.toFixed(1));
   return `${rounded.toLocaleString()}${suffix}`;
 }
 
@@ -86,7 +109,7 @@ function formatDayLabel(dateKey: string) {
   return formatShortDate(`${dateKey}T12:00:00`);
 }
 
-function MiniChart({ label, stats, suffix = '', partAverages, partLabels, partTotals, sampled = false, total, values }: MiniChartProps) {
+function MiniChart({ event, label, stats, suffix = '', partAverages, partLabels, partTotals, sampled = false, total, values }: MiniChartProps) {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const max = Math.max(1, ...values.map((point) => point.value));
   const cols = Math.max(1, values.length);
@@ -96,7 +119,7 @@ function MiniChart({ label, stats, suffix = '', partAverages, partLabels, partTo
   const dayWord = sampled ? 'avg/day from' : '';
 
   return (
-    <article className="chart-card">
+    <article className="chart-card" data-event={event}>
       <div className="chart-heading">
         <h3>{label}</h3>
         <strong>{formatStat(stats.average, suffix)} avg</strong>
@@ -173,14 +196,54 @@ function MiniChart({ label, stats, suffix = '', partAverages, partLabels, partTo
   );
 }
 
-function computeStats(values: number[]): MetricStats {
-  const nonZero = values.filter((v) => v > 0);
-  if (nonZero.length === 0) return { average: 0, max: 0, min: 0 };
-  return {
-    average: nonZero.reduce((s, v) => s + v, 0) / nonZero.length,
-    max: Math.max(...nonZero),
-    min: Math.min(...nonZero)
-  };
+/**
+ * Per-day stats over the charted span. A day the selector skips is left out
+ * rather than counted as a zero, and today counts as the part of it that has
+ * happened — see `getDayMetricStats`.
+ */
+function periodStat(points: FirstYearPoint[], selector: (point: FirstYearPoint) => number | undefined): MetricStats {
+  return getDayMetricStats(
+    points
+      .map((point) => ({ dateKey: point.dateKey, value: selector(point) }))
+      .filter((entry): entry is { dateKey: string; value: number } => entry.value !== undefined)
+  );
+}
+
+/** A weekly weight change, signed — grams on metric, ounces otherwise. */
+function formatWeightRate(ouncesPerWeek: number, system: MeasurementSystem) {
+  const sign = ouncesPerWeek >= 0 ? '+' : '';
+
+  return system === 'metric'
+    ? `${sign}${Math.round(ouncesToKilograms(ouncesPerWeek) * 1000)} g`
+    : `${sign}${ouncesPerWeek.toFixed(1)} oz`;
+}
+
+/** "3–7", or one number when every day in the span landed on the same one. */
+function formatRange(stats: MetricStats, suffix = '') {
+  const min = formatStat(stats.min, suffix);
+  const max = formatStat(stats.max, suffix);
+
+  return min === max ? min : `${min}–${max}`;
+}
+
+/** The same range, over durations: "45m–2h 10m". */
+function formatDurationRange(min: number, max: number) {
+  const shortest = formatDuration(Math.round(min));
+  const longest = formatDuration(Math.round(max));
+
+  return shortest === longest ? shortest : `${shortest}–${longest}`;
+}
+
+/** "2 lg · 1 sm" — a size nobody logged is left off, so the line stays short. */
+function poopSizeBreakdown(counts: { large: number; medium: number; small: number; unsized: number }) {
+  return [
+    counts.large > 0 ? `${counts.large} lg` : null,
+    counts.medium > 0 ? `${counts.medium} md` : null,
+    counts.small > 0 ? `${counts.small} sm` : null,
+    counts.unsized > 0 ? `${counts.unsized} unsized` : null
+  ]
+    .filter((part): part is string => part !== null)
+    .join(' · ');
 }
 
 // Reduces daily data to at most maxBars by averaging groups of days.
@@ -209,15 +272,12 @@ function samplePoints(values: ChartPoint[], maxBars: number): ChartPoint[] {
  * same denominator the total uses, so the two splits add up to it.
  */
 function diaperSplitAverages(points: FirstYearPoint[]) {
-  const days = points.filter((point) => point.diapers > 0).length;
-
-  if (days === 0) {
-    return { dirty: 0, wet: 0 };
-  }
+  const onDiaperDays = (selector: (point: FirstYearPoint) => number) =>
+    periodStat(points, (point) => (point.diapers > 0 ? selector(point) : undefined)).average;
 
   return {
-    dirty: points.reduce((sum, point) => sum + point.dirtyDiapers, 0) / days,
-    wet: points.reduce((sum, point) => sum + point.wetDiapers, 0) / days
+    dirty: onDiaperDays((point) => point.dirtyDiapers),
+    wet: onDiaperDays((point) => point.wetDiapers)
   };
 }
 
@@ -234,12 +294,11 @@ function longestSleepMinutes(events: CareEvent[]): number {
     .reduce((max, e) => Math.max(max, minutesBetween(e.startedAt, e.endedAt)), 0);
 }
 
-function avgFeedGapMinutes(events: CareEvent[]): number {
+/** Mean, shortest and longest wait between feeds. Zeroed when nothing pairs up. */
+function feedGapStats(events: CareEvent[]): MetricStats {
   const feeds = events
     .filter((e) => e.type === 'feed')
     .sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime());
-
-  if (feeds.length < 2) return 0;
 
   const gaps: number[] = [];
   for (let i = 1; i < feeds.length; i++) {
@@ -247,7 +306,15 @@ function avgFeedGapMinutes(events: CareEvent[]): number {
     if (gap > 0 && gap < 8 * 60) gaps.push(gap); // ignore overnight gaps
   }
 
-  return gaps.length > 0 ? gaps.reduce((s, v) => s + v, 0) / gaps.length : 0;
+  if (gaps.length === 0) {
+    return { average: 0, max: 0, min: 0 };
+  }
+
+  return {
+    average: gaps.reduce((sum, gap) => sum + gap, 0) / gaps.length,
+    max: Math.max(...gaps),
+    min: Math.min(...gaps)
+  };
 }
 
 function nursingBalance(events: CareEvent[]): { left: number; right: number; total: number } {
@@ -257,18 +324,33 @@ function nursingBalance(events: CareEvent[]): { left: number; right: number; tot
   return { left, right, total: left + right };
 }
 
-function weightGainOzPerWeek(events: CareEvent[]): number | null {
+/**
+ * Ounces per week between each pair of consecutive measurements. `latest` is the
+ * headline — the stretch since the last weigh-in — and the range beside it says
+ * how steady the gain has been across every earlier stretch.
+ */
+function weightGainOzPerWeek(events: CareEvent[]): { latest: number; stats: MetricStats } | null {
   const measurements = events
     .filter((e): e is Extract<CareEvent, { weightOz?: number }> => (e.type === 'growth' || e.type === 'birth') && 'weightOz' in e && e.weightOz !== undefined)
     .sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime());
 
-  if (measurements.length < 2) return null;
+  const rates: number[] = [];
+  for (let i = 1; i < measurements.length; i++) {
+    const days = (new Date(measurements[i].startedAt).getTime() - new Date(measurements[i - 1].startedAt).getTime()) / (24 * 60 * 60_000);
+    // Two readings on the same day measure noise, not a week's gain.
+    if (days > 0) {
+      rates.push((((measurements[i].weightOz as number) - (measurements[i - 1].weightOz as number)) / days) * 7);
+    }
+  }
 
-  const last = measurements[measurements.length - 1];
-  const prev = measurements[measurements.length - 2];
-  const ozDiff = (last.weightOz as number) - (prev.weightOz as number);
-  const days = (new Date(last.startedAt).getTime() - new Date(prev.startedAt).getTime()) / (24 * 60 * 60_000);
-  return days > 0 ? (ozDiff / days) * 7 : null;
+  if (rates.length === 0) {
+    return null;
+  }
+
+  return {
+    latest: rates[rates.length - 1],
+    stats: { average: rates.reduce((sum, rate) => sum + rate, 0) / rates.length, max: Math.max(...rates), min: Math.min(...rates) }
+  };
 }
 
 function periodLabel(points: FirstYearPoint[]): string {
@@ -288,6 +370,15 @@ export function Reports({ events, profile }: ReportsProps) {
 
   const selectedEvents = events.filter((event) => isSameLocalDate(event.startedAt, dateKey));
   const summary = getDailySummary(selectedEvents);
+  const daySizes = {
+    large: summary.dirtyLarge,
+    medium: summary.dirtyMedium,
+    small: summary.dirtySmall,
+    unsized: summary.dirtyDiapers - summary.dirtyLarge - summary.dirtyMedium - summary.dirtySmall
+  };
+  // With no size on any change the weighted figure is just the count again, so
+  // the breakdown lines stay off rather than repeating it.
+  const daySized = daySizes.large + daySizes.medium + daySizes.small;
   const analytics = getFirstYearAnalytics(profile, events);
 
   // Top overview charts always show the most recent 14 data points
@@ -308,14 +399,19 @@ export function Reports({ events, profile }: ReportsProps) {
     wet: recentPoints.reduce((sum, p) => sum + p.wetDiapers, 0)
   };
 
+  // The span since the last weigh-in — what the pediatrician asks about at the
+  // next visit. Null until something has been measured.
+  const checkup = getCheckupSpan(events);
+
   // Period-scoped points and stats. The fixed periods count back over the days
-  // that logged something; a custom range is calendar-true, so it can show a
-  // quiet stretch as the gap it actually was.
+  // that logged something; the calendar periods are calendar-true, so they can
+  // show a quiet stretch as the gap it actually was.
   const periodCount = period === 'week' ? 7 : period === 'month' ? 30 : analytics.points.length;
-  const periodPoints = period === 'custom'
-    ? analytics.points.filter((point) => isDateKeyInRange(point.dateKey, range))
+  const calendarRange = period === 'custom' ? range : period === 'checkup' ? checkup?.range ?? null : null;
+  const periodPoints = isCalendarPeriod(period)
+    ? (calendarRange ? analytics.points.filter((point) => isDateKeyInRange(point.dateKey, calendarRange)) : [])
     : analytics.points.slice(-Math.min(periodCount, analytics.points.length));
-  const maxBars = period === 'week' ? 7 : period === 'month' ? 30 : period === 'custom' ? 31 : 52;
+  const maxBars = period === 'week' ? 7 : period === 'month' ? 30 : isCalendarPeriod(period) ? 31 : 52;
   // Above maxBars the bars average groups of days, so they stop being day totals.
   const sampled = periodPoints.length > maxBars;
 
@@ -327,19 +423,36 @@ export function Reports({ events, profile }: ReportsProps) {
   const periodDiaperAverages = diaperSplitAverages(periodPoints);
 
   const periodStats = {
-    feeds: computeStats(periodPoints.map((p) => p.feeds)),
-    diapers: computeStats(periodPoints.map((p) => p.diapers)),
-    sleepHours: computeStats(periodPoints.map((p) => (p.sleepMinutes > 0 ? p.sleepMinutes / 60 : 0))),
-    milk: computeStats(periodPoints.map((p) => toPreferredVolume(p.bottleOunces + p.pumpOunces)))
+    feeds: periodStat(periodPoints, (p) => (p.feeds > 0 ? p.feeds : undefined)),
+    diapers: periodStat(periodPoints, (p) => (p.diapers > 0 ? p.diapers : undefined)),
+    // Gated on any diaper, not on any poop: a day of nothing but wet changes is
+    // a real zero-poop day, and dropping it would overstate the pace.
+    poops: periodStat(periodPoints, (p) => (p.diapers > 0 ? p.poopLoad : undefined)),
+    sleepHours: periodStat(periodPoints, (p) => (p.sleepMinutes > 0 ? p.sleepMinutes / 60 : undefined)),
+    milk: periodStat(periodPoints, (p) => {
+      const volume = toPreferredVolume(p.bottleOunces + p.pumpOunces);
+      return volume > 0 ? volume : undefined;
+    })
   };
 
   const periodTotals = {
     feeds: periodPoints.reduce((s, p) => s + p.feeds, 0),
     diapers: periodPoints.reduce((s, p) => s + p.diapers, 0),
     dirty: periodPoints.reduce((s, p) => s + p.dirtyDiapers, 0),
+    large: periodPoints.reduce((s, p) => s + p.dirtyLarge, 0),
+    medium: periodPoints.reduce((s, p) => s + p.dirtyMedium, 0),
+    poopLoad: periodPoints.reduce((s, p) => s + p.poopLoad, 0),
     sleepHours: periodPoints.reduce((s, p) => s + p.sleepMinutes, 0) / 60,
+    small: periodPoints.reduce((s, p) => s + p.dirtySmall, 0),
     milk: toPreferredVolume(periodPoints.reduce((s, p) => s + p.bottleOunces + p.pumpOunces, 0)),
     wet: periodPoints.reduce((s, p) => s + p.wetDiapers, 0)
+  };
+
+  const periodPoopSizes = {
+    large: periodTotals.large,
+    medium: periodTotals.medium,
+    small: periodTotals.small,
+    unsized: periodTotals.dirty - periodTotals.large - periodTotals.medium - periodTotals.small
   };
 
   // Period raw events (for insights that need per-event data)
@@ -347,18 +460,34 @@ export function Reports({ events, profile }: ReportsProps) {
   const periodEndKey = periodPoints.length > 0 ? periodPoints[periodPoints.length - 1].dateKey : '';
   const periodRawEvents = period === 'day'
     ? selectedEvents
-    : period === 'custom'
-      ? filterEventsByRange(events, range)
+    : isCalendarPeriod(period)
+      ? (calendarRange ? filterEventsByRange(events, calendarRange) : [])
       : events.filter((e) => {
           const dk = getLocalDateKey(e.startedAt);
           return dk >= periodStartKey && dk <= periodEndKey;
         });
 
   const longestSleep = longestSleepMinutes(events); // all-time best
-  const feedGap = avgFeedGapMinutes(periodRawEvents);
+  const feedGap = feedGapStats(periodRawEvents);
   const diaperLags = getFeedToDiaperLags(periodRawEvents);
   const balance = nursingBalance(periodRawEvents);
   const weightRate = weightGainOzPerWeek(events);
+
+  // What was measured at the visit the span starts from, so the numbers below
+  // read as "since he was 8 lb 2 oz" rather than as a bare date.
+  const checkupAnchorStats = [
+    checkup?.anchor.weightOz != null ? formatWeight(checkup.anchor.weightOz, preferredUnits) : null,
+    checkup?.anchor.lengthIn != null ? formatLength(checkup.anchor.lengthIn, preferredUnits.system) : null,
+    checkup?.anchor.headCircumferenceIn != null ? `${formatLength(checkup.anchor.headCircumferenceIn, preferredUnits.system)} head` : null
+  ].filter((entry): entry is string => entry !== null);
+
+  // Null when Check-Up has nothing to anchor to — the card above already says
+  // why, and a second empty line would only repeat it.
+  const emptyPeriodMessage = period === 'custom'
+    ? `Nothing logged in ${formatRangeLabel(range)}.`
+    : period === 'checkup'
+      ? (checkup ? 'Nothing logged since the last measurement.' : null)
+      : 'Nothing logged yet.';
 
   const progressLabel = profile.birthDate ? `${analytics.daysElapsed} of 365 days` : 'Birth not logged';
 
@@ -379,9 +508,10 @@ export function Reports({ events, profile }: ReportsProps) {
       </section>
 
       <section className="chart-grid" aria-label="Recent trends">
-        <MiniChart label="Feeds/day" stats={analytics.stats.feeds} total={recentTotals.feeds} values={recentFeedValues} />
-        <MiniChart label="Sleep/day" stats={analytics.stats.sleepHours} suffix="h" total={recentTotals.sleepHours} values={recentSleepValues} />
+        <MiniChart event="feed" label="Feeds/day" stats={analytics.stats.feeds} total={recentTotals.feeds} values={recentFeedValues} />
+        <MiniChart event="sleep" label="Sleep/day" stats={analytics.stats.sleepHours} suffix="h" total={recentTotals.sleepHours} values={recentSleepValues} />
         <MiniChart
+          event="diaper"
           label="Diapers/day"
           partAverages={[analytics.stats.wetDiapers.average, analytics.stats.dirtyDiapers.average]}
           partLabels={DIAPER_PART_LABELS}
@@ -390,33 +520,38 @@ export function Reports({ events, profile }: ReportsProps) {
           total={recentTotals.diapers}
           values={recentDiaperValues}
         />
-        <MiniChart label="Milk/day" stats={recentMilkStats} suffix={milkSuffix} total={recentTotals.milk} values={recentMilkValues} />
+        <MiniChart event="pump" label="Milk/day" stats={recentMilkStats} suffix={milkSuffix} total={recentTotals.milk} values={recentMilkValues} />
       </section>
 
       <GrowthStandards events={events} profile={profile} />
 
       <section className="metric-grid report-grid" aria-label="Insights">
-        <article className="metric-card">
+        <article className="metric-card" data-event="sleep">
           <span>Longest sleep</span>
           <strong>{longestSleep > 0 ? formatDuration(longestSleep) : '—'}</strong>
           <small>all time</small>
         </article>
-        <article className="metric-card">
+        <article className="metric-card" data-event="feed">
           <span>Avg feed gap</span>
-          <strong>{feedGap > 0 ? formatDuration(Math.round(feedGap)) : '—'}</strong>
+          <strong>{feedGap.average > 0 ? formatDuration(Math.round(feedGap.average)) : '—'}</strong>
+          {feedGap.average > 0 && <small>{formatDurationRange(feedGap.min, feedGap.max)} range</small>}
           <small>{periodScopeLabel(period)}</small>
         </article>
-        <article className="metric-card">
-          <span>Feed → wet</span>
-          <strong>{diaperLags.wet.averageMinutes !== null ? formatDuration(Math.round(diaperLags.wet.averageMinutes)) : '—'}</strong>
-          <small>{diaperLags.wet.samples > 0 ? `${diaperLags.wet.samples} feeds` : 'no pairs yet'}</small>
-        </article>
-        <article className="metric-card">
-          <span>Feed → dirty</span>
-          <strong>{diaperLags.dirty.averageMinutes !== null ? formatDuration(Math.round(diaperLags.dirty.averageMinutes)) : '—'}</strong>
-          <small>{diaperLags.dirty.samples > 0 ? `${diaperLags.dirty.samples} feeds` : 'no pairs yet'}</small>
-        </article>
-        <article className="metric-card">
+        {(['wet', 'dirty'] as const).map((kind) => {
+          const lag = diaperLags[kind];
+
+          return (
+            <article className="metric-card" data-event="diaper" key={kind}>
+              <span>Feed → {kind}</span>
+              <strong>{lag.averageMinutes !== null ? formatDuration(Math.round(lag.averageMinutes)) : '—'}</strong>
+              {lag.minMinutes !== null && lag.maxMinutes !== null && (
+                <small>{formatDurationRange(lag.minMinutes, lag.maxMinutes)} range</small>
+              )}
+              <small>{lag.samples > 0 ? `${lag.samples} feeds` : 'no pairs yet'}</small>
+            </article>
+          );
+        })}
+        <article className="metric-card" data-event="feed">
           <span>Nursing L/R</span>
           <strong>
             {balance.total > 0
@@ -425,15 +560,15 @@ export function Reports({ events, profile }: ReportsProps) {
           </strong>
           <small>{periodScopeLabel(period)}</small>
         </article>
-        <article className="metric-card">
+        <article className="metric-card" data-event="growth">
           <span>Weight gain</span>
-          <strong>
-            {weightRate !== null
-              ? preferredUnits.system === 'metric'
-                ? `${weightRate >= 0 ? '+' : ''}${Math.round(ouncesToKilograms(weightRate) * 1000)} g`
-                : `${weightRate >= 0 ? '+' : ''}${weightRate.toFixed(1)} oz`
-              : '—'}
-          </strong>
+          <strong>{weightRate ? formatWeightRate(weightRate.latest, preferredUnits.system) : '—'}</strong>
+          {weightRate && weightRate.stats.min !== weightRate.stats.max && (
+            <small>
+              {formatWeightRate(weightRate.stats.min, preferredUnits.system)}–
+              {formatWeightRate(weightRate.stats.max, preferredUnits.system)} range
+            </small>
+          )}
           <small>per week</small>
         </article>
       </section>
@@ -450,7 +585,7 @@ export function Reports({ events, profile }: ReportsProps) {
                 className={period === p ? 'active' : ''}
                 onClick={() => setPeriod(p)}
               >
-                {p.charAt(0).toUpperCase() + p.slice(1)}
+                {PERIOD_LABELS[p]}
               </button>
             ))}
           </div>
@@ -465,13 +600,29 @@ export function Reports({ events, profile }: ReportsProps) {
           />
         )}
 
+        {period === 'checkup' && (
+          checkup ? (
+            <div className="checkup-summary">
+              <strong>
+                Since {checkup.anchor.type === 'birth' ? 'birth' : 'the measurement'} on {formatDayLabel(checkup.anchor.dateKey)}
+              </strong>
+              <span>
+                {checkup.days} day{checkup.days !== 1 ? 's' : ''} · {periodRawEvents.length} entr{periodRawEvents.length === 1 ? 'y' : 'ies'}
+              </span>
+              {checkupAnchorStats.length > 0 && <span>Measured then: {checkupAnchorStats.join(' · ')}</span>}
+            </div>
+          ) : (
+            <p className="empty-state compact">
+              No growth measurement logged yet, so there is no check-up span to report.
+            </p>
+          )
+        )}
+
         {period !== 'day' && (
           periodPoints.length > 0 ? (
             <p>{periodLabel(periodPoints)} · {periodPoints.length} day{periodPoints.length !== 1 ? 's' : ''} with entries</p>
           ) : (
-            <p className="empty-state compact">
-              {period === 'custom' ? `Nothing logged in ${formatRangeLabel(range)}.` : 'Nothing logged yet.'}
-            </p>
+            emptyPeriodMessage && <p className="empty-state compact">{emptyPeriodMessage}</p>
           )
         )}
       </section>
@@ -494,35 +645,37 @@ export function Reports({ events, profile }: ReportsProps) {
           <NewbornStatus events={events} profile={profile} dateKey={dateKey} heading="Newborn check (selected day)" />
 
           <section className="metric-grid report-grid" aria-label="Daily summary">
-            <article className="metric-card">
+            <article className="metric-card" data-event="feed">
               <span>Feeds</span>
               <strong>{summary.feedCount}</strong>
             </article>
-            <article className="metric-card">
+            <article className="metric-card" data-event="feed">
               <span>Nursing</span>
               <strong>{formatDuration(summary.nursingMinutes)}</strong>
             </article>
-            <article className="metric-card">
+            <article className="metric-card" data-event="feed">
               <span>Bottle</span>
               <strong>{formatVolume(summary.bottleOunces, preferredUnits.system)}</strong>
             </article>
-            <article className="metric-card">
+            <article className="metric-card" data-event="pump">
               <span>Pumped</span>
               <strong>{formatVolume(summary.pumpOunces, preferredUnits.system)}</strong>
             </article>
-            <article className="metric-card">
+            <article className="metric-card" data-event="diaper">
               <span>Wet</span>
               <strong>{summary.wetDiapers}</strong>
             </article>
-            <article className="metric-card">
+            <article className="metric-card" data-event="diaper">
               <span>Dirty</span>
               <strong>{summary.dirtyDiapers}</strong>
+              {daySized > 0 && <small>{poopSizeBreakdown(daySizes)}</small>}
+              {daySized > 0 && <small>{formatStat(summary.poopLoad)} poops by size</small>}
             </article>
-            <article className="metric-card">
+            <article className="metric-card" data-event="sleep">
               <span>Sleep</span>
               <strong>{formatDuration(summary.sleepMinutes)}</strong>
             </article>
-            <article className="metric-card">
+            <article className="metric-card" data-event="medication">
               <span>Meds</span>
               <strong>{summary.medicationsGiven}</strong>
             </article>
@@ -539,33 +692,45 @@ export function Reports({ events, profile }: ReportsProps) {
       ) : (
         <>
           <section className="metric-grid report-grid" aria-label={`Summary for ${periodScopeLabel(period)}`}>
-            <article className="metric-card">
+            <article className="metric-card" data-event="feed">
               <span>Feeds/day</span>
               <strong>{formatStat(periodStats.feeds.average)}</strong>
+              <small>{formatRange(periodStats.feeds)} range</small>
               <small>{periodTotals.feeds} total</small>
             </article>
-            <article className="metric-card">
+            <article className="metric-card" data-event="diaper">
               <span>Diapers/day</span>
               <strong>{formatStat(periodStats.diapers.average)}</strong>
+              <small>{formatRange(periodStats.diapers)} range</small>
               <small>{formatStat(periodDiaperAverages.wet)} wet · {formatStat(periodDiaperAverages.dirty)} dirty</small>
               <small>{periodTotals.diapers} total</small>
             </article>
-            <article className="metric-card">
+            <article className="metric-card" data-event="diaper">
+              <span>Poops/day</span>
+              <strong>{formatStat(periodStats.poops.average)}</strong>
+              <small>{formatRange(periodStats.poops)} range</small>
+              <small>{periodTotals.dirty > 0 ? poopSizeBreakdown(periodPoopSizes) : 'none logged'}</small>
+              <small>{formatStat(periodTotals.poopLoad)} total · {periodTotals.dirty} change{periodTotals.dirty !== 1 ? 's' : ''}</small>
+            </article>
+            <article className="metric-card" data-event="sleep">
               <span>Sleep/day</span>
               <strong>{formatStat(periodStats.sleepHours.average, 'h')}</strong>
+              <small>{formatRange(periodStats.sleepHours, 'h')} range</small>
               <small>{formatStat(periodTotals.sleepHours, 'h')} total</small>
             </article>
-            <article className="metric-card">
+            <article className="metric-card" data-event="pump">
               <span>Milk/day</span>
               <strong>{formatStat(periodStats.milk.average, milkSuffix)}</strong>
+              <small>{formatRange(periodStats.milk, milkSuffix)} range</small>
               <small>{formatStat(periodTotals.milk, milkSuffix)} total</small>
             </article>
           </section>
 
           <section className="chart-grid" aria-label={`Charts for ${periodScopeLabel(period)}`}>
-            <MiniChart label="Feeds/day" sampled={sampled} stats={periodStats.feeds} total={periodTotals.feeds} values={periodFeedValues} />
-            <MiniChart label="Sleep/day" sampled={sampled} stats={periodStats.sleepHours} suffix="h" total={periodTotals.sleepHours} values={periodSleepValues} />
+            <MiniChart event="feed" label="Feeds/day" sampled={sampled} stats={periodStats.feeds} total={periodTotals.feeds} values={periodFeedValues} />
+            <MiniChart event="sleep" label="Sleep/day" sampled={sampled} stats={periodStats.sleepHours} suffix="h" total={periodTotals.sleepHours} values={periodSleepValues} />
             <MiniChart
+              event="diaper"
               label="Diapers/day"
               partAverages={[periodDiaperAverages.wet, periodDiaperAverages.dirty]}
               partLabels={DIAPER_PART_LABELS}
@@ -575,7 +740,7 @@ export function Reports({ events, profile }: ReportsProps) {
               total={periodTotals.diapers}
               values={periodDiaperValues}
             />
-            <MiniChart label="Milk/day" sampled={sampled} stats={periodStats.milk} suffix={milkSuffix} total={periodTotals.milk} values={periodMilkValues} />
+            <MiniChart event="pump" label="Milk/day" sampled={sampled} stats={periodStats.milk} suffix={milkSuffix} total={periodTotals.milk} values={periodMilkValues} />
           </section>
         </>
       )}

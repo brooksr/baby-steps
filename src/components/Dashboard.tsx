@@ -20,18 +20,20 @@ interface DashboardProps {
   onAdd: (type: CareEventType) => void;
 }
 
+// Ordered by how often a caregiver reaches for it, three to a row: the awake
+// routine (tummy, bath) sits with sleep rather than trailing the grid.
 const actions = [
   { icon: Milk, label: 'Feed', type: 'feed' },
   { icon: Droplets, label: 'Pump', type: 'pump' },
   { icon: Wind, label: 'Diaper', type: 'diaper' },
+  { icon: Dumbbell, label: 'Tummy', type: 'tummytime' },
+  { icon: Bath, label: 'Bath', type: 'bath' },
   { icon: Bed, label: 'Sleep', type: 'sleep' },
   { icon: Pill, label: 'Med', type: 'medication' },
   { icon: Calendar, label: 'Visit', type: 'appointment' },
   { icon: Ruler, label: 'Growth', type: 'growth' },
   { icon: Thermometer, label: 'Temp', type: 'temperature' },
-  { icon: Dumbbell, label: 'Tummy', type: 'tummytime' },
   { icon: Smile, label: 'Mood', type: 'mood' },
-  { icon: Bath, label: 'Bath', type: 'bath' },
   { icon: FileText, label: 'Note', type: 'note' }
 ] satisfies Array<{ icon: typeof Plus; label: string; type: CareEventType }>;
 
@@ -113,7 +115,13 @@ export function Dashboard({ activeTimers, events, profile, todayKey, onAdd }: Da
           const timer = isTimerType(action.type) ? activeTimers[action.type] : undefined;
           const elapsed = timer ? getElapsedSeconds(timer.startedAt) : null;
           return (
-            <button className={`quick-button${timer ? ' timer-active' : ''}`} type="button" key={action.type} onClick={() => onAdd(action.type)}>
+            <button
+              className={`quick-button${timer ? ' timer-active' : ''}`}
+              type="button"
+              key={action.type}
+              data-event={action.type}
+              onClick={() => onAdd(action.type)}
+            >
               <Icon aria-hidden="true" />
               <span>{action.label}</span>
               {elapsed !== null && <span className="quick-timer">{formatElapsed(elapsed)}</span>}

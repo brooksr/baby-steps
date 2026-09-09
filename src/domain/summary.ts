@@ -1,4 +1,5 @@
 import { minutesBetween } from './dates';
+import { getPoopWeight } from './diaperDetails';
 import type { AppointmentEvent, CareEvent, MedicationEvent } from './types';
 
 export interface DailySummary {
@@ -8,6 +9,12 @@ export interface DailySummary {
   pumpOunces: number;
   wetDiapers: number;
   dirtyDiapers: number;
+  /** Dirty changes by recorded size. One logged without a size is in none of these. */
+  dirtyLarge: number;
+  dirtyMedium: number;
+  dirtySmall: number;
+  /** Dirty changes weighted by size (see `POOP_SIZE_WEIGHTS`). */
+  poopLoad: number;
   sleepMinutes: number;
   medicationsGiven: number;
   appointments: number;
@@ -20,11 +27,15 @@ export function createEmptyDailySummary(): DailySummary {
     appointments: 0,
     bottleOunces: 0,
     dirtyDiapers: 0,
+    dirtyLarge: 0,
+    dirtyMedium: 0,
+    dirtySmall: 0,
     feedCount: 0,
     growthMeasurements: 0,
     medicationsGiven: 0,
     notes: 0,
     nursingMinutes: 0,
+    poopLoad: 0,
     pumpOunces: 0,
     sleepMinutes: 0,
     wetDiapers: 0
@@ -64,6 +75,15 @@ export function getDailySummary(events: CareEvent[]): DailySummary {
         }
         if (event.kind === 'dirty' || event.kind === 'both') {
           summary.dirtyDiapers += 1;
+          summary.poopLoad += getPoopWeight(event.poopSize);
+
+          if (event.poopSize === 'large') {
+            summary.dirtyLarge += 1;
+          } else if (event.poopSize === 'medium') {
+            summary.dirtyMedium += 1;
+          } else if (event.poopSize === 'small') {
+            summary.dirtySmall += 1;
+          }
         }
         break;
       case 'sleep':

@@ -64,7 +64,7 @@ export function Care({ events, profile, onSaveProfile, onToggle }: CareProps) {
 
       <KeyInfo profile={profile} onSave={onSaveProfile} />
 
-      <section className="section-block">
+      <section className="section-block" data-event="milestone">
         <div className="section-heading">
           <div>
             <h2>Milestones</h2>
@@ -103,7 +103,7 @@ export function Care({ events, profile, onSaveProfile, onToggle }: CareProps) {
         })}
       </section>
 
-      <section className="section-block">
+      <section className="section-block" data-event="vaccine">
         <div className="section-heading">
           <div>
             <h2>Vaccinations</h2>
