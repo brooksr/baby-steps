@@ -1,6 +1,6 @@
-import { BookOpen, Baby, Download, Moon, Plus, Sun, Trash2, Upload, UserRound } from 'lucide-react';
+import { Archive, ArchiveRestore, BookOpen, Baby, Download, Moon, Plus, Sun, Upload, UserRound } from 'lucide-react';
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react';
-import { getCaregivers, getFirstName, isParent, type NewProfileInput } from '../domain/family';
+import { getActiveProfiles, getArchivedProfiles, getCaregivers, getFirstName, isParent, type NewProfileInput } from '../domain/family';
 import { DEFAULT_MORNING_SHIFT, DEFAULT_NAP_WINDOW, DEFAULT_NIGHT_SHIFT, DEFAULT_SLEEP_WINDOW, formatShiftTime } from '../domain/nightShift';
 import type { ShiftPlan, ShiftResult } from '../domain/nightShift';
 import { getDueDateStatus, getTimezoneOptions } from '../domain/dates';
@@ -23,7 +23,9 @@ interface SettingsPanelProps {
   onOpenLearn: () => void;
   /** Runs the night-shift backfill: parent sleeps, then attribution. */
   onApplyShifts: (plan: ShiftPlan) => Promise<ShiftResult>;
-  onRemoveChild: (babyId: string) => Promise<void>;
+  /** Sets someone aside, keeping their profile and every entry. Reversible. */
+  onArchiveProfile: (babyId: string) => Promise<void>;
+  onRestoreProfile: (babyId: string) => Promise<void>;
   onSaveProfile: (profile: Partial<BabyProfile>) => Promise<void>;
   onSelectChild: (babyId: string) => Promise<void>;
   onThemeChange: (theme: Theme) => void;
@@ -111,8 +113,9 @@ export function SettingsPanel({
   onExport,
   onImport,
   onApplyShifts,
+  onArchiveProfile,
   onOpenLearn,
-  onRemoveChild,
+  onRestoreProfile,
   onSaveProfile,
   onSelectChild,
   onThemeChange
@@ -140,8 +143,8 @@ export function SettingsPanel({
   const [parentRole, setParentRole] = useState<ParentRole>('mom');
   const [parentBirthDate, setParentBirthDate] = useState('');
   const [parentPhone, setParentPhone] = useState('');
-  // Removal is one tap away from the wrong person, so it asks first.
-  const [confirmRemoveId, setConfirmRemoveId] = useState('');
+  // Archiving is one tap away from the wrong person, so it asks first.
+  const [confirmArchiveId, setConfirmArchiveId] = useState('');
   const editingParent = isParent(profile);
   const parents = useMemo(() => getCaregivers(profiles), [profiles]);
   const [nightId, setNightId] = useState('');
@@ -156,8 +159,10 @@ export function SettingsPanel({
   // Enumerating every zone is not free, and the saved one has to stay in the
   // list even when this browser wouldn't have offered it.
   const timezones = useMemo(() => getTimezoneOptions(profile.timezone), [profile.timezone]);
-  const parentCount = profiles.filter(isParent).length;
-  const childCount = profiles.length - parentCount;
+  const active = useMemo(() => getActiveProfiles(profiles), [profiles]);
+  const archived = useMemo(() => getArchivedProfiles(profiles), [profiles]);
+  const parentCount = active.filter(isParent).length;
+  const childCount = active.length - parentCount;
 
   // Switching child in the header has to move this form too, or it would go on
   // showing the previous baby's details and save them over the new one. Keyed
@@ -175,7 +180,7 @@ export function SettingsPanel({
     setTimezone(profile.timezone);
     setUnitSystem(units.system);
     setWeightDisplay(units.weightDisplay);
-    setConfirmRemoveId('');
+    setConfirmArchiveId('');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingId]);
 
@@ -264,15 +269,20 @@ export function SettingsPanel({
     setStatus(`${getFirstName({ name: parentName })} added.`);
   }
 
-  async function handleRemovePerson(person: BabyProfile) {
-    if (confirmRemoveId !== person.id) {
-      setConfirmRemoveId(person.id);
+  async function handleArchive(person: BabyProfile) {
+    if (confirmArchiveId !== person.id) {
+      setConfirmArchiveId(person.id);
       return;
     }
 
-    setConfirmRemoveId('');
-    await onRemoveChild(person.id);
-    setStatus(`${getFirstName(person)} removed. Their entries are still in the log.`);
+    setConfirmArchiveId('');
+    await onArchiveProfile(person.id);
+    setStatus(`${getFirstName(person)} is archived. Everything logged is kept, and they can come back any time.`);
+  }
+
+  async function handleRestore(person: BabyProfile) {
+    await onRestoreProfile(person.id);
+    setStatus(`${getFirstName(person)} is back in the switcher.`);
   }
 
   async function handleApplyShifts(event: FormEvent<HTMLFormElement>) {
@@ -416,9 +426,9 @@ export function SettingsPanel({
         </div>
 
         <ul className="child-list">
-          {profiles.map((person) => {
+          {active.map((person) => {
             const showing = person.id === profile.id;
-            const confirming = confirmRemoveId === person.id;
+            const confirming = confirmArchiveId === person.id;
             const parent = isParent(person);
             const Icon = parent ? UserRound : Baby;
             const caption = parent
@@ -439,21 +449,49 @@ export function SettingsPanel({
                     <small>{caption}{showing ? ' · showing now' : ''}</small>
                   </span>
                 </button>
-                {profiles.length > 1 && (
+                {active.length > 1 && (
                   <button
                     type="button"
-                    className={confirming ? 'child-remove confirming' : 'child-remove'}
-                    aria-label={confirming ? `Confirm removing ${person.name}` : `Remove ${person.name}`}
-                    onClick={() => handleRemovePerson(person)}
+                    className={confirming ? 'child-archive confirming' : 'child-archive'}
+                    aria-label={confirming ? `Confirm archiving ${person.name}` : `Archive ${person.name}`}
+                    onClick={() => handleArchive(person)}
                   >
-                    <Trash2 aria-hidden="true" />
-                    {confirming && <span>Remove?</span>}
+                    <Archive aria-hidden="true" />
+                    {confirming && <span>Archive?</span>}
                   </button>
                 )}
               </li>
             );
           })}
         </ul>
+
+        {archived.length > 0 && (
+          <>
+            <p className="care-form-section archived-heading"><strong>Archived</strong></p>
+            <ul className="child-list archived">
+              {archived.map((person) => (
+                <li key={person.id}>
+                  <span className="child-pick">
+                    {isParent(person) ? <UserRound aria-hidden="true" /> : <Baby aria-hidden="true" />}
+                    <span>
+                      <strong>{person.name}</strong>
+                      <small>every entry kept</small>
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    className="child-archive"
+                    aria-label={`Bring ${person.name} back`}
+                    onClick={() => handleRestore(person)}
+                  >
+                    <ArchiveRestore aria-hidden="true" />
+                    <span>Bring back</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
 
         {adding === 'child' && (
           <form className="form-grid" onSubmit={handleAddChild}>
@@ -531,7 +569,8 @@ export function SettingsPanel({
         <p className="field-note">
           Everyone keeps their own entries and reports — a child's growth and milestones, a parent's sleep and, for a
           mom, her cycle. Parents are also the guardian list on the Care page and the names an entry can be logged
-          under. Removing someone takes them out of the switcher; their entries stay in the log.
+          under. Archiving takes someone out of the switcher and keeps everything they have: every entry stays exactly
+          as it is, and you can bring them back whenever you like. Nothing here is ever deleted.
         </p>
       </section>
 

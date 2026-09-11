@@ -7,7 +7,7 @@ const sheetGroups: Array<{ category: SheetCategory; title: string; blurb: string
   { blurb: 'WHO Child Growth Standards (2006), boys — the curves the growth charts compare against.', category: 'growth', title: 'Growth standards' },
   { blurb: 'Typical newborn output used for the first-weeks diaper & feed checks.', category: 'newborn', title: 'Newborn expectations' },
   { blurb: 'The pregnancy, age and personal-note copy behind the Home “What to expect” card.', category: 'expect', title: 'What to expect' },
-  { blurb: 'The tables behind the milestone, vaccine, temperature, tummy-time, mood and stool-color features.', category: 'feature', title: 'Feature reference data' }
+  { blurb: 'The tables behind the milestone, vaccine, temperature, tummy-time, mood, stool-color and food-group features.', category: 'feature', title: 'Feature reference data' }
 ];
 
 /** Things you enter by hand. One row per event type the log accepts. */
@@ -41,14 +41,15 @@ const derived: Array<{ title: string; detail: string }> = [
   { detail: 'Daily totals, first-year trend charts, and per-day averages for feeds, diapers, sleep and milk — by day, week, month, year, or a date range you pick.', title: 'Reports & trends' },
   { detail: 'Search the log, filter by type, and narrow to a date range.', title: 'Log filters' },
   { detail: 'For a parent: time in bed per night, less every wake-up and the time it takes to settle back down — so a broken night reads as the rest it actually was. Entries within half an hour count as one wake-up, a stretch under half an hour between them is not counted as sleep, and the settling allowance is yours to set. Only a wake-up recorded against you counts — one logged under the other parent, or under nobody, leaves your night alone.', title: 'Parent sleep & rest' },
-  { detail: 'Averages the recent cycles (start to start), then estimates the next period, ovulation about 14 days before it, and the fertile window around that. It needs two cycles before it will say anything, drops gaps under 21 or over 60 days as missed logging rather than averaging them in, and shows the date range the estimate actually spans. An estimate from logged dates — never contraception, a fertility test, or a pregnancy test.', title: 'Cycle & fertility estimate' }
+  { detail: 'Averages the recent cycles (start to start), then estimates the next period, ovulation about 14 days before it, and the fertile window around that. It needs two cycles before it will say anything, drops gaps under 21 or over 60 days as missed logging rather than averaging them in, and shows the date range the estimate actually spans. An estimate from logged dates — never contraception, a fertility test, or a pregnancy test. Tracking pauses while a baby is on the way and starts fresh from the first period after the birth, since a gap spanning a pregnancy is not a cycle.', title: 'Cycle & fertility estimate' }
 ];
 
 const storage: Array<{ title: string; detail: string }> = [
   { detail: 'Every entry reads and writes one shared Google Sheet, so several caregivers see the same log.', title: 'Shared Google Sheet' },
   { detail: 'The app re-reads the sheet in the background, so an entry logged on someone else’s phone appears here without a reload.', title: 'Live updates' },
   { detail: 'Installable as an app, and it keeps working without a connection — reference tables are bundled, not fetched.', title: 'Works offline' },
-  { detail: 'Download everything as JSON or CSV at any time, and import a JSON export back.', title: 'Your data, exportable' }
+  { detail: 'Download everything as JSON or CSV at any time, and import a JSON export back.', title: 'Your data, exportable' },
+  { detail: 'Someone can be archived rather than deleted: they leave the switcher, every entry of theirs is kept exactly as it is, and one tap brings them back. Nothing about a person is ever removed from the log.', title: 'Archive, never delete' }
 ];
 
 const neverSupport: Array<{ title: string; detail: string }> = [

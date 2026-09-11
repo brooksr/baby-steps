@@ -1,0 +1,104 @@
+name,category,food
+Apples,produce,yes
+Avocados,produce,yes
+Baby carrots,produce,yes
+Bananas,produce,yes
+Carrots,produce,yes
+Celery,produce,yes
+Cherry tomatoes,produce,yes
+Cilantro,produce,yes
+Garlic,produce,yes
+Grape tomatoes,produce,yes
+Grapes,produce,yes
+Limes,produce,yes
+Mandarin oranges,produce,yes
+Mini bell peppers,produce,yes
+Onions,produce,yes
+Spinach,produce,yes
+Bagels,bakery,yes
+Chicken breast,meat,yes
+Lean beef,meat,yes
+Salmon fillets,meat,yes
+Cream cheese,dairy,yes
+Creamer,dairy,yes
+Eggs,dairy,yes
+Hummus,dairy,yes
+Oat milk,dairy,yes
+Parmesan cheese,dairy,yes
+Vanilla yogurt,dairy,yes
+Yogurt,dairy,yes
+Frozen corn,frozen,yes
+Frozen lasagna,frozen,yes
+Frozen pizza,frozen,yes
+Artichoke hearts,pantry,yes
+Avocado oil,pantry,yes
+Barley,pantry,yes
+Bone broth,pantry,yes
+Cereal,pantry,yes
+Cheerios,pantry,yes
+Chicken and veggie broth,pantry,yes
+Chicken broth,pantry,yes
+Cumin,pantry,yes
+Diced tomatoes,pantry,yes
+Dried oregano,pantry,yes
+Flour,pantry,yes
+Granola,pantry,yes
+Honey,pantry,yes
+Honey nut cheerios,pantry,yes
+Maple syrup,pantry,yes
+Pasta sauce,pantry,yes
+Penne,pantry,yes
+Rolled oats,pantry,yes
+Spaghetti,pantry,yes
+Tomato sauce small can,pantry,yes
+Veggie broth,pantry,yes
+White rice,pantry,yes
+Apple juices,drinks,yes
+Coconut waters,drinks,yes
+Coffee,drinks,yes
+Gatorade (lime cucumber),drinks,yes
+OJ,drinks,yes
+Seltzer,drinks,yes
+Tart cherry juice,drinks,yes
+Almonds,snacks,yes
+Crackers,snacks,yes
+Dried fruit,snacks,yes
+Pita crackers,snacks,yes
+Rice cakes,snacks,yes
+Snack bars,snacks,yes
+Desitin,baby,no
+Diapers,baby,no
+Diapers Newborn,baby,no
+Formula,baby,no
+Wipes,baby,no
+Brewer's yeast,health,yes
+Gas x,health,no
+Stool softener,health,no
+Aluminum foil,household,no
+Cone shaped coffee filters,household,no
+Disposable latex gloves,household,no
+Gallon ziploc bags,household,no
+Paper towels,household,no
+Peeler,household,no
+Small trash bags,household,no
+Thank you cards,household,no
+TP,household,no
+Trash bags,household,no
+Clorox wipes,cleaning,no
+Dawn dish soap,cleaning,no
+Dishwasher pods,cleaning,no
+Easy off oven cleaner,cleaning,no
+Goo gone,cleaning,no
+Laundry detergent,cleaning,no
+Lysol all purpose cleaner,cleaning,no
+Shout stain remover,cleaning,no
+Swiffer dusters,cleaning,no
+Toilet bowl cleaner,cleaning,no
+Dove body wash,personal,no
+Hand sanitizer,personal,no
+Hand soap,personal,no
+Mouthwash,personal,no
+Toothpaste,personal,no
+Dog food,pet,no
+Kitty litter,pet,no
+Poop bags,pet,no

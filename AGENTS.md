@@ -65,6 +65,11 @@ change done.
 - `src/data/reference/*.csv` — **single source of truth** for reference data.
   Imported as raw text via `?raw` in `src/data/referenceSheets.ts` (bundled, so
   it works offline). Surfaced on the Learn page. Do NOT duplicate into `public/`.
+- `src/components/MiniChart.tsx` — the bar chart shared by the baby and parent
+  reports; `chartFormat.ts` holds its pure formatters so the component file
+  exports a component and nothing else. Its tracks are `minmax(0, 1fr)` with the
+  gap tightening as columns multiply — a per-column pixel floor plus gaps is
+  wider than the card once a period runs to months, and the bars spill out of it.
 - `src/components/` — React views. `App.tsx` owns the tab router + store wiring.
   `DateRangeFilter` is shared by the Log and by the Reports "Custom" period.
 - `src/storage/` — local, Google Sheets, and hybrid stores. New event fields
@@ -93,11 +98,37 @@ converts a numeric cell back to a date string on read (Sheets epoch is
 1899-12-30). Every date-ish column goes through it — never plain
 `optionalString` — and we migrate on read rather than rewriting history.
 
+### Archive, never delete
+
+**There is no way to delete a person, and there must not be one.** A family may
+be setting a profile aside for the saddest of reasons, so `archiveProfile` only
+stamps `archivedAt` on the row: the profile keeps every field, every entry stays
+exactly where it is, and `restoreProfile` clears the stamp. The Sheets store used
+to blank the row; it no longer touches anything but that one column.
+
+- Archived people leave the switcher (`getActiveProfiles`) and are listed under
+  "Archived" in Settings with a **Bring back** control. `pickProfile` and
+  `resolveProfile` never land on an archived profile by default, so a device
+  holding that stored choice opens on someone still being tracked.
+- The control is an archive box, not a trash can, and its armed state is styled
+  in the ordinary blue rather than `--danger`. Nothing here is a destructive
+  action, so nothing here should look like one.
+- Copy across the app follows the same rule: "archived", "kept", "bring back" —
+  never "delete" or "remove" about a person. The newborn check says "Below range"
+  rather than "Below expected" for the same reason: these are reference bands,
+  not expectations someone has failed. Clinical meaning stays intact — do not
+  soften a reference range into vagueness.
+- The six-week card asks a parent to put the baby down somewhere safe and step
+  away. It used to open with "never shake a baby". The safety point is identical
+  and the instruction is the same; naming the worst thing a frightened parent
+  could do at 3am is not what makes them put the baby down. A test keeps the
+  phrasing out.
+
 ### Adding a new profile field
 
 Append the new key to the end of `profileHeaders` so existing sheet rows keep
 their columns, and widen `PROFILE_RANGE`, `PROFILE_HEADER_RANGE`, and
-`profileRowRange()` to match (they are `A:N` as of `phone`). The local Dexie
+`profileRowRange()` to match (they are `A:O` as of `archivedAt`). The local Dexie
 store needs no change — it stores the whole profile object.
 
 **Reads find a column by header name, not by position.** `columnIndex()` builds
@@ -190,6 +221,8 @@ data is ready:
 - `vaccination-schedule.csv` → `getVaccinationSchedule()`
 - `mood-scale.csv` → `getMoodScale()`
 - `stool-colors.csv` → `getStoolColors()`, `isStoolColorFlagged()`
+- `food-triggers.csv` → `getFoodTriggers()`, `getFoodTriggerById()`
+- `bristol-stool-scale.csv` → `getBristolScale()`, `getBristolType()`
 - `fetal-development-by-week.csv` → `getFetalWeeks()`
 - `what-to-expect-by-age.csv` → `getAgeStages()`
 - `what-to-expect-notes.csv` → `getExpectationNotes()`
@@ -230,10 +263,12 @@ Care view adds/deletes the corresponding event via `App.handleToggleRef`.
 
 ### Parent tracking (sleep, cycle, and the baby events that touch them)
 
-- **What a parent logs is the event types that already existed** — `sleep`,
-  `mood`, `temperature`, `medication`, `appointment`, `note` — against their own
-  profile id. Only `menses` is new. Feeds, diapers and growth stay on the baby's
-  Home rather than being offered against the wrong person.
+- **Most of what a parent logs is the event types that already existed** —
+  `sleep`, `mood`, `temperature`, `medication`, `appointment`, `note` — against
+  their own profile id. `menses`, `intake` and `output` are the parent-only
+  ones. Feeds, diapers and growth stay on the baby's Home rather than being
+  offered against the wrong person, and a parent's own eating and drinking is an
+  `intake` for exactly the same reason — see "A parent's inputs and outputs".
 - **`menses` is one *day* of a period, not a period.** People log bleeding as it
   happens and miss the odd day, so `domain/cycle.ts` groups days back into
   periods on read (a gap of up to two days stays the same period; three starts a
@@ -252,10 +287,19 @@ Care view adds/deletes the corresponding event via `App.handleToggleRef`.
     `predictNextDiaper` draws. The window spans shortest-to-longest recent cycle
     and never closes tighter than ±1 day around the average; confidence comes
     from the spread.
+  - **A pregnancy pauses the cycle and a birth restarts it.** `getCycleContext`
+    reads the children's profiles: a child with a due date and no birth means
+    expecting, and the latest `birthDate` is where the current chapter starts.
+    Periods logged before that birth are dropped from everything — a "cycle"
+    spanning conception to birth is not a cycle, and counting one forward is how
+    the dashboard came to read **"cycle day 291"**. `CycleToday.status` is
+    `pregnant`, `postpartum` or `cycling`, and the views render all three.
   - **Guardrail: this is arithmetic on logged dates.** Every surface says so —
     not contraception, not a fertility test, not a pregnancy test, and irregular
-    postpartum cycles make it rougher still. Do not add anything that reads as a
-    fertility or contraceptive recommendation.
+    postpartum cycles make it rougher still. The postpartum state says plainly
+    that **ovulation comes before the first period back**, so no period is not
+    evidence of anything. Do not add anything that reads as a fertility or
+    contraceptive recommendation.
 - `domain/parentReport.ts` — a parent's nights, keyed by the **evening** the
   sleep started (before 10am belongs to the night before), so one night is one
   row rather than splitting at midnight. Over 16h is a timer left running, not a
@@ -291,8 +335,11 @@ Care view adds/deletes the corresponding event via `App.handleToggleRef`.
       after it — stay two sessions.
     - A night's `sleepMinutes` sums the rest across *all* its sessions while
       `longestStretchMinutes` is the longest single run, so the longest stretch
-      sits below the nightly total whenever a night was broken. The cards say
-      "unbroken, per night" so that reads as arithmetic rather than as a bug.
+      sits below the nightly total whenever a night was broken. And because the
+      card shows a nightly **average**, widening the period can *lower* it by
+      taking in worse nights — which reads as impossible next to a word like
+      "longest". `bestStretchMinutes` (the best single night) is shown beside it
+      for exactly that reason: it only ever goes up.
 
 ### Night shift (Settings) — currently OFF
 
@@ -325,6 +372,56 @@ default) and two pure planners; Settings runs them over the whole log.
   rewriting whole rows would clobber another caregiver's concurrent edit.
 - The Apply button arms on the first tap and acts on the second: it writes across
   months of a shared log.
+
+### A parent's inputs and outputs
+
+**What a parent eats and drinks is an `intake`; what comes back out is an
+`output`.** These are the parent's own rows, and they are deliberately not the
+baby's `feed` and `diaper`: a feed is care given to someone else, an intake is
+one person's own digestion, and folding them together would make every count on
+both screens mean two different things.
+
+- `OutputKind` is `pee`, `poo`, `fart`, `burp`, `vomit`, `reflux`, `bloating`,
+  `cramp`. The last two are not outputs in any literal sense — they are what
+  someone is trying to get relief *from*, and they are logged on the same scale
+  as the rest so that the two are ever comparable.
+- **The point of the schema is a question nobody is answering yet.** Finding the
+  association between an input and an output is a separate module and a much
+  harder problem; what is here is the shape of row that could answer it:
+  - `intake.items` is free text and **`intake.tags` is the structured half** —
+    `food-triggers.csv` ids. "Oat milk latte" and "flat white" are two strings
+    and one tag, and only the tag can be counted. An id the sheet does not name
+    is kept as written; whoever added it meant something by it.
+  - `output.severity` (1–5) is **one scale across every kind** for the same
+    reason. A 4/5 of gas and a 4/5 of cramping are otherwise two adjectives.
+  - `output.bristol` (1–7, `bristol-stool-scale.csv`) and `output.color` (a
+    `stool-colors.csv` id, shared with the baby's diaper) describe a stool and
+    are off every other kind — a burp with a consistency is a field nothing
+    could ever mean anything by.
+  - `intake.caffeineMg` is the one tag with a dose worth being exact about, and
+    the field only appears once the `caffeine` tag is picked.
+- `domain/intakeOutput.ts` holds the pure half: the ordered kind lists the
+  pickers render, the tag cell's parse/serialize (one sheet cell, comma
+  separated, lowercased and de-duplicated), and `getIntakeOutputSummary`.
+  - The summary counts `taggedIntakes`, `ratedOutputs` and `linkedOutputs` —
+    **how much of the log could support a comparison at all.** An untagged input
+    is a sentence nothing can group, an unrated output has no size to correlate,
+    and an output with nothing logged in the `DEFAULT_LINK_WINDOW_HOURS` (24)
+    before it is a row with no left-hand side. Both surfaces show these, because
+    the honest thing to tell someone is whether what they are logging will
+    answer the question later.
+  - `linkedOutputs` looks **backwards only**. An input logged after an output
+    is not a link however close it sits.
+- Quick-add opens on the kind the button named (`presetKind`), which is why the
+  parent's Home offers all eight outputs as their own chips rather than one
+  "Output" button: burying them behind a picker is how a field stops being
+  filled in. `App` carries the preset next to `dialogType` and clears it with
+  the dialog.
+- **Nothing in the app says one caused the other**, and the Reports copy says so
+  outright — it is a count of what was logged, over spans short enough that
+  coincidence explains most of what looks like a pattern. A symptom that keeps
+  coming back is a question for a doctor. Do not add a surface that reads as a
+  diagnosis or an elimination-diet recommendation.
 
 ### Who logged it (`caregiverId`)
 

@@ -7,7 +7,7 @@ import { Timeline } from './Timeline';
 
 const PAGE_SIZE = 20;
 
-type FilterGroup = 'all' | 'feeds' | 'diapers' | 'sleep' | 'health' | 'growth' | 'other';
+type FilterGroup = 'all' | 'feeds' | 'diapers' | 'sleep' | 'health' | 'growth' | 'io' | 'other';
 
 const FILTER_OPTIONS: Array<{ id: FilterGroup; label: string; types: CareEventType[] | null }> = [
   { id: 'all', label: 'All types', types: null },
@@ -16,6 +16,8 @@ const FILTER_OPTIONS: Array<{ id: FilterGroup; label: string; types: CareEventTy
   { id: 'sleep', label: 'Sleep', types: ['sleep'] },
   { id: 'health', label: 'Health', types: ['medication', 'temperature', 'vaccine'] },
   { id: 'growth', label: 'Growth', types: ['birth', 'growth', 'milestone', 'tummytime'] },
+  // A parent's own inputs and outputs, which are the pair worth reading together.
+  { id: 'io', label: 'In & out', types: ['intake', 'output'] },
   { id: 'other', label: 'Other', types: ['appointment', 'bath', 'menses', 'mood', 'note'] }
 ];
 
@@ -50,6 +52,14 @@ function searchText(event: CareEvent): string {
       break;
     case 'menses':
       parts.push(event.flow);
+      break;
+    case 'intake':
+      parts.push(event.kind, event.items ?? '', event.portion ?? '', ...(event.tags ?? []));
+      break;
+    case 'output':
+      parts.push(event.kind, event.color ?? '');
+      if (event.severity != null) parts.push(`severity ${event.severity}`);
+      if (event.bristol != null) parts.push(`type ${event.bristol}`);
       break;
     default:
       break;

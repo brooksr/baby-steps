@@ -1,10 +1,11 @@
-import { Award, Bath, Bed, Calendar, Droplets, Dumbbell, FileText, Heart, Milk, Pencil, Pill, Ruler, Smile, Syringe, Thermometer, Trash2, Waves, Wind } from 'lucide-react';
+import { Award, Bath, Bed, Calendar, Droplets, Dumbbell, FileText, Heart, Milk, Pencil, Pill, Ruler, Smile, Syringe, Thermometer, Toilet, Trash2, UtensilsCrossed, Waves, Wind } from 'lucide-react';
 import { formatClock, formatDuration, formatShortDate } from '../domain/dates';
 import { getCaregiverName } from '../domain/family';
-import { getMilestoneById, getMoodScale, getStoolColorById, getVaccinationById } from '../domain/reference';
+import { parseIntakeTags } from '../domain/intakeOutput';
+import { getBristolType, getFoodTriggerById, getMilestoneById, getMoodScale, getStoolColorById, getVaccinationById } from '../domain/reference';
 import { getEventDurationMinutes } from '../domain/summary';
 import { formatTemperature } from '../domain/temperature';
-import { careEventLabels, mensesFlowLabels, type BabyProfile, type CareEvent, type CareEventType } from '../domain/types';
+import { careEventLabels, intakeKindLabels, intakePortionLabels, mensesFlowLabels, outputKindLabels, type BabyProfile, type CareEvent, type CareEventType } from '../domain/types';
 import { formatLength, formatVolume, formatWeight, getPreferredUnits } from '../domain/units';
 
 interface TimelineProps {
@@ -24,11 +25,13 @@ const icons = {
   diaper: Wind,
   feed: Milk,
   growth: Ruler,
+  intake: UtensilsCrossed,
   medication: Pill,
   menses: Waves,
   milestone: Award,
   mood: Smile,
   note: FileText,
+  output: Toilet,
   pump: Droplets,
   sleep: Bed,
   temperature: Thermometer,
@@ -60,6 +63,29 @@ function eventDetail(event: CareEvent, profile?: BabyProfile) {
     }
     case 'menses':
       return `${mensesFlowLabels[event.flow]} flow`;
+    case 'intake': {
+      const tags = parseIntakeTags(event.tags?.join(','));
+      const parts = [
+        event.items || intakeKindLabels[event.kind].toLowerCase(),
+        event.portion ? `${intakePortionLabels[event.portion].toLowerCase()} portion` : undefined,
+        event.amountOz != null ? formatVolume(event.amountOz, preferredUnits.system) : undefined,
+        event.caffeineMg != null ? `${event.caffeineMg} mg caffeine` : undefined,
+        // The tags are what a later association pass reads, so they are worth
+        // seeing on the entry that carries them.
+        tags.length > 0 ? tags.map((tag) => getFoodTriggerById(tag)?.label ?? tag).join(', ') : undefined
+      ];
+      return parts.filter(Boolean).join(' · ');
+    }
+    case 'output': {
+      const bristol = getBristolType(event.bristol);
+      const parts = [
+        outputKindLabels[event.kind].toLowerCase(),
+        event.severity != null ? `severity ${event.severity}/5` : undefined,
+        bristol ? `type ${bristol.type} · ${bristol.label.toLowerCase()}` : undefined,
+        event.color ? getStoolColorById(event.color)?.label ?? event.color : undefined
+      ];
+      return parts.filter(Boolean).join(' · ');
+    }
     case 'pump':
       return `${formatVolume(event.amountOz, preferredUnits.system)} · ${event.side}`;
     case 'diaper':

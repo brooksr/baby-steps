@@ -109,6 +109,13 @@ export interface CareInfo {
  * `dueDate` and no `gender`, and a child carries no `parentRole`.
  */
 export interface BabyProfile extends BaseRecord {
+  /**
+   * Set when someone has been archived: they leave the switcher and every entry
+   * they have stays exactly where it is. Nothing about a person is ever deleted
+   * — a family may be setting a profile aside for the saddest of reasons, and a
+   * record that can be brought back is the only kind worth offering.
+   */
+  archivedAt?: string;
   birthDate?: string;
   careInfo?: CareInfo;
   /** A child's due date. Never set on a parent — see `kind`. */
@@ -260,6 +267,79 @@ export interface MensesEvent extends BaseCareEvent {
   flow: MensesFlow;
 }
 
+/**
+ * What a parent puts in — a meal, a snack, a drink. Kept apart from the baby's
+ * `feed` on purpose: a feed is care given to someone else, an intake is one
+ * person's own digestion, and the two are never the same row.
+ */
+export type IntakeKind = 'food' | 'drink';
+export type IntakePortion = 'small' | 'medium' | 'large';
+
+/**
+ * What comes back out, and the symptoms alongside it. Bloating and cramping are
+ * not outputs in any literal sense; they are what someone is trying to get
+ * relief from, so they are logged on the same scale as the rest.
+ */
+export type OutputKind = 'pee' | 'poo' | 'fart' | 'burp' | 'vomit' | 'reflux' | 'bloating' | 'cramp';
+
+export const intakeKindLabels: Record<IntakeKind, string> = {
+  drink: 'Drink',
+  food: 'Food'
+};
+
+export const intakePortionLabels: Record<IntakePortion, string> = {
+  large: 'Large',
+  medium: 'Medium',
+  small: 'Small'
+};
+
+export const outputKindLabels: Record<OutputKind, string> = {
+  bloating: 'Bloating',
+  burp: 'Burp',
+  cramp: 'Cramp',
+  fart: 'Gas',
+  pee: 'Pee',
+  poo: 'Poo',
+  reflux: 'Reflux',
+  vomit: 'Vomit'
+};
+
+/**
+ * One thing eaten or drunk. `items` is what someone actually types; `tags` is
+ * the same thing as `food-triggers.csv` ids, and it is the half a later
+ * association pass can count — "oat milk latte" and "flat white" are two
+ * strings and one group.
+ */
+export interface IntakeEvent extends BaseCareEvent {
+  type: 'intake';
+  kind: IntakeKind;
+  /** What it was, as written. Free text, never parsed for meaning. */
+  items?: string;
+  /** `food-triggers.csv` ids. Stored as written so an unknown id survives. */
+  tags?: string[];
+  portion?: IntakePortion;
+  /** Volume drunk, in ounces — the same canonical unit as a bottle. */
+  amountOz?: number;
+  /** Caffeine in milligrams, when it is worth being exact about. */
+  caffeineMg?: number;
+}
+
+/**
+ * One thing that came out, or one symptom. `severity` is the single scale every
+ * kind shares (1 slight — 5 severe), which is what makes them comparable at
+ * all; `bristol` and `color` describe a stool and nothing else.
+ */
+export interface OutputEvent extends BaseCareEvent {
+  type: 'output';
+  kind: OutputKind;
+  /** 1–5. How much of it, or how bad it was. */
+  severity?: number;
+  /** Bristol stool scale 1–7 (see `bristol-stool-scale.csv`). Poo only. */
+  bristol?: number;
+  /** A `stool-colors.csv` id. Poo only. */
+  color?: string;
+}
+
 export interface MilestoneEvent extends BaseCareEvent {
   type: 'milestone';
   /** Reference id from developmental-milestones.csv (see getMilestones). */
@@ -282,7 +362,9 @@ export type CareEvent =
   | MedicationEvent
   | AppointmentEvent
   | GrowthEvent
+  | IntakeEvent
   | NoteEvent
+  | OutputEvent
   | TemperatureEvent
   | TummyTimeEvent
   | MoodEvent
@@ -301,6 +383,97 @@ export type CreateCareEventInput = DistributiveOmit<CareEvent, PersistedCareEven
   syncState?: SyncState;
 };
 
+/**
+ * The household lists. Neither is a `CareEvent` — a shopping item is not
+ * something that happened to somebody at a time, it is a row with a state, and
+ * forcing it into the event log would put it on every timeline and in every
+ * daily count. They live on their own tabs, shared the same way everything else
+ * is: whatever one parent checks off, the other one sees on the next poll.
+ */
+export type ShoppingStatus = 'need' | 'cart' | 'done';
+
+/** Ordered the way a store is walked, which is the order the list renders in. */
+export type ShoppingCategory =
+  | 'produce'
+  | 'bakery'
+  | 'meat'
+  | 'dairy'
+  | 'frozen'
+  | 'pantry'
+  | 'drinks'
+  | 'snacks'
+  | 'baby'
+  | 'health'
+  | 'household'
+  | 'cleaning'
+  | 'personal'
+  | 'pet';
+
+export const shoppingStatusLabels: Record<ShoppingStatus, string> = {
+  cart: 'In the cart',
+  done: 'Bought',
+  need: 'Need'
+};
+
+export const shoppingCategoryLabels: Record<ShoppingCategory, string> = {
+  baby: 'Baby',
+  bakery: 'Bakery',
+  cleaning: 'Cleaning',
+  dairy: 'Dairy & chilled',
+  drinks: 'Drinks',
+  frozen: 'Frozen',
+  health: 'Health',
+  household: 'Household',
+  meat: 'Meat & fish',
+  pantry: 'Pantry',
+  personal: 'Personal care',
+  pet: 'Pet',
+  produce: 'Produce',
+  snacks: 'Snacks'
+};
+
+/**
+ * One thing to buy. An item is never removed when it is bought — it goes to
+ * `done` and stays, which is what makes the list double as the household's
+ * catalogue: the next trip re-adds it with one tap instead of retyping it, and
+ * the edible ones are what the intake picker suggests from.
+ */
+export interface ShoppingItem extends BaseRecord {
+  name: string;
+  category: ShoppingCategory;
+  /**
+   * Something a parent might log eating or drinking. Not quite "edible" —
+   * formula is food and is the baby's, so it is `false` here.
+   */
+  isFood: boolean;
+  status: ShoppingStatus;
+  /** How many, or how much — free text, because "2 lbs" and "3" are both answers. */
+  quantity?: string;
+  notes?: string;
+  /** Profile id of whoever put it on the list. */
+  addedBy?: string;
+  completedAt?: string;
+}
+
+export type TaskStatus = 'open' | 'done';
+
+/**
+ * One shared job. `dueAt` is optional on purpose — most of what a household
+ * needs to do has no date, and making one up turns a list of jobs into a
+ * calendar full of things that are already late.
+ */
+export interface TaskItem extends BaseRecord {
+  title: string;
+  notes?: string;
+  status: TaskStatus;
+  /** When it is due. Absent means open-ended: it needs doing, not doing *then*. */
+  dueAt?: string;
+  /** Profile id it is on. Unassigned is anyone's, never a guess at whose. */
+  assigneeId?: string;
+  completedAt?: string;
+  createdBy?: string;
+}
+
 export interface TrackerExport {
   version: 1;
   exportedAt: string;
@@ -312,6 +485,9 @@ export interface TrackerExport {
   profiles?: BabyProfile[];
   /** Every child's events, each row carrying its own `babyId`. */
   events: CareEvent[];
+  /** The household lists. Absent in an export taken before they existed. */
+  shopping?: ShoppingItem[];
+  tasks?: TaskItem[];
 }
 
 /** Everything the UI renders, read in one round trip. See `domain/snapshot.ts`. */
@@ -328,6 +504,12 @@ export interface TrackerSnapshot {
    * a sibling's rows, and carrying them would churn its fingerprint.
    */
   childEvents?: CareEvent[];
+  /**
+   * The household lists, read in the same round trip as everything else so one
+   * parent checking an item off shows up on the other's screen at the next poll.
+   */
+  shopping: ShoppingItem[];
+  tasks: TaskItem[];
 }
 
 export type CareEventType = CareEvent['type'];
@@ -339,11 +521,13 @@ export const careEventLabels: Record<CareEventType, string> = {
   diaper: 'Diaper',
   feed: 'Feeding',
   growth: 'Growth',
+  intake: 'Input',
   medication: 'Medication',
   menses: 'Period',
   milestone: 'Milestone',
   mood: 'Mood',
   note: 'Note',
+  output: 'Output',
   pump: 'Pumping',
   sleep: 'Sleep',
   temperature: 'Temperature',

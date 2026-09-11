@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { getLocalDateKey } from '../domain/dates';
 import { createFamilyProfile } from '../domain/family';
@@ -44,15 +45,15 @@ function feed(hoursIn: number, caregiverId?: string): CareEvent {
   } as CareEvent;
 }
 
-function renderDashboard(childEvents: CareEvent[]) {
+function renderDashboard(childEvents: CareEvent[], onAdd = vi.fn(), events: CareEvent[] = [sleep()]) {
   return render(
     <ParentDashboard
       activeTimers={{}}
       childEvents={childEvents}
-      events={[sleep()]}
+      events={events}
       profile={brooks}
       todayKey={getLocalDateKey(new Date())}
-      onAdd={vi.fn()}
+      onAdd={onAdd}
     />
   );
 }
@@ -89,10 +90,11 @@ describe('ParentDashboard', () => {
     renderDashboard([]);
 
     const { end } = lastNight();
-    const hoursUp = Math.round((Date.now() - end.getTime()) / 3_600_000);
+    // Floor, not round: the card shows "8h 40m", which a rounded 9 would miss.
+    const hoursUp = Math.floor((Date.now() - end.getTime()) / 3_600_000);
 
-    expect(screen.getByText('Awake for')).toBeInTheDocument();
-    expect(screen.getByText(new RegExp(`^${hoursUp}h`))).toBeInTheDocument();
+    const awake = screen.getByText('Awake for').closest('.hero-metric');
+    expect(awake).toHaveTextContent(new RegExp(`${hoursUp}h`));
   });
 
   it('counts from the start while a sleep is still running', () => {
@@ -110,5 +112,24 @@ describe('ParentDashboard', () => {
     );
 
     expect(screen.getByText('Asleep for')).toBeInTheDocument();
+  });
+
+  it('keeps input and output as two ordinary quick actions', async () => {
+    const user = userEvent.setup();
+    const onAdd = vi.fn();
+    renderDashboard([], onAdd);
+
+    await user.click(screen.getByRole('button', { name: 'Input' }));
+    expect(onAdd).toHaveBeenCalledWith('intake');
+
+    await user.click(screen.getByRole('button', { name: 'Output' }));
+    expect(onAdd).toHaveBeenCalledWith('output');
+  });
+
+  it('does not list individual output kinds on the dashboard', () => {
+    renderDashboard([]);
+
+    expect(screen.queryByRole('button', { name: 'Poo' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Burp' })).not.toBeInTheDocument();
   });
 });

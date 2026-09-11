@@ -1,9 +1,11 @@
-import { createFamilyProfile, isChild, isParent, sortProfiles, type NewProfileInput } from '../domain/family';
+import { createFamilyProfile, getActiveProfiles, isArchived, isChild, isParent, sortProfiles, type NewProfileInput } from '../domain/family';
 import { createDefaultBabyProfile } from '../domain/dates';
+import { parseIntakeTags, serializeIntakeTags } from '../domain/intakeOutput';
+import { DEFAULT_SHOPPING_CATEGORY, getCatalogSeed, isShoppingCategory, normalizeItemName } from '../domain/shopping';
 import { migrateStoredEvent, migrateStoredEvents, type StoredCareEventType } from '../domain/legacyEvents';
-import { DEFAULT_PROFILE_ID, type BabyGender, type BabyProfile, type BottleContents, type CareInfo, type CareEvent, type CreateCareEventInput, type FeedMethod, type MensesFlow, type NursingSide, type ParentRole, type PreferredUnits, type TrackerExport, type TrackerSnapshot } from '../domain/types';
+import { DEFAULT_PROFILE_ID, type BabyGender, type BabyProfile, type BottleContents, type CareInfo, type CareEvent, type CreateCareEventInput, type FeedMethod, type IntakeKind, type IntakePortion, type MensesFlow, type NursingSide, type OutputKind, type ShoppingCategory, type ShoppingItem, type ShoppingStatus, type TaskItem, type TaskStatus, type ParentRole, type PreferredUnits, type TrackerExport, type TrackerSnapshot } from '../domain/types';
 import { requestGoogleSheetsAccessToken } from './googleSheetsAuth';
-import type { BabyTrackerStore, CaregiverAssignment, EventQuery, ImportOptions } from './store';
+import type { BabyTrackerStore, CaregiverAssignment, EventQuery, ImportOptions, ShoppingItemInput, TaskItemInput } from './store';
 
 export const GOOGLE_SHEET_ID = '1VG9px1j-KF29i2J6AG_PP57hOM8V-wLPgP-9VTdURUc';
 export const GOOGLE_SHEET_URL = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/edit`;
@@ -11,14 +13,31 @@ export const GOOGLE_SHEET_URL = `https://docs.google.com/spreadsheets/d/${GOOGLE
 // Widen these together with `profileHeaders` — a new profile field is a new
 // column, and the range has to reach it. The range is open-ended down the
 // sheet because one row is one child, and there can be any number of them.
-const PROFILE_RANGE = 'Profile!A:N';
-const PROFILE_HEADER_RANGE = 'Profile!A1:N1';
+const PROFILE_RANGE = 'Profile!A:O';
+const PROFILE_HEADER_RANGE = 'Profile!A1:O1';
 /** Row 2 is the first child; `profileRowRange` addresses the rest. */
 const FIRST_PROFILE_ROW = 2;
-const EVENTS_RANGE = 'Events!A:AH';
-const EVENTS_BODY_RANGE = 'Events!A2:AH1000';
-const EVENTS_APPEND_RANGE = 'Events!A:AH';
+const EVENTS_RANGE = 'Events!A:AN';
+const EVENTS_BODY_RANGE = 'Events!A2:AN1000';
+const EVENTS_APPEND_RANGE = 'Events!A:AN';
 const EVENTS_SHEET_ID = 0;
+
+/**
+ * The household lists, one tab each. Both are open-ended down the sheet, and
+ * **neither is on a sheet written before this feature existed** — `ensureTabs`
+ * creates them, and `snapshot` copes with reading a sheet that has not had it
+ * run yet rather than failing the whole poll over a missing range.
+ */
+const SHOPPING_TAB = 'Shopping';
+const TASKS_TAB = 'Tasks';
+const SHOPPING_RANGE = `${SHOPPING_TAB}!A:K`;
+const SHOPPING_BODY_RANGE = `${SHOPPING_TAB}!A2:K1000`;
+const SHOPPING_HEADER_RANGE = `${SHOPPING_TAB}!A1:K1`;
+const TASKS_RANGE = `${TASKS_TAB}!A:J`;
+const TASKS_BODY_RANGE = `${TASKS_TAB}!A2:J1000`;
+const TASKS_HEADER_RANGE = `${TASKS_TAB}!A1:J1`;
+/** Row 2 is the first list row; row 1 is always the header. */
+const FIRST_LIST_ROW = 2;
 
 /**
  * RAW, not USER_ENTERED. USER_ENTERED lets Sheets *interpret* what we send:
@@ -45,7 +64,7 @@ function columnLetter(index: number) {
 }
 
 function profileRowRange(rowNumber: number) {
-  return `Profile!A${rowNumber}:N${rowNumber}`;
+  return `Profile!A${rowNumber}:O${rowNumber}`;
 }
 
 const eventHeaders = [
@@ -83,11 +102,48 @@ const eventHeaders = [
   'method',
   'poopSize',
   'flow',
-  'caregiverId'
+  'caregiverId',
+  // A parent's inputs and outputs. `kind`, `color` and `amountOz` are shared
+  // with the baby's rows above — a stool color is a stool color whoever passed
+  // it — and these six are the fields nothing else had a column for.
+  'items',
+  'tags',
+  'portion',
+  'caffeineMg',
+  'severity',
+  'bristol'
 ] as const;
 
 type EventColumn = (typeof eventHeaders)[number];
 type EventColumnIndex = Map<EventColumn, number>;
+
+// New columns append here so existing sheet rows keep their positions.
+const shoppingHeaders = [
+  'id',
+  'name',
+  'category',
+  'isFood',
+  'status',
+  'quantity',
+  'notes',
+  'addedBy',
+  'createdAt',
+  'updatedAt',
+  'completedAt'
+] as const;
+
+const taskHeaders = [
+  'id',
+  'title',
+  'notes',
+  'status',
+  'dueAt',
+  'assigneeId',
+  'createdBy',
+  'createdAt',
+  'updatedAt',
+  'completedAt'
+] as const;
 
 // New columns append here so existing sheet rows keep their positions.
 const profileHeaders = [
@@ -105,7 +161,8 @@ const profileHeaders = [
   // New columns append here so existing sheet rows keep their positions.
   'kind',
   'parentRole',
-  'phone'
+  'phone',
+  'archivedAt'
 ] as const;
 
 type ProfileColumnIndex = Map<(typeof profileHeaders)[number], number>;
@@ -214,6 +271,7 @@ function profileFromRow(row: unknown[] | undefined, index?: ProfileColumnIndex):
   }
 
   return {
+    archivedAt: optionalDateString(record.archivedAt),
     birthDate: optionalDateString(record.birthDate),
     careInfo,
     createdAt: optionalDateString(record.createdAt) ?? fallback.createdAt,
@@ -374,6 +432,28 @@ function eventFromRow(row: unknown[], index?: EventColumnIndex): CareEvent | nul
         flow: (optionalString(record.flow) ?? 'medium') as MensesFlow,
         type
       };
+    // The parent's own rows. A tag list is one cell, and an id nobody
+    // recognises is kept as written rather than dropped.
+    case 'intake':
+      return {
+        ...base,
+        amountOz: optionalNumber(record.amountOz),
+        caffeineMg: optionalNumber(record.caffeineMg),
+        items: optionalString(record.items),
+        kind: (optionalString(record.kind) ?? 'food') as IntakeKind,
+        portion: optionalString(record.portion) as IntakePortion | undefined,
+        tags: parseIntakeTags(optionalString(record.tags)),
+        type
+      };
+    case 'output':
+      return {
+        ...base,
+        bristol: optionalNumber(record.bristol),
+        color: optionalString(record.color),
+        kind: (optionalString(record.kind) ?? 'pee') as OutputKind,
+        severity: optionalNumber(record.severity),
+        type
+      };
     case 'milestone':
       return {
         ...base,
@@ -393,6 +473,8 @@ function eventToRow(event: CareEvent) {
   const values: Record<EventColumn, unknown> = {
     amountOz: '',
     babyId: event.babyId,
+    bristol: '',
+    caffeineMg: '',
     caregiverId: event.caregiverId ?? '',
     celsius: '',
     color: '',
@@ -405,6 +487,7 @@ function eventToRow(event: CareEvent) {
     givenAt: '',
     headCircumferenceIn: '',
     id: event.id,
+    items: '',
     kind: '',
     lengthIn: '',
     location: '',
@@ -413,14 +496,17 @@ function eventToRow(event: CareEvent) {
     moodLevel: '',
     notes: event.notes ?? '',
     poopSize: '',
+    portion: '',
     provider: '',
     reason: '',
     refId: '',
     scheduledAt: '',
+    severity: '',
     side: '',
     startedAt: event.startedAt,
     status: '',
     syncState: 'synced',
+    tags: '',
     title: '',
     type: event.type,
     updatedAt: event.updatedAt,
@@ -481,6 +567,20 @@ function eventToRow(event: CareEvent) {
     case 'menses':
       values.flow = event.flow;
       break;
+    case 'intake':
+      values.amountOz = event.amountOz ?? '';
+      values.caffeineMg = event.caffeineMg ?? '';
+      values.items = event.items ?? '';
+      values.kind = event.kind;
+      values.portion = event.portion ?? '';
+      values.tags = serializeIntakeTags(event.tags);
+      break;
+    case 'output':
+      values.bristol = event.bristol ?? '';
+      values.color = event.color ?? '';
+      values.kind = event.kind;
+      values.severity = event.severity ?? '';
+      break;
     case 'milestone':
       values.refId = event.refId;
       break;
@@ -493,6 +593,116 @@ function eventToRow(event: CareEvent) {
   }
 
   return eventHeaders.map((header) => normalizeCell(values[header]));
+}
+
+/**
+ * A list row, paired with the row number it sits on so a save goes back to
+ * exactly that row. A row without an id is a gap left by a removed item and is
+ * skipped — row numbers stay put, the way a removed child's row does.
+ */
+function listRowsFromValues<T>(
+  values: unknown[][],
+  headers: readonly string[],
+  read: (record: Record<string, unknown>) => T | null
+) {
+  const [headerRow, ...rows] = values;
+  const columns = columnIndex(headers, headerRow);
+
+  return rows
+    .map((row, index) => ({
+      item: read(rowRecord(headers, row ?? [], columns)),
+      rowNumber: index + FIRST_LIST_ROW
+    }))
+    .filter((entry): entry is { item: T; rowNumber: number } => entry.item !== null);
+}
+
+function shoppingFromRecord(record: Record<string, unknown>): ShoppingItem | null {
+  const id = optionalString(record.id);
+  const name = optionalString(record.name);
+
+  if (!id || !name) {
+    return null;
+  }
+
+  const createdAt = optionalDateString(record.createdAt) ?? new Date(0).toISOString();
+
+  return {
+    addedBy: optionalString(record.addedBy),
+    category: (isShoppingCategory(optionalString(record.category)) ? record.category : DEFAULT_SHOPPING_CATEGORY) as ShoppingCategory,
+    completedAt: optionalDateString(record.completedAt),
+    createdAt,
+    id,
+    // Written as the word, so the column reads as something in the sheet.
+    isFood: optionalString(record.isFood) === 'yes',
+    name,
+    notes: optionalString(record.notes),
+    quantity: optionalString(record.quantity),
+    status: (optionalString(record.status) ?? 'need') as ShoppingStatus,
+    syncState: 'synced',
+    updatedAt: optionalDateString(record.updatedAt) ?? createdAt
+  };
+}
+
+function shoppingToRow(item: ShoppingItem) {
+  const values: Record<(typeof shoppingHeaders)[number], unknown> = {
+    addedBy: item.addedBy ?? '',
+    category: item.category,
+    completedAt: item.completedAt ?? '',
+    createdAt: item.createdAt,
+    id: item.id,
+    isFood: item.isFood ? 'yes' : 'no',
+    name: item.name,
+    notes: item.notes ?? '',
+    quantity: item.quantity ?? '',
+    status: item.status,
+    updatedAt: item.updatedAt
+  };
+
+  return shoppingHeaders.map((header) => normalizeCell(values[header]));
+}
+
+function taskFromRecord(record: Record<string, unknown>): TaskItem | null {
+  const id = optionalString(record.id);
+  const title = optionalString(record.title);
+
+  if (!id || !title) {
+    return null;
+  }
+
+  const createdAt = optionalDateString(record.createdAt) ?? new Date(0).toISOString();
+
+  return {
+    assigneeId: optionalString(record.assigneeId),
+    completedAt: optionalDateString(record.completedAt),
+    createdAt,
+    createdBy: optionalString(record.createdBy),
+    // Every date column goes through `optionalDateString` — a due date typed as
+    // a plain day is exactly the cell Sheets used to hand back as a serial.
+    dueAt: optionalDateString(record.dueAt),
+    id,
+    notes: optionalString(record.notes),
+    status: (optionalString(record.status) ?? 'open') as TaskStatus,
+    syncState: 'synced',
+    title,
+    updatedAt: optionalDateString(record.updatedAt) ?? createdAt
+  };
+}
+
+function taskToRow(task: TaskItem) {
+  const values: Record<(typeof taskHeaders)[number], unknown> = {
+    assigneeId: task.assigneeId ?? '',
+    completedAt: task.completedAt ?? '',
+    createdAt: task.createdAt,
+    createdBy: task.createdBy ?? '',
+    dueAt: task.dueAt ?? '',
+    id: task.id,
+    notes: task.notes ?? '',
+    status: task.status,
+    title: task.title,
+    updatedAt: task.updatedAt
+  };
+
+  return taskHeaders.map((header) => normalizeCell(values[header]));
 }
 
 function profileToRow(profile: BabyProfile) {
@@ -582,6 +792,28 @@ export class GoogleSheetsApi {
     });
   }
 
+  /** The tab titles this spreadsheet already has — what `ensureTabs` reads. */
+  async listSheetTitles() {
+    const result = await this.request<{ sheets?: Array<{ properties?: { title?: string } }> }>(
+      '?fields=sheets.properties.title'
+    );
+
+    return (result.sheets ?? []).map((sheet) => sheet.properties?.title).filter((title): title is string => Boolean(title));
+  }
+
+  async addSheets(titles: string[]) {
+    if (titles.length === 0) {
+      return;
+    }
+
+    await this.request(':batchUpdate', {
+      body: JSON.stringify({
+        requests: titles.map((title) => ({ addSheet: { properties: { title } } }))
+      }),
+      method: 'POST'
+    });
+  }
+
   async deleteEventRow(rowNumber: number) {
     await this.request(':batchUpdate', {
       body: JSON.stringify({
@@ -641,9 +873,19 @@ function readProfiles(values: unknown[][]) {
   return { nextRow, profiles, rowNumbers };
 }
 
-/** The child a read is about: the one it named, or the first one. */
+/**
+ * Who a read is about: the person it named, or the first one still in the
+ * switcher. An archived profile is never landed on by default — the device that
+ * stored that choice would otherwise open on someone deliberately set aside.
+ */
 function pickProfile(profiles: BabyProfile[], babyId?: string) {
-  return profiles.find((profile) => profile.id === babyId) ?? profiles[0] ?? createDefaultBabyProfile();
+  const named = profiles.find((profile) => profile.id === babyId);
+
+  if (named && !isArchived(named)) {
+    return named;
+  }
+
+  return getActiveProfiles(profiles)[0] ?? named ?? profiles[0] ?? createDefaultBabyProfile();
 }
 
 function selectEvents(events: CareEvent[], babyId: string, query: EventQuery) {
@@ -660,6 +902,12 @@ function selectEvents(events: CareEvent[], babyId: string, query: EventQuery) {
 
 export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() => requestGoogleSheetsAccessToken(false))): BabyTrackerStore {
   let headersWritten = false;
+  /**
+   * Whether the Shopping and Tasks tabs are known to exist. False until
+   * `ensureTabs` has run once, which is what keeps `snapshot` from naming a
+   * range that would fail the whole batch read on a sheet that predates them.
+   */
+  let listsReady = false;
 
   async function listRows() {
     return rowsFromValues(await api.getValues(EVENTS_RANGE));
@@ -680,7 +928,7 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
       return;
     }
 
-    await api.updateValues('Events!A1:AH1', [[...eventHeaders]]);
+    await api.updateValues('Events!A1:AN1', [[...eventHeaders]]);
     await api.updateValues(PROFILE_HEADER_RANGE, [[...profileHeaders]]);
     headersWritten = true;
   }
@@ -704,6 +952,159 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
     await api.clearValues(`Profile!${firstExtra}1:${lastExtra}1`);
   }
 
+  /**
+   * Creates the Shopping and Tasks tabs if the spreadsheet has not got them.
+   *
+   * The shared sheet predates both, and a `values:batchGet` naming a range on a
+   * tab that does not exist fails the *whole* request — which would take the
+   * poll down with it. So this runs once at connect, and `listsReady` stops the
+   * check repeating; `snapshot` copes in the meantime rather than assuming it
+   * has run.
+   */
+  async function ensureTabs() {
+    if (listsReady) {
+      return;
+    }
+
+    const titles = await api.listSheetTitles();
+    const missing = [SHOPPING_TAB, TASKS_TAB].filter((title) => !titles.includes(title));
+
+    await api.addSheets(missing);
+
+    if (missing.includes(SHOPPING_TAB)) {
+      await api.updateValues(SHOPPING_HEADER_RANGE, [[...shoppingHeaders]]);
+    }
+
+    if (missing.includes(TASKS_TAB)) {
+      await api.updateValues(TASKS_HEADER_RANGE, [[...taskHeaders]]);
+    }
+
+    listsReady = true;
+  }
+
+  async function readShopping() {
+    await ensureTabs();
+    return listRowsFromValues(await api.getValues(SHOPPING_RANGE), shoppingHeaders, shoppingFromRecord);
+  }
+
+  async function readTasks() {
+    await ensureTabs();
+    return listRowsFromValues(await api.getValues(TASKS_RANGE), taskHeaders, taskFromRecord);
+  }
+
+  /** The next free row, so a removed row's gap is filled rather than drifting. */
+  function nextListRow(rows: Array<{ rowNumber: number }>) {
+    return rows.reduce((highest, { rowNumber }) => Math.max(highest, rowNumber + 1), FIRST_LIST_ROW);
+  }
+
+  /**
+   * Fills the Shopping tab from the shipped catalogue the first time it is
+   * empty, and never again — a household that cleared its list meant to.
+   */
+  async function seedShopping(rows: Array<{ item: ShoppingItem }>) {
+    if (rows.length > 0) {
+      return [];
+    }
+
+    const timestamp = new Date().toISOString();
+    const seeded: ShoppingItem[] = getCatalogSeed().map((row) => ({
+      ...row,
+      createdAt: timestamp,
+      id: createId('shop'),
+      syncState: 'synced' as const,
+      updatedAt: timestamp
+    }));
+
+    await api.updateValues(
+      `${SHOPPING_TAB}!A${FIRST_LIST_ROW}:K${FIRST_LIST_ROW + seeded.length - 1}`,
+      seeded.map(shoppingToRow)
+    );
+
+    return seeded;
+  }
+
+  async function listShoppingItems() {
+    const rows = await readShopping();
+    const seeded = await seedShopping(rows);
+
+    return rows.length > 0 ? rows.map((row) => row.item) : seeded;
+  }
+
+  async function saveShoppingItem(input: ShoppingItemInput) {
+    const rows = await readShopping();
+    const timestamp = new Date().toISOString();
+    // An add whose name is already on file patches that row rather than making a
+    // second one — one item, one row, is what makes the catalogue worth having.
+    const match = input.id
+      ? rows.find((row) => row.item.id === input.id)
+      : input.name
+        ? rows.find((row) => normalizeItemName(row.item.name) === normalizeItemName(input.name as string))
+        : undefined;
+    const item: ShoppingItem = {
+      category: DEFAULT_SHOPPING_CATEGORY,
+      isFood: false,
+      name: '',
+      status: 'need',
+      ...match?.item,
+      ...input,
+      createdAt: match?.item.createdAt ?? timestamp,
+      id: match?.item.id ?? createId('shop'),
+      syncState: 'synced',
+      updatedAt: timestamp
+    };
+    const rowNumber = match?.rowNumber ?? nextListRow(rows);
+
+    await api.updateValues(`${SHOPPING_TAB}!A${rowNumber}:K${rowNumber}`, [shoppingToRow(item)]);
+    return item;
+  }
+
+  /**
+   * Blanks the row rather than deleting it. Row numbers stay put — a concurrent
+   * write from the other parent's phone is addressed by row number, and pulling
+   * a row out from under it would land their edit on somebody else's item.
+   */
+  async function removeShoppingItem(id: string) {
+    const rows = await readShopping();
+    const match = rows.find((row) => row.item.id === id);
+
+    if (match) {
+      await api.clearValues(`${SHOPPING_TAB}!A${match.rowNumber}:K${match.rowNumber}`);
+    }
+  }
+
+  async function listTasks() {
+    return (await readTasks()).map((row) => row.item);
+  }
+
+  async function saveTask(input: TaskItemInput) {
+    const rows = await readTasks();
+    const timestamp = new Date().toISOString();
+    const match = input.id ? rows.find((row) => row.item.id === input.id) : undefined;
+    const task: TaskItem = {
+      status: 'open',
+      title: '',
+      ...match?.item,
+      ...input,
+      createdAt: match?.item.createdAt ?? timestamp,
+      id: match?.item.id ?? createId('task'),
+      syncState: 'synced',
+      updatedAt: timestamp
+    };
+    const rowNumber = match?.rowNumber ?? nextListRow(rows);
+
+    await api.updateValues(`${TASKS_TAB}!A${rowNumber}:J${rowNumber}`, [taskToRow(task)]);
+    return task;
+  }
+
+  async function removeTask(id: string) {
+    const rows = await readTasks();
+    const match = rows.find((row) => row.item.id === id);
+
+    if (match) {
+      await api.clearValues(`${TASKS_TAB}!A${match.rowNumber}:J${match.rowNumber}`);
+    }
+  }
+
   async function initialize() {
     const values = await api.getValues(PROFILE_RANGE);
     const { profiles } = readProfiles(values);
@@ -718,6 +1119,13 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
 
     await ensureHeaders();
     await clearStrayHeaders(values[0]);
+    // Creates the list tabs on a sheet that predates them, so the next poll can
+    // read all four ranges in one request.
+    await ensureTabs();
+    // Initialization is the one write-capable read path. Seed the household's
+    // supplied catalogue here so the first batch snapshot can render it; plain
+    // snapshots remain read-only.
+    await listShoppingItems();
     return profile;
   }
 
@@ -727,7 +1135,14 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
    * different versions of the sheet.
    */
   async function snapshot(query: EventQuery = {}): Promise<TrackerSnapshot> {
-    const [profileValues, eventValues] = await api.batchGetValues([PROFILE_RANGE, EVENTS_RANGE]);
+    // Four ranges once the list tabs exist, two before. A batchGet naming a
+    // range on a missing tab fails outright, so a sheet that has not had
+    // `ensureTabs` run yet reads the two it certainly has and comes back with
+    // empty lists rather than taking the whole poll down.
+    const ranges = listsReady
+      ? [PROFILE_RANGE, EVENTS_RANGE, SHOPPING_RANGE, TASKS_RANGE]
+      : [PROFILE_RANGE, EVENTS_RANGE];
+    const [profileValues, eventValues, shoppingValues, taskValues] = await api.batchGetValues(ranges);
     const { profiles } = readProfiles(profileValues);
     const profile = pickProfile(profiles, query.babyId);
     const all = rowsFromValues(eventValues).map((row) => row.event);
@@ -739,7 +1154,9 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
       childEvents: isParent(profile) ? all.filter((event) => childIds.has(event.babyId)) : undefined,
       events: selectEvents(all, profile.id, query),
       profile,
-      profiles: profiles.length > 0 ? profiles : [profile]
+      profiles: profiles.length > 0 ? profiles : [profile],
+      shopping: listRowsFromValues(shoppingValues ?? [], shoppingHeaders, shoppingFromRecord).map((row) => row.item),
+      tasks: listRowsFromValues(taskValues ?? [], taskHeaders, taskFromRecord).map((row) => row.item)
     };
   }
 
@@ -781,17 +1198,30 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
   }
 
   /**
-   * Blanks the child's row. Its entries stay in the Events sheet — we migrate
-   * and leave history alone rather than deleting rows someone else may still be
-   * reading — and the blank row is skipped on the way back in.
+   * Stamps `archivedAt` on the row and changes nothing else. The row stays, the
+   * entries stay, and `restoreProfile` clears the stamp — archiving a person is
+   * never a deletion, whatever the reason for it.
    */
-  async function deleteProfile(id: string) {
-    const { rowNumbers } = readProfiles(await api.getValues(PROFILE_RANGE));
+  async function setArchived(id: string, archivedAt: string | undefined) {
+    const { profiles, rowNumbers } = readProfiles(await api.getValues(PROFILE_RANGE));
     const rowNumber = rowNumbers.get(id);
+    const existing = profiles.find((person) => person.id === id);
 
-    if (rowNumber) {
-      await api.clearValues(profileRowRange(rowNumber));
+    if (!rowNumber || !existing) {
+      return;
     }
+
+    await api.updateValues(profileRowRange(rowNumber), [
+      profileToRow({ ...existing, archivedAt, syncState: 'synced', updatedAt: new Date().toISOString() })
+    ]);
+  }
+
+  async function archiveProfile(id: string) {
+    await setArchived(id, new Date().toISOString());
+  }
+
+  async function restoreProfile(id: string) {
+    await setArchived(id, undefined);
   }
 
   async function addEvent(input: CreateCareEventInput) {
@@ -877,6 +1307,9 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
 
   /** Every child and every child's entries — an export is the whole tracker. */
   async function exportData(): Promise<TrackerExport> {
+    // An export is the whole tracker, lists included. It goes through
+    // `snapshot`, which already knows how to read a sheet whose list tabs have
+    // not been created yet.
     const [profileValues, eventValues] = await api.batchGetValues([PROFILE_RANGE, EVENTS_RANGE]);
     const { profiles } = readProfiles(profileValues);
     const events = rowsFromValues(eventValues)
@@ -888,6 +1321,8 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
       exportedAt: new Date().toISOString(),
       profile: profiles[0] ?? createDefaultBabyProfile(),
       profiles,
+      shopping: listsReady ? await listShoppingItems() : [],
+      tasks: listsReady ? await listTasks() : [],
       version: 1
     };
   }
@@ -904,9 +1339,18 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
     const incoming = migrateStoredEvents(data.events);
 
     if (options.mode === 'replace') {
+      await ensureTabs();
       await api.clearValues(EVENTS_BODY_RANGE);
+      await api.clearValues(SHOPPING_BODY_RANGE);
+      await api.clearValues(TASKS_BODY_RANGE);
       if (incoming.length > 0) {
-        await api.updateValues('Events!A2:AH', incoming.map((event) => eventToRow({ ...event, syncState: 'synced' })));
+        await api.updateValues('Events!A2:AN', incoming.map((event) => eventToRow({ ...event, syncState: 'synced' })));
+      }
+      if (data.shopping?.length) {
+        await api.updateValues('Shopping!A2:K', data.shopping.map(shoppingToRow));
+      }
+      if (data.tasks?.length) {
+        await api.updateValues('Tasks!A2:J', data.tasks.map(taskToRow));
       }
       return;
     }
@@ -918,6 +1362,48 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
     if (newEvents.length > 0) {
       await api.appendValues(EVENTS_APPEND_RANGE, newEvents.map((event) => eventToRow({ ...event, syncState: 'synced' })));
     }
+
+    await importList(
+      data.shopping ?? [],
+      readShopping,
+      shoppingToRow,
+      SHOPPING_TAB,
+      'K',
+      (item) => normalizeItemName(item.name)
+    );
+    await importList(data.tasks ?? [], readTasks, taskToRow, TASKS_TAB, 'J');
+  }
+
+  /**
+   * Adds the list rows this sheet has not got, in one write. Rows already here
+   * win: the sheet is what the other parent has been editing, and an import is
+   * a merge of what a device brought with it, not a replacement of theirs.
+   */
+  async function importList<T extends { id: string }>(
+    incoming: T[],
+    read: () => Promise<Array<{ item: T; rowNumber: number }>>,
+    toRow: (item: T) => unknown[],
+    tab: string,
+    lastColumn: string,
+    identity: (item: T) => string = (item) => item.id
+  ) {
+    if (incoming.length === 0) {
+      return;
+    }
+
+    const rows = await read();
+    const known = new Set(rows.map((row) => identity(row.item)));
+    const missing = incoming.filter((item) => !known.has(identity(item)));
+
+    if (missing.length === 0) {
+      return;
+    }
+
+    const startRow = nextListRow(rows);
+    await api.updateValues(
+      `${tab}!A${startRow}:${lastColumn}${startRow + missing.length - 1}`,
+      missing.map(toRow)
+    );
   }
 
   async function clear() {
@@ -927,18 +1413,25 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
   return {
     addEvent,
     addProfile,
+    archiveProfile,
     assignCaregivers,
     clear,
     close: () => {},
     deleteEvent,
-    deleteProfile,
     exportData,
     getProfile,
     importData,
     initialize,
     listEvents,
     listProfiles,
+    listShoppingItems,
+    listTasks,
+    removeShoppingItem,
+    removeTask,
+    restoreProfile,
     saveProfile,
+    saveShoppingItem,
+    saveTask,
     snapshot,
     updateEvent
   };

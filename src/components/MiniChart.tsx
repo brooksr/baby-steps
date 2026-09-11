@@ -41,7 +41,11 @@ export function MiniChart({ event, label, stats, suffix = '', partAverages, part
       <div
         className="chart-bars"
         aria-label={`${label} chart`}
-        style={{ gridTemplateColumns: `repeat(${cols}, minmax(3px, 1fr))` }}
+        // `minmax(0, ...)`, not a pixel floor: a floor of a few px per column
+        // plus the gaps is wider than the card once a period runs to months, and
+        // the bars spill out the side. The gap tightens as columns multiply so
+        // they stay distinguishable instead of merging into a block.
+        style={{ gap: `${cols > 45 ? 1 : cols > 24 ? 2 : 4}px`, gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
       >
         {values.length === 0 ? (
           <p className="empty-state compact">No data</p>

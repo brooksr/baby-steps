@@ -1,8 +1,9 @@
 import Dexie, { type Table } from 'dexie';
-import { createFamilyProfile, isChild, isParent, sortProfiles, type NewProfileInput } from '../domain/family';
+import { createFamilyProfile, getActiveProfiles, isArchived, isChild, isParent, sortProfiles, type NewProfileInput } from '../domain/family';
 import { createDefaultBabyProfile } from '../domain/dates';
 import { migrateStoredEvents, type StoredCareEvent } from '../domain/legacyEvents';
-import { type BabyProfile, type CareEvent, type CareEventType, type CreateCareEventInput, type TrackerExport, type TrackerSnapshot } from '../domain/types';
+import { DEFAULT_SHOPPING_CATEGORY, findItemByName, getCatalogSeed } from '../domain/shopping';
+import { type BabyProfile, type CareEvent, type CareEventType, type CreateCareEventInput, type ShoppingItem, type TaskItem, type TrackerExport, type TrackerSnapshot } from '../domain/types';
 
 const DEFAULT_DB_NAME = 'babysteps-theo';
 
@@ -17,6 +18,13 @@ export interface EventQuery {
 export interface ImportOptions {
   mode?: 'merge' | 'replace';
 }
+
+/**
+ * A new or edited list row. `id` names an existing one; without it the store
+ * creates one — which is what an add from the type-ahead box is.
+ */
+export type ShoppingItemInput = Partial<ShoppingItem> & { name?: string };
+export type TaskItemInput = Partial<TaskItem> & { title?: string };
 
 export interface CaregiverAssignment {
   id: string;
@@ -40,10 +48,13 @@ export interface BabyTrackerStore {
   /** Adds a sibling. Its events are the rows carrying the returned id. */
   addProfile(input: NewProfileInput): Promise<BabyProfile>;
   /**
-   * Removes a child from the switcher. Its entries stay where they are —
-   * history is never rewritten, here or anywhere else.
+   * Sets someone aside: they leave the switcher and every entry of theirs stays
+   * exactly where it is. Reversible by `restoreProfile`, and it deletes nothing
+   * — a family may be archiving a profile for the saddest of reasons.
    */
-  deleteProfile(id: string): Promise<void>;
+  archiveProfile(id: string): Promise<void>;
+  /** Brings an archived profile back to the switcher. */
+  restoreProfile(id: string): Promise<void>;
   /** Patches the child named by `profile.id`, or the first one when unset. */
   saveProfile(profile: Partial<BabyProfile>): Promise<BabyProfile>;
   addEvent(input: CreateCareEventInput): Promise<CareEvent>;
@@ -56,7 +67,15 @@ export interface BabyTrackerStore {
   assignCaregivers(assignments: CaregiverAssignment[]): Promise<void>;
   deleteEvent(id: string): Promise<void>;
   listEvents(query?: EventQuery): Promise<CareEvent[]>;
-  /** Profile + events in one read, for cheap background polling. */
+  /** The shopping list, every status. Bought items stay — they are the catalogue. */
+  listShoppingItems(): Promise<ShoppingItem[]>;
+  /** Adds or patches one item. An add with a name already on file patches that row. */
+  saveShoppingItem(input: ShoppingItemInput): Promise<ShoppingItem>;
+  removeShoppingItem(id: string): Promise<void>;
+  listTasks(): Promise<TaskItem[]>;
+  saveTask(input: TaskItemInput): Promise<TaskItem>;
+  removeTask(id: string): Promise<void>;
+  /** Profile, events and both household lists in one read, for cheap polling. */
   snapshot(query?: EventQuery): Promise<TrackerSnapshot>;
   exportData(): Promise<TrackerExport>;
   importData(data: TrackerExport, options?: ImportOptions): Promise<void>;
@@ -69,12 +88,20 @@ export interface BabyTrackerStore {
 export class BabyStepsDatabase extends Dexie {
   profiles!: Table<BabyProfile, string>;
   events!: Table<CareEvent, string>;
+  shopping!: Table<ShoppingItem, string>;
+  tasks!: Table<TaskItem, string>;
 
   constructor(dbName = DEFAULT_DB_NAME) {
     super(dbName);
     this.version(1).stores({
       events: 'id, babyId, type, startedAt, updatedAt, syncState',
       profiles: 'id, dueDate, updatedAt'
+    });
+    // Version 2 adds the household lists. Dexie carries the existing tables
+    // forward untouched, so a device that already holds a log keeps every row.
+    this.version(2).stores({
+      shopping: 'id, name, category, status, updatedAt',
+      tasks: 'id, status, dueAt, assigneeId, updatedAt'
     });
   }
 }
@@ -117,7 +144,10 @@ export function createLocalBabyTrackerStore(dbName = DEFAULT_DB_NAME): BabyTrack
     return profile;
   }
 
-  /** The child a query is about: the one it named, or the first one. */
+  /**
+   * Who a query is about: the person it named, or the first one still in the
+   * switcher. An archived profile is never landed on by default.
+   */
   async function resolveProfile(babyId?: string) {
     const profiles = await listProfiles();
 
@@ -125,7 +155,13 @@ export function createLocalBabyTrackerStore(dbName = DEFAULT_DB_NAME): BabyTrack
       return initialize();
     }
 
-    return profiles.find((profile) => profile.id === babyId) ?? profiles[0];
+    const named = profiles.find((profile) => profile.id === babyId);
+
+    if (named && !isArchived(named)) {
+      return named;
+    }
+
+    return getActiveProfiles(profiles)[0] ?? named ?? profiles[0];
   }
 
   async function addProfile(input: NewProfileInput) {
@@ -135,9 +171,21 @@ export function createLocalBabyTrackerStore(dbName = DEFAULT_DB_NAME): BabyTrack
     return profile;
   }
 
-  /** The child's entries stay in the table — removing it is not a purge. */
-  async function deleteProfile(id: string) {
-    await db.profiles.delete(id);
+  /** Nothing leaves the table: archiving is a flag, and it can be undone. */
+  async function setArchived(id: string, archivedAt: string | undefined) {
+    const existing = await db.profiles.get(id);
+
+    if (existing) {
+      await db.profiles.put({ ...existing, archivedAt, syncState: 'local', updatedAt: new Date().toISOString() });
+    }
+  }
+
+  async function archiveProfile(id: string) {
+    await setArchived(id, new Date().toISOString());
+  }
+
+  async function restoreProfile(id: string) {
+    await setArchived(id, undefined);
   }
 
   async function saveProfile(profilePatch: Partial<BabyProfile>) {
@@ -221,14 +269,100 @@ export function createLocalBabyTrackerStore(dbName = DEFAULT_DB_NAME): BabyTrack
       });
   }
 
+  /**
+   * Seeds the shipped catalogue the first time the table is empty, and never
+   * again — a household that has cleared its list has cleared it on purpose.
+   */
+  async function seedShopping() {
+    if ((await db.shopping.count()) > 0) {
+      return;
+    }
+
+    const timestamp = new Date().toISOString();
+    await db.shopping.bulkPut(
+      getCatalogSeed().map((row) => ({
+        ...row,
+        createdAt: timestamp,
+        id: createId('shop'),
+        syncState: 'local' as const,
+        updatedAt: timestamp
+      }))
+    );
+  }
+
+  async function listShoppingItems() {
+    await seedShopping();
+    return db.shopping.toArray();
+  }
+
+  async function saveShoppingItem(input: ShoppingItemInput) {
+    const timestamp = new Date().toISOString();
+    // An add whose name is already on file patches that row rather than making
+    // a second one — one item, one row, is what makes the catalogue worth having.
+    const existing = input.id
+      ? await db.shopping.get(input.id)
+      : input.name
+        ? findItemByName(await db.shopping.toArray(), input.name)
+        : undefined;
+    const item: ShoppingItem = {
+      category: DEFAULT_SHOPPING_CATEGORY,
+      isFood: false,
+      name: '',
+      status: 'need',
+      ...existing,
+      ...input,
+      createdAt: existing?.createdAt ?? timestamp,
+      id: existing?.id ?? createId('shop'),
+      syncState: 'local',
+      updatedAt: timestamp
+    };
+
+    await db.shopping.put(item);
+    return item;
+  }
+
+  async function removeShoppingItem(id: string) {
+    await db.shopping.delete(id);
+  }
+
+  async function listTasks() {
+    return db.tasks.toArray();
+  }
+
+  async function saveTask(input: TaskItemInput) {
+    const timestamp = new Date().toISOString();
+    const existing = input.id ? await db.tasks.get(input.id) : undefined;
+    const task: TaskItem = {
+      status: 'open',
+      title: '',
+      ...existing,
+      ...input,
+      createdAt: existing?.createdAt ?? timestamp,
+      id: existing?.id ?? createId('task'),
+      syncState: 'local',
+      updatedAt: timestamp
+    };
+
+    await db.tasks.put(task);
+    return task;
+  }
+
+  async function removeTask(id: string) {
+    await db.tasks.delete(id);
+  }
+
   async function snapshot(query: EventQuery = {}): Promise<TrackerSnapshot> {
     await initialize();
     const profiles = await listProfiles();
-    const profile = profiles.find((person) => person.id === query.babyId) ?? profiles[0];
+    const profile = await resolveProfile(query.babyId);
     const events = await listEvents({ ...query, babyId: profile.id });
+    // The household lists belong to everyone, so they come back whoever is on
+    // screen — the Shopping and To-Do tabs are not a child's or a parent's.
+    const shopping = await listShoppingItems();
+    const tasks = await listTasks();
 
     if (!isParent(profile)) {
-      return { events, profile, profiles };
+      return { events, profile, profiles, shopping, tasks };
     }
 
     // A parent's report is partly about the babies, so their rows come along.
@@ -236,7 +370,7 @@ export function createLocalBabyTrackerStore(dbName = DEFAULT_DB_NAME): BabyTrack
     const stored = (await db.events.toArray()) as StoredCareEvent[];
     const childEvents = migrateStoredEvents(stored).filter((event) => childIds.has(event.babyId));
 
-    return { childEvents, events, profile, profiles };
+    return { childEvents, events, profile, profiles, shopping, tasks };
   }
 
   /** Every child and every child's entries — an export is the whole tracker. */
@@ -253,7 +387,9 @@ export function createLocalBabyTrackerStore(dbName = DEFAULT_DB_NAME): BabyTrack
       exportedAt: new Date().toISOString(),
       profile: profiles[0],
       profiles,
-      events
+      events,
+      shopping: await db.shopping.toArray(),
+      tasks: await db.tasks.toArray()
     };
   }
 
@@ -263,10 +399,12 @@ export function createLocalBabyTrackerStore(dbName = DEFAULT_DB_NAME): BabyTrack
     // An export taken before this app tracked siblings carries one profile.
     const incomingProfiles = data.profiles?.length ? data.profiles : [data.profile];
 
-    await db.transaction('rw', db.profiles, db.events, async () => {
+    await db.transaction('rw', db.profiles, db.events, db.shopping, db.tasks, async () => {
       if (options.mode === 'replace') {
         await db.profiles.clear();
         await db.events.clear();
+        await db.shopping.clear();
+        await db.tasks.clear();
       }
 
       const timestamp = new Date().toISOString();
@@ -286,31 +424,49 @@ export function createLocalBabyTrackerStore(dbName = DEFAULT_DB_NAME): BabyTrack
           }))
         );
       }
+
+      // Absent in an export taken before the lists existed, which imports fine.
+      if (data.shopping?.length) {
+        await db.shopping.bulkPut(data.shopping.map((item) => ({ ...item, syncState: 'local' as const })));
+      }
+
+      if (data.tasks?.length) {
+        await db.tasks.bulkPut(data.tasks.map((task) => ({ ...task, syncState: 'local' as const })));
+      }
     });
   }
 
   async function clear() {
-    await db.transaction('rw', db.profiles, db.events, async () => {
+    await db.transaction('rw', db.profiles, db.events, db.shopping, db.tasks, async () => {
       await db.events.clear();
       await db.profiles.clear();
+      await db.shopping.clear();
+      await db.tasks.clear();
     });
   }
 
   return {
     addEvent,
     addProfile,
+    archiveProfile,
     assignCaregivers,
     clear,
     close: () => db.close(),
     deleteEvent,
-    deleteProfile,
     exportData,
     getProfile,
     importData,
     initialize,
     listEvents,
     listProfiles,
+    listShoppingItems,
+    listTasks,
+    removeShoppingItem,
+    removeTask,
+    restoreProfile,
     saveProfile,
+    saveShoppingItem,
+    saveTask,
     snapshot,
     updateEvent
   };

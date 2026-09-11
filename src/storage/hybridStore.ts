@@ -1,8 +1,8 @@
 import type { NewProfileInput } from '../domain/family';
-import type { BabyProfile, CareEvent, CreateCareEventInput, TrackerExport, TrackerSnapshot } from '../domain/types';
+import type { BabyProfile, CareEvent, CreateCareEventInput, ShoppingItem, TaskItem, TrackerExport, TrackerSnapshot } from '../domain/types';
 import { getGoogleSheetsAccessToken, GoogleAuthRequiredError, hasGoogleClientId, requestGoogleSheetsAccessToken } from './googleSheetsAuth';
 import { createGoogleSheetsBabyTrackerStore, GOOGLE_SHEET_ID, GOOGLE_SHEET_URL, GoogleSheetsApi } from './googleSheetsStore';
-import { createLocalBabyTrackerStore, type BabyTrackerStore, type CaregiverAssignment, type EventQuery, type ImportOptions, type StoreStatus } from './store';
+import { createLocalBabyTrackerStore, type BabyTrackerStore, type CaregiverAssignment, type EventQuery, type ImportOptions, type ShoppingItemInput, type StoreStatus, type TaskItemInput } from './store';
 
 export function createHybridBabyTrackerStore(): BabyTrackerStore {
   const localStore = createLocalBabyTrackerStore();
@@ -48,7 +48,12 @@ export function createHybridBabyTrackerStore(): BabyTrackerStore {
       (child) => child.id !== localData.profile.id && child.id !== sheetProfile.id
     );
 
-    if (localData.events.length > 0 || localSiblings.length > 0) {
+    if (
+      localData.events.length > 0 ||
+      localSiblings.length > 0 ||
+      Boolean(localData.shopping?.length) ||
+      Boolean(localData.tasks?.length)
+    ) {
       await sheetStore.importData(
         {
           ...localData,
@@ -80,6 +85,9 @@ export function createHybridBabyTrackerStore(): BabyTrackerStore {
     addProfile(input: NewProfileInput) {
       return trySheet(() => currentStore().addProfile(input), () => localStore.addProfile(input));
     },
+    archiveProfile(id: string) {
+      return trySheet(() => currentStore().archiveProfile(id), () => localStore.archiveProfile(id));
+    },
     assignCaregivers(assignments: CaregiverAssignment[]) {
       return trySheet(() => currentStore().assignCaregivers(assignments), () => localStore.assignCaregivers(assignments));
     },
@@ -94,9 +102,7 @@ export function createHybridBabyTrackerStore(): BabyTrackerStore {
     deleteEvent(id: string) {
       return trySheet(() => currentStore().deleteEvent(id), () => localStore.deleteEvent(id));
     },
-    deleteProfile(id: string) {
-      return trySheet(() => currentStore().deleteProfile(id), () => localStore.deleteProfile(id));
-    },
+
     exportData() {
       return trySheet(() => currentStore().exportData(), () => localStore.exportData());
     },
@@ -126,8 +132,29 @@ export function createHybridBabyTrackerStore(): BabyTrackerStore {
     listProfiles(): Promise<BabyProfile[]> {
       return trySheet(() => currentStore().listProfiles(), () => localStore.listProfiles());
     },
+    listShoppingItems(): Promise<ShoppingItem[]> {
+      return trySheet(() => currentStore().listShoppingItems(), () => localStore.listShoppingItems());
+    },
+    listTasks(): Promise<TaskItem[]> {
+      return trySheet(() => currentStore().listTasks(), () => localStore.listTasks());
+    },
+    removeShoppingItem(id: string) {
+      return trySheet(() => currentStore().removeShoppingItem(id), () => localStore.removeShoppingItem(id));
+    },
+    removeTask(id: string) {
+      return trySheet(() => currentStore().removeTask(id), () => localStore.removeTask(id));
+    },
+    restoreProfile(id: string) {
+      return trySheet(() => currentStore().restoreProfile(id), () => localStore.restoreProfile(id));
+    },
     saveProfile(profile: Partial<BabyProfile>) {
       return trySheet(() => currentStore().saveProfile(profile), () => localStore.saveProfile(profile));
+    },
+    saveShoppingItem(input: ShoppingItemInput) {
+      return trySheet(() => currentStore().saveShoppingItem(input), () => localStore.saveShoppingItem(input));
+    },
+    saveTask(input: TaskItemInput) {
+      return trySheet(() => currentStore().saveTask(input), () => localStore.saveTask(input));
     },
     async snapshot(query?: EventQuery): Promise<TrackerSnapshot> {
       try {

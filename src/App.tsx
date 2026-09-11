@@ -1,4 +1,4 @@
-import { BarChart3, ClipboardCheck, Home, List, Settings } from 'lucide-react';
+import { BarChart3, ClipboardCheck, Home, List, ListTodo, Settings, ShoppingCart } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { applyTheme, getInitialTheme, type Theme } from './domain/theme';
 import { hasStoredGoogleGrant, keepGoogleSessionAlive } from './storage/googleSheetsAuth';
@@ -13,23 +13,26 @@ import { SettingsPanel } from './components/SettingsPanel';
 import { ChildSwitcher } from './components/ChildSwitcher';
 import { ParentDashboard } from './components/ParentDashboard';
 import { ParentReports } from './components/ParentReports';
-import { isParent, getStoredActiveProfileId, storeActiveProfileId, type NewProfileInput } from './domain/family';
+import { ShoppingList } from './components/ShoppingList';
+import { Todos } from './components/Todos';
+import { getActiveProfiles, isParent, getStoredActiveProfileId, storeActiveProfileId, type NewProfileInput } from './domain/family';
 import { DEFAULT_SLEEP_WINDOW, planAttribution, planParentSleeps, type Shift, type ShiftPlan, type ShiftResult } from './domain/nightShift';
 import { getLocalDateKey } from './domain/dates';
 import { getFirstYearEvents } from './domain/firstYear';
 import { snapshotSignature } from './domain/snapshot';
+import { getFoodNames } from './domain/shopping';
 import { type ActiveTimers, type TimerType, loadActiveTimers, saveActiveTimers } from './domain/timers';
-import type { BabyProfile, CareEvent, CareEventType, CreateCareEventInput, TrackerExport, TrackerSnapshot } from './domain/types';
+import type { BabyProfile, CareEvent, CareEventType, CreateCareEventInput, ShoppingItem, TaskItem, TrackerExport, TrackerSnapshot } from './domain/types';
 import { createHybridBabyTrackerStore } from './storage/hybridStore';
 import type { StoreStatus } from './storage/store';
 
-type View = 'dashboard' | 'log' | 'reports' | 'care' | 'learn' | 'settings';
+type View = 'dashboard' | 'log' | 'reports' | 'care' | 'shopping' | 'todos' | 'learn' | 'settings';
 
 // 'restoring' resumes a device that already granted Google, so a returning user
 // sees a branded reconnect rather than a flash of the login screen.
 type BootPhase = 'restoring' | 'signin' | 'ready';
 
-const VIEWS: View[] = ['dashboard', 'log', 'reports', 'care', 'learn', 'settings'];
+const VIEWS: View[] = ['dashboard', 'log', 'reports', 'care', 'shopping', 'todos', 'learn', 'settings'];
 
 /** How often a foreground tab re-reads the shared sheet for other people's edits. */
 const POLL_INTERVAL_MS = 45_000;
@@ -80,11 +83,13 @@ const tabs = [
   { icon: List, id: 'log', label: 'Log' },
   { icon: BarChart3, id: 'reports', label: 'Reports' },
   { icon: ClipboardCheck, id: 'care', label: 'Care' },
+  { icon: ShoppingCart, id: 'shopping', label: 'Shopping' },
+  { icon: ListTodo, id: 'todos', label: 'To-do' },
   { icon: Settings, id: 'settings', label: 'Settings' }
 ] satisfies Array<{ icon: typeof Home; id: View; label: string }>;
 
 /** Milestones and immunisations are a child's, so a parent has no Care tab. */
-const PARENT_TABS = new Set<View>(['dashboard', 'log', 'reports', 'settings']);
+const PARENT_TABS = new Set<View>(['dashboard', 'log', 'reports', 'shopping', 'todos', 'settings']);
 
 function App() {
   const [profile, setProfile] = useState<BabyProfile | null>(null);
@@ -93,6 +98,8 @@ function App() {
   const [events, setEvents] = useState<CareEvent[]>([]);
   // The babies' entries, carried only while a parent is on screen.
   const [childEvents, setChildEvents] = useState<CareEvent[]>([]);
+  const [shopping, setShopping] = useState<ShoppingItem[]>([]);
+  const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [activeView, setActiveView] = useState<View>(viewFromHash);
   const [dialogType, setDialogType] = useState<CareEventType | null>(null);
   const [editEvent, setEditEvent] = useState<CareEvent | null>(null);
@@ -132,7 +139,13 @@ function App() {
   const activeChildRef = useRef<string | undefined>(getStoredActiveProfileId());
 
   const applySnapshot = useCallback((snapshot: TrackerSnapshot) => {
-    const signature = snapshotSignature(snapshot.profile, [...snapshot.events, ...(snapshot.childEvents ?? [])], snapshot.profiles);
+    const signature = snapshotSignature(
+      snapshot.profile,
+      [...snapshot.events, ...(snapshot.childEvents ?? [])],
+      snapshot.profiles,
+      snapshot.shopping,
+      snapshot.tasks
+    );
 
     if (signature === signatureRef.current) {
       return;
@@ -146,6 +159,8 @@ function App() {
     setProfiles(snapshot.profiles);
     setEvents(snapshot.events);
     setChildEvents(snapshot.childEvents ?? []);
+    setShopping(snapshot.shopping);
+    setTasks(snapshot.tasks);
   }, []);
 
   const refresh = useCallback(async () => {
@@ -375,6 +390,34 @@ function App() {
     await refresh();
   }
 
+  async function handleSaveShoppingItem(input: Parameters<typeof trackerStore.saveShoppingItem>[0]) {
+    mutationRef.current += 1;
+    await trackerStore.saveShoppingItem(input);
+    signatureRef.current = '';
+    await refresh();
+  }
+
+  async function handleRemoveShoppingItem(id: string) {
+    mutationRef.current += 1;
+    await trackerStore.removeShoppingItem(id);
+    signatureRef.current = '';
+    await refresh();
+  }
+
+  async function handleSaveTask(input: Parameters<typeof trackerStore.saveTask>[0]) {
+    mutationRef.current += 1;
+    await trackerStore.saveTask(input);
+    signatureRef.current = '';
+    await refresh();
+  }
+
+  async function handleRemoveTask(id: string) {
+    mutationRef.current += 1;
+    await trackerStore.removeTask(id);
+    signatureRef.current = '';
+    await refresh();
+  }
+
   async function handleToggleRef(type: 'milestone' | 'vaccine', refId: string, on: boolean) {
     mutationRef.current += 1;
 
@@ -409,20 +452,30 @@ function App() {
   }
 
   /**
-   * Takes a child out of the switcher. Their entries stay in the sheet — this
-   * is a tracker with several children in it, not a delete button for a life.
+   * Sets someone aside. Their profile and every entry of theirs stay exactly
+   * where they are, and `handleRestoreProfile` brings them back — a family may
+   * be archiving a profile for the saddest of reasons, and nothing here deletes
+   * a person.
    */
-  async function handleRemoveChild(babyId: string) {
+  async function handleArchiveProfile(babyId: string) {
     mutationRef.current += 1;
-    await trackerStore.deleteProfile(babyId);
-    const remaining = profiles.filter((child) => child.id !== babyId);
+    await trackerStore.archiveProfile(babyId);
     signatureRef.current = '';
+
+    const remaining = getActiveProfiles(profiles.filter((person) => person.id !== babyId));
 
     if (babyId === activeChildRef.current && remaining[0]) {
       await selectChild(remaining[0].id);
       return;
     }
 
+    await refresh();
+  }
+
+  async function handleRestoreProfile(babyId: string) {
+    mutationRef.current += 1;
+    await trackerStore.restoreProfile(babyId);
+    signatureRef.current = '';
     await refresh();
   }
 
@@ -568,6 +621,7 @@ function App() {
             childEvents={childEvents}
             events={events}
             profile={profile}
+            profiles={profiles}
             todayKey={todayKey}
             onAdd={setDialogType}
           />
@@ -596,12 +650,32 @@ function App() {
 
       {view === 'reports' &&
         (parentMode ? (
-          <ParentReports childEvents={childEvents} events={events} profile={profile} />
+          <ParentReports childEvents={childEvents} events={events} profile={profile} profiles={profiles} />
         ) : (
           <Reports events={events} profile={profile} profiles={profiles} />
         ))}
 
       {view === 'care' && <Care events={events} profile={profile} profiles={profiles} onSaveProfile={handleSaveProfile} onToggle={handleToggleRef} />}
+
+      {view === 'shopping' && (
+        <ShoppingList
+          items={shopping}
+          profile={profile}
+          profiles={profiles}
+          onRemove={handleRemoveShoppingItem}
+          onSave={handleSaveShoppingItem}
+        />
+      )}
+
+      {view === 'todos' && (
+        <Todos
+          profile={profile}
+          profiles={profiles}
+          tasks={tasks}
+          onRemove={handleRemoveTask}
+          onSave={handleSaveTask}
+        />
+      )}
 
       {view === 'learn' && <Learn />}
 
@@ -615,7 +689,8 @@ function App() {
           onAddChild={handleAddChild}
           onApplyShifts={handleApplyShifts}
           onConnectSheet={handleConnectSheet}
-          onRemoveChild={handleRemoveChild}
+          onArchiveProfile={handleArchiveProfile}
+          onRestoreProfile={handleRestoreProfile}
           onSelectChild={selectChild}
           onExport={handleExport}
           onImport={handleImport}
@@ -654,6 +729,7 @@ function App() {
         activeTimers={activeTimers}
         editEvent={editEvent}
         eventType={dialogType}
+        foodNames={getFoodNames(shopping)}
         onClose={closeDialog}
         onSave={handleSaveEvent}
         onTimerStart={handleTimerStart}

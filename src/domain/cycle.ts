@@ -1,5 +1,6 @@
 import { getLocalDateKey } from './dates';
-import type { CareEvent, MensesEvent, MensesFlow } from './types';
+import { isChild } from './family';
+import type { BabyProfile, CareEvent, MensesEvent, MensesFlow } from './types';
 
 /**
  * A period is logged one day at a time (see `MensesEvent`), so the periods have
@@ -54,6 +55,49 @@ const DAY_MS = 86_400_000;
 export type CyclePhase = 'period' | 'follicular' | 'fertile' | 'ovulation' | 'luteal';
 export type PredictionConfidence = 'low' | 'medium' | 'high';
 
+/**
+ * Whether there is a cycle to speak of at all.
+ *
+ * - `pregnant` — a baby is on the way, so periods have stopped.
+ * - `postpartum` — a baby has arrived and no period has come back yet.
+ * - `cycling` — periods logged since the last birth.
+ */
+export type CycleStatus = 'cycling' | 'pregnant' | 'postpartum';
+
+/**
+ * What the household's babies mean for the cycle. Without it a pregnancy reads
+ * as one enormous cycle — the screen that prompted this said "cycle day 291",
+ * counting straight through a pregnancy and out the other side.
+ */
+export interface CycleContext {
+  /**
+   * The most recent birth. Periods before it belong to a previous chapter: a
+   * "cycle" spanning conception to birth is not a cycle, and averaging one in
+   * would wreck every figure after it.
+   */
+  lastBirthKey?: string;
+  /** Due date of a baby not yet born — cycles are paused until then. */
+  expectingDueKey?: string;
+}
+
+/** Reads the babies' profiles for what they imply about the cycle. */
+export function getCycleContext(profiles: BabyProfile[]): CycleContext {
+  const children = profiles.filter(isChild);
+  const births = children.map((child) => child.birthDate).filter((date): date is string => Boolean(date));
+  // Expecting means a child on the tracker with no birth logged. An overdue due
+  // date still counts — the pregnancy ends when the birth is logged, not when
+  // the calendar says it should have.
+  const expecting = children
+    .filter((child) => !child.birthDate && child.dueDate)
+    .map((child) => child.dueDate as string)
+    .sort();
+
+  return {
+    expectingDueKey: expecting[0] ? getLocalDateKey(expecting[0]) : undefined,
+    lastBirthKey: births.length > 0 ? getLocalDateKey(births.map(getLocalDateKey).sort().pop() as string) : undefined
+  };
+}
+
 export interface PeriodRecord {
   /** Local date key of the first logged bleeding day. */
   startKey: string;
@@ -95,13 +139,18 @@ export interface CyclePrediction {
 }
 
 export interface CycleToday {
-  /** 1 on the first day of the current period. */
-  dayOfCycle: number;
-  phase: CyclePhase;
+  status: CycleStatus;
+  /** 1 on the first day of the current period. Null when there is no cycle. */
+  dayOfCycle: number | null;
+  phase: CyclePhase | null;
   /** Negative once the predicted date has passed, so "3 days late" can be said. */
   daysUntilNextPeriod: number | null;
   prediction: CyclePrediction | null;
   stats: CycleStats;
+  /** Days since the last birth, while waiting for the first period back. */
+  daysSinceBirth: number | null;
+  /** Days until the due date — negative once it has passed. */
+  daysUntilDue: number | null;
 }
 
 function addDays(dateKey: string, days: number) {
@@ -138,9 +187,13 @@ function getBleedingDays(events: CareEvent[]) {
   return [...byDay.entries()].sort(([left], [right]) => left.localeCompare(right));
 }
 
-/** Bleeding days grouped back into periods, oldest first. */
-export function getPeriods(events: CareEvent[]): PeriodRecord[] {
-  const days = getBleedingDays(events);
+/**
+ * Bleeding days grouped back into periods, oldest first. `sinceKey` drops the
+ * days before it — everything logged before the last birth belongs to a
+ * previous chapter and must not run into this one.
+ */
+export function getPeriods(events: CareEvent[], sinceKey?: string): PeriodRecord[] {
+  const days = getBleedingDays(events).filter(([key]) => !sinceKey || key >= sinceKey);
   const periods: PeriodRecord[] = [];
 
   for (const [key, flow] of days) {
@@ -172,8 +225,8 @@ export function getPeriods(events: CareEvent[]): PeriodRecord[] {
   return periods;
 }
 
-export function getCycleStats(events: CareEvent[]): CycleStats {
-  const periods = getPeriods(events);
+export function getCycleStats(events: CareEvent[], sinceKey?: string): CycleStats {
+  const periods = getPeriods(events, sinceKey);
   const lengths = periods.filter((period) => period.cycleCounted).map((period) => period.cycleLengthDays as number);
   const recent = lengths.slice(-RECENT_CYCLES);
   // Only finished periods say how long a period runs; the current one is still
@@ -235,16 +288,38 @@ export function predictCycle(events: CareEvent[], stats = getCycleStats(events))
   };
 }
 
-/** Where today sits: cycle day, phase, and what is predicted next. */
-export function getCycleToday(events: CareEvent[], now = new Date()): CycleToday | null {
-  const stats = getCycleStats(events);
+/**
+ * Where today sits: cycle day, phase, and what is predicted next — or why there
+ * is no cycle to report. A pregnancy pauses it; a birth restarts it, and the
+ * periods from before that birth are left behind rather than averaged in.
+ */
+export function getCycleToday(events: CareEvent[], now = new Date(), context: CycleContext = {}): CycleToday | null {
+  const todayKey = getLocalDateKey(now);
+  const stats = getCycleStats(events, context.lastBirthKey);
   const last = stats.periods[stats.periods.length - 1];
 
-  if (!last) {
-    return null;
+  const base = {
+    dayOfCycle: null,
+    daysSinceBirth: context.lastBirthKey ? daysBetween(context.lastBirthKey, todayKey) : null,
+    daysUntilDue: context.expectingDueKey ? daysBetween(todayKey, context.expectingDueKey) : null,
+    daysUntilNextPeriod: null,
+    phase: null,
+    prediction: null,
+    stats
+  };
+
+  // A baby on the way comes first: periods have stopped, and whatever was
+  // logged before conception is not a cycle in progress.
+  if (context.expectingDueKey) {
+    return { ...base, status: 'pregnant' as const };
   }
 
-  const todayKey = getLocalDateKey(now);
+  // Born, and nothing back yet. How long that takes varies enormously, so the
+  // app says how long it has been and nothing more.
+  if (!last) {
+    return context.lastBirthKey ? { ...base, status: 'postpartum' as const } : null;
+  }
+
   const prediction = predictCycle(events, stats);
   const dayOfCycle = daysBetween(last.startKey, todayKey) + 1;
   const bleeding = todayKey >= last.startKey && todayKey <= last.endKey;
@@ -266,11 +341,12 @@ export function getCycleToday(events: CareEvent[], now = new Date()): CycleToday
   }
 
   return {
+    ...base,
     dayOfCycle: Math.max(1, dayOfCycle),
     daysUntilNextPeriod: prediction ? daysBetween(todayKey, prediction.nextPeriodKey) : null,
     phase,
     prediction,
-    stats
+    status: 'cycling' as const
   };
 }
 
@@ -281,3 +357,26 @@ export const cyclePhaseLabels: Record<CyclePhase, string> = {
   ovulation: 'Ovulation day',
   period: 'Period'
 };
+
+/** How the cycle tile reads when there is no cycle running. */
+export function describeCycleStatus(cycle: CycleToday): { detail: string; headline: string } {
+  if (cycle.status === 'pregnant') {
+    const days = cycle.daysUntilDue;
+
+    return {
+      detail: days == null ? 'Cycle paused' : days >= 0 ? `${Math.ceil(days / 7)} weeks to go` : `${Math.abs(days)} days past the due date`,
+      headline: 'Expecting'
+    };
+  }
+
+  if (cycle.status === 'postpartum') {
+    const days = cycle.daysSinceBirth ?? 0;
+
+    return {
+      detail: days < 14 ? `${days} day${days === 1 ? '' : 's'} since the birth` : `${Math.floor(days / 7)} weeks since the birth`,
+      headline: 'No period yet'
+    };
+  }
+
+  return { detail: cycle.phase ? cyclePhaseLabels[cycle.phase] : '', headline: String(cycle.dayOfCycle ?? '—') };
+}

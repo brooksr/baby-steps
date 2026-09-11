@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { eventsSignature, snapshotSignature } from './snapshot';
-import type { BabyProfile, CareEvent } from './types';
+import type { BabyProfile, CareEvent, ShoppingItem, TaskItem } from './types';
 
 const profile: BabyProfile = {
   createdAt: '2026-06-20T16:15:00.000Z',
@@ -53,6 +53,18 @@ describe('snapshot signatures', () => {
     expect(snapshotSignature(profile, [diaper()])).toBe(snapshotSignature(profile, [diaper()]));
     expect(snapshotSignature(profile, [diaper()])).not.toBe(
       snapshotSignature({ ...profile, birthDate: '2026-09-02T06:30:00.000Z' }, [diaper()])
+    );
+  });
+
+  it('changes when either shared household list changes', () => {
+    const shopping = [{ id: 'shop_1', name: 'Apples', category: 'produce', isFood: true, status: 'need' }] as ShoppingItem[];
+    const tasks = [{ id: 'task_1', status: 'open', title: 'Wash bottles' }] as TaskItem[];
+
+    expect(snapshotSignature(profile, [], [profile], shopping, tasks)).not.toBe(
+      snapshotSignature(profile, [], [profile], [{ ...shopping[0], status: 'done' }], tasks)
+    );
+    expect(snapshotSignature(profile, [], [profile], shopping, tasks)).not.toBe(
+      snapshotSignature(profile, [], [profile], shopping, [{ ...tasks[0], title: 'Wash pump parts' }])
     );
   });
 });

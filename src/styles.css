@@ -156,6 +156,16 @@ h3,
   --event-tint: #9fb2c4;
 }
 
+:root[data-theme='dark'] [data-event='intake'] {
+  --event-fill: #2b331a;
+  --event-tint: #b6c96d;
+}
+
+:root[data-theme='dark'] [data-event='output'] {
+  --event-fill: #33291a;
+  --event-tint: #d2ab6c;
+}
+
 /* The idle tints are picked to read on white; on the dark panel they go lighter.
    The pastel fills stay put, since the selected pill keeps its dark ink. */
 :root[data-theme='dark'] .bottom-nav button[data-nav='dashboard'] {
@@ -172,6 +182,14 @@ h3,
 
 :root[data-theme='dark'] .bottom-nav button[data-nav='care'] {
   --nav-tint: #ff9b8f;
+}
+
+:root[data-theme='dark'] .bottom-nav button[data-nav='shopping'] {
+  --nav-tint: #e2b360;
+}
+
+:root[data-theme='dark'] .bottom-nav button[data-nav='todos'] {
+  --nav-tint: #b6c96d;
 }
 
 :root[data-theme='dark'] .bottom-nav button[data-nav='settings'] {
@@ -704,6 +722,18 @@ button {
   --event-tint: #566e82;
 }
 
+/* A parent's own inputs and outputs. Deliberately not the diaper amber: a
+   grown-up's log sits beside the baby's and should not read as the baby's. */
+[data-event='intake'] {
+  --event-fill: #e6ecc9;
+  --event-tint: #61761f;
+}
+
+[data-event='output'] {
+  --event-fill: #e7dcc8;
+  --event-tint: #856330;
+}
+
 .quick-button {
   display: grid;
   min-height: 82px;
@@ -923,6 +953,40 @@ button {
 
 .segmented-control.three-option {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+/* A row of chips that wraps, for the places a segmented control would need a
+   dozen equal columns: the food-group tags on an input, the eight kinds of
+   output, and the Home buttons that open the dialog already on one of them.
+   The tinted state is the event pair the element carries, so a chip on the
+   parent's Home reads as its own row rather than as another blue control. */
+.tag-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tag-chip {
+  padding: 8px 12px;
+  color: var(--ink);
+  background: var(--event-fill, var(--panel));
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.tag-chip.active {
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* The chip rows sit closer together than the cards in an ordinary block — they
+   are one control in two halves, not two sections. */
+.io-block .option-field + .option-field {
+  margin-top: 10px;
 }
 
 .segmented-control button {
@@ -1263,6 +1327,10 @@ button {
   grid-template-columns: repeat(14, minmax(5px, 1fr));
   align-items: end;
   gap: 4px;
+  /* The track count and gap are set inline per chart; this keeps a dense chart
+     inside its card whatever those work out to. */
+  min-width: 0;
+  overflow: hidden;
   min-height: 110px;
 }
 
@@ -1553,6 +1621,16 @@ button {
   --nav-tint: #cf5f4e;
 }
 
+.bottom-nav button[data-nav='shopping'] {
+  --nav-fill: #f8d99a;
+  --nav-tint: #9a681b;
+}
+
+.bottom-nav button[data-nav='todos'] {
+  --nav-fill: #dce9a9;
+  --nav-tint: #667d20;
+}
+
 .bottom-nav button[data-nav='settings'] {
   --nav-fill: #ccd8e4;
   --nav-tint: #5b7285;
@@ -1655,6 +1733,25 @@ button {
 
 /* The cycle forecast: three plain-language cards rather than a calendar grid.
    A calendar would imply day-level certainty the estimate does not have. */
+/* Archived people stay listed, quieter than the ones being tracked now. */
+.child-list.archived .child-pick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  color: var(--muted);
+  background: var(--panel);
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  flex: 1;
+}
+
+.archived-heading {
+  margin: 12px 0 6px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
 .cycle-forecast {
   display: grid;
   gap: 8px;
@@ -1733,9 +1830,10 @@ button {
   margin-top: 4px;
 }
 
-/* One row per child in Settings: tap the row to switch, the trash to remove.
-   The remove button arms on the first tap and acts on the second — removing the
-   wrong child by a stray thumb is not a mistake worth allowing. */
+/* One row per person in Settings: tap the row to switch, the archive box to set
+   someone aside. It arms on the first tap and acts on the second — archiving the
+   wrong person by a stray thumb is not a mistake worth allowing. Nothing here
+   deletes anyone, so nothing here is styled as a danger. */
 .child-list {
   display: grid;
   gap: 8px;
@@ -1789,7 +1887,7 @@ button {
   font-size: 0.8rem;
 }
 
-.child-remove {
+.child-archive {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1801,12 +1899,15 @@ button {
   font-weight: 800;
 }
 
-.child-remove.confirming {
-  color: var(--danger);
-  border-color: var(--danger);
+/* Armed, not alarming: setting a profile aside is reversible and keeps
+   everything, so it reads as a deliberate action rather than a warning. */
+.child-archive.confirming {
+  color: var(--blue-700);
+  border-color: var(--line-strong);
+  background: var(--panel-blue);
 }
 
-.child-remove svg {
+.child-archive svg {
   width: 18px;
   height: 18px;
 }
@@ -2386,6 +2487,31 @@ textarea {
 }
 
 /* Notes added for this baby in particular — a preterm birth, a recorded sex. */
+/* The researched bullets. Set on the card's own tint so they read as the
+   substance of the section rather than as a footnote to the facets. */
+.expect-facts {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 12px 14px 12px 30px;
+  background: var(--blue-50);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.expect-facts li::marker {
+  color: var(--blue-700);
+}
+
+/* Stands in for the heading the card used to carry. */
+.expect-title {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+}
+
 .expect-notes {
   display: grid;
   gap: 8px;
@@ -2487,6 +2613,63 @@ textarea {
 }
 
 /* Care plan checklists */
+.list-add {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.list-add.wrap {
+  flex-wrap: wrap;
+}
+
+.list-add-field {
+  display: grid;
+  min-width: 140px;
+  flex: 1;
+  gap: 4px;
+}
+
+.list-add-field.wide {
+  min-width: min(100%, 240px);
+  flex: 2;
+}
+
+.checkbox-line.compact {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 4px;
+  white-space: nowrap;
+}
+
+.checkbox-line.compact input {
+  width: 20px;
+  min-height: 20px;
+  margin: 0;
+}
+
+.list-aisle + .list-aisle {
+  margin-top: 18px;
+}
+
+.list-aisle h3 {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.check-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
 .care-group + .care-group {
   margin-top: 16px;
 }
@@ -2569,6 +2752,56 @@ textarea {
   display: grid;
   gap: 2px;
   min-width: 0;
+}
+
+.check-body {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 2px;
+}
+
+.check-body strong,
+.check-body small {
+  overflow-wrap: anywhere;
+}
+
+.check-body small {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.check-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+.check-actions .icon-button {
+  width: 36px;
+  height: 36px;
+}
+
+.check-row.in-cart {
+  border-color: #efce8d;
+  background: #fffaf0;
+}
+
+:root[data-theme='dark'] .check-row.in-cart {
+  border-color: #66522c;
+  background: #352d1d;
+}
+
+@media (max-width: 560px) {
+  .list-add {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .list-add-field,
+  .list-add-field.wide {
+    width: 100%;
+  }
 }
 
 .check-text small {

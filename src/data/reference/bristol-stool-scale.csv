@@ -1,0 +1,8 @@
+type,label,description,reading
+1,Separate hard lumps,"Like nuts, hard to pass.","Constipated. Usually too little water or fiber."
+2,Lumpy sausage,"Sausage-shaped but lumpy.","Mildly constipated."
+3,Cracked sausage,"Sausage-shaped with cracks on the surface.","Normal."
+4,Smooth sausage,"Smooth and soft, sausage or snake-shaped.","Normal — the easiest to pass."
+5,Soft blobs,"Soft blobs with clear-cut edges.","Lacking fiber, but not urgent."
+6,Mushy,"Fluffy pieces with ragged edges, mushy.","Mild diarrhea."
+7,Watery,"Entirely liquid, no solid pieces.","Diarrhea. Watch hydration, and call a doctor if it lasts beyond a couple of days."

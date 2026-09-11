@@ -168,6 +168,79 @@ export function isStoolColorFlagged(color: StoolColor, ageDays: number): boolean
 }
 
 // ---------------------------------------------------------------------------
+// Inputs and outputs — what a parent eats and drinks, and what comes back out
+// ---------------------------------------------------------------------------
+
+/**
+ * One food or drink group offered as a tag on an intake entry. Free text says
+ * what was eaten; the tag is what a later association pass can actually count,
+ * because "oat milk latte" and "flat white" are one group and two strings.
+ */
+export interface FoodTrigger {
+  id: string;
+  label: string;
+  /** How the tags are grouped in the picker — trigger, gas-forming, allergen. */
+  group: string;
+  examples: string;
+  watchFor: string;
+}
+
+export function getFoodTriggers(): FoodTrigger[] {
+  return records('food-triggers').map((row) => ({
+    examples: row.examples,
+    group: row.group,
+    id: row.id,
+    label: row.label,
+    watchFor: row.watch_for
+  }));
+}
+
+export function getFoodTriggerById(id: string): FoodTrigger | undefined {
+  return getFoodTriggers().find((trigger) => trigger.id === id);
+}
+
+/**
+ * One row of the shipped shopping catalogue. This is a *seed*, not a live list:
+ * it fills the Shopping tab the first time the app finds it empty, and from
+ * then on the sheet is the only copy that matters.
+ */
+export interface CatalogItem {
+  name: string;
+  category: string;
+  food: boolean;
+}
+
+export function getShoppingCatalog(): CatalogItem[] {
+  return records('shopping-catalog').map((row) => ({
+    category: row.category,
+    food: row.food === 'yes',
+    name: row.name
+  }));
+}
+
+/** One rung of the Bristol stool scale, types 1–7. */
+export interface BristolType {
+  type: number;
+  label: string;
+  description: string;
+  /** What that consistency usually means. Informational, not a diagnosis. */
+  reading: string;
+}
+
+export function getBristolScale(): BristolType[] {
+  return records('bristol').map((row) => ({
+    description: row.description,
+    label: row.label,
+    reading: row.reading,
+    type: Number(row.type)
+  }));
+}
+
+export function getBristolType(type: number | undefined): BristolType | undefined {
+  return type == null ? undefined : getBristolScale().find((row) => row.type === type);
+}
+
+// ---------------------------------------------------------------------------
 // What to expect — the Home card's pregnancy and age-stage copy
 // ---------------------------------------------------------------------------
 
@@ -179,12 +252,26 @@ export interface FetalWeek {
   size: string;
   development: string;
   headsUp: string;
+  /** Short, actionable bullets for this week — what to book, ask or do. */
+  facts: string[];
+}
+
+/**
+ * A cell holding several bullets, separated by a pipe — one column stays one
+ * column in the sheet, and a comma inside a fact is just punctuation.
+ */
+function bullets(cell: string | undefined): string[] {
+  return (cell ?? '')
+    .split('|')
+    .map((fact) => fact.trim())
+    .filter(Boolean);
 }
 
 export function getFetalWeeks(): FetalWeek[] {
   return records('fetal-development')
     .map((row) => ({
       development: row.development,
+      facts: bullets(row.facts),
       headsUp: row.heads_up,
       size: row.size,
       trimester: row.trimester,
@@ -200,6 +287,8 @@ export function getFetalWeeks(): FetalWeek[] {
  */
 export interface AgeStage {
   development: string;
+  /** Short, actionable bullets for this stage — what to book, ask or do. */
+  facts: string[];
   feeding: string;
   fromDays: number;
   headsUp: string;
@@ -213,6 +302,7 @@ export function getAgeStages(): AgeStage[] {
   return records('what-to-expect')
     .map((row) => ({
       development: row.development,
+      facts: bullets(row.facts),
       feeding: row.feeding,
       fromDays: Number(row.from_days),
       headsUp: row.heads_up,

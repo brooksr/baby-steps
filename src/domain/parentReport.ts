@@ -114,6 +114,12 @@ export interface ParentReport {
   shortestSleepMinutes: number | null;
   longestSleepMinutes: number | null;
   averageLongestStretchMinutes: number | null;
+  /**
+   * The best single night's longest unbroken run. Unlike the average, this only
+   * ever goes up as the window widens — which is what anyone checking "longest"
+   * against a longer period expects to see.
+   */
+  bestStretchMinutes: number | null;
   averageInterruptions: number | null;
   totalSleepMinutes: number;
   care: LinkedCareLoad;
@@ -365,6 +371,7 @@ export function getParentReport(
       : null,
     averageInBedMinutes: average(ordered.map((night) => night.inBedMinutes)),
     averageLongestStretchMinutes: average(ordered.map((night) => night.longestStretchMinutes)),
+    bestStretchMinutes: ordered.length > 0 ? Math.max(...ordered.map((night) => night.longestStretchMinutes)) : null,
     averageSleepMinutes: average(totals),
     care,
     longestSleepMinutes: totals.length > 0 ? Math.max(...totals) : null,

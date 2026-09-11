@@ -20,7 +20,8 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof SettingsPane
     onExport: vi.fn(),
     onImport: vi.fn(),
     onOpenLearn: vi.fn(),
-    onRemoveChild: vi.fn().mockResolvedValue(undefined),
+    onArchiveProfile: vi.fn().mockResolvedValue(undefined),
+    onRestoreProfile: vi.fn().mockResolvedValue(undefined),
     onSaveProfile: vi.fn().mockResolvedValue(undefined),
     onSelectChild: vi.fn().mockResolvedValue(undefined),
     onThemeChange: vi.fn(),
@@ -69,25 +70,47 @@ describe('SettingsPanel', () => {
     );
   });
 
-  // Removing the wrong child would be a horrible thing to do by mistake, so the
-  // first tap only arms it.
-  it('asks before removing a child, and never offers it for an only child', async () => {
+  // Archiving the wrong person would be a horrible thing to do by mistake, so
+  // the first tap only arms it.
+  it('asks before archiving, and never offers it for an only child', async () => {
     const user = userEvent.setup();
-    const onRemoveChild = vi.fn().mockResolvedValue(undefined);
+    const onArchiveProfile = vi.fn().mockResolvedValue(undefined);
     const theo = createDefaultBabyProfile();
     const mila: BabyProfile = createFamilyProfile({ dueDate: '2028-03-04', name: 'Mila Roche' }, [theo]);
 
     const { unmount } = renderPanel({ profile: theo, profiles: [theo] });
-    expect(screen.queryByRole('button', { name: /remove/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /archive/i })).toBeNull();
     unmount();
 
-    renderPanel({ onRemoveChild, profile: theo, profiles: [theo, mila] });
+    renderPanel({ onArchiveProfile, profile: theo, profiles: [theo, mila] });
 
-    await user.click(screen.getByRole('button', { name: 'Remove Mila Roche' }));
-    expect(onRemoveChild).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Archive Mila Roche' }));
+    expect(onArchiveProfile).not.toHaveBeenCalled();
 
-    await user.click(screen.getByRole('button', { name: 'Confirm removing Mila Roche' }));
-    expect(onRemoveChild).toHaveBeenCalledWith(mila.id);
+    await user.click(screen.getByRole('button', { name: 'Confirm archiving Mila Roche' }));
+    expect(onArchiveProfile).toHaveBeenCalledWith(mila.id);
+  });
+
+  // Archiving is never a deletion: the person stays listed, with everything
+  // they have, and one tap brings them back.
+  it('lists an archived person with a way back', async () => {
+    const user = userEvent.setup();
+    const onRestoreProfile = vi.fn().mockResolvedValue(undefined);
+    const theo = createDefaultBabyProfile();
+    const mila: BabyProfile = {
+      ...createFamilyProfile({ dueDate: '2028-03-04', name: 'Mila Roche' }, [theo]),
+      archivedAt: '2026-09-11T12:00:00.000Z'
+    };
+
+    renderPanel({ onRestoreProfile, profile: theo, profiles: [theo, mila] });
+
+    expect(screen.getByText('Archived')).toBeInTheDocument();
+    expect(screen.getByText('every entry kept')).toBeInTheDocument();
+    // An archived person cannot be archived again, only brought back.
+    expect(screen.queryByRole('button', { name: /^Archive Mila/ })).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Bring Mila Roche back' }));
+    expect(onRestoreProfile).toHaveBeenCalledWith(mila.id);
   });
 
   it('switches child from the list', async () => {

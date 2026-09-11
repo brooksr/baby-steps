@@ -38,7 +38,10 @@ export function NewbornStatus({ events, profile, dateKey, heading = 'Newborn che
   const behind = !assessment.onTrack;
   const onPace = assessment.onTrack && assessment.stillCounting;
   const tone = behind ? 'attention' : onPace ? 'counting' : 'on-track';
-  const pill = behind ? 'Below expected' : onPace ? 'On pace so far' : 'Within expected';
+  // "Below range" rather than "below expected": these are reference bands, not
+  // expectations anyone has failed to meet, and the growth cards already use
+  // that vocabulary.
+  const pill = behind ? 'Below range' : onPace ? 'On pace so far' : 'In range';
   const pillBand = behind ? 'band-below' : onPace ? 'band-pending' : 'band-within';
   const percentElapsed = Math.round(assessment.dayProgress * 100);
 

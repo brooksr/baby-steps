@@ -1,5 +1,5 @@
-import { Bed, Calendar, CircleAlert, FileText, Moon, Pill, Smile, Thermometer, Waves } from 'lucide-react';
-import { cyclePhaseLabels, getCycleToday } from '../domain/cycle';
+import { Bed, Calendar, CircleAlert, FileText, Moon, Pill, Smile, Thermometer, Toilet, UtensilsCrossed, Waves } from 'lucide-react';
+import { describeCycleStatus, getCycleContext, getCycleToday } from '../domain/cycle';
 import { formatClock, formatDuration, formatShortDate, getLocalDateKey, minutesBetween } from '../domain/dates';
 import { getFirstName, tracksCycle } from '../domain/family';
 import { getParentReport } from '../domain/parentReport';
@@ -17,6 +17,8 @@ interface ParentDashboardProps {
   /** Every child's entries — without them a broken night reads as an unbroken one. */
   childEvents: CareEvent[];
   profile: BabyProfile;
+  /** Everyone tracked — the babies' dates are what pause and restart a cycle. */
+  profiles?: BabyProfile[];
   todayKey: string;
   onAdd: (type: CareEventType) => void;
 }
@@ -24,9 +26,13 @@ interface ParentDashboardProps {
 /**
  * What a parent actually logs about themselves. Feeds, diapers and growth are
  * the baby's — they stay on the baby's Home rather than being offered here
- * against the wrong person.
+ * against the wrong person. A parent's own eating and drinking is an `intake`
+ * and their own pee, poo and gas an `output`, for the same reason: a feed is
+ * care given to someone else, and the two are never the same row.
  */
 const actions = [
+  { icon: UtensilsCrossed, label: 'Input', type: 'intake' },
+  { icon: Toilet, label: 'Output', type: 'output' },
   { icon: Bed, label: 'Sleep', type: 'sleep' },
   { icon: Smile, label: 'Mood', type: 'mood' },
   { icon: Thermometer, label: 'Temp', type: 'temperature' },
@@ -52,11 +58,12 @@ function formatDueIn(days: number) {
   return `${Math.abs(days)} day${days === -1 ? '' : 's'} late`;
 }
 
-export function ParentDashboard({ activeTimers, childEvents, events, profile, todayKey, onAdd }: ParentDashboardProps) {
+export function ParentDashboard({ activeTimers, childEvents, events, profile, profiles = [], todayKey, onAdd }: ParentDashboardProps) {
   const firstName = getFirstName(profile);
   const preferredUnits = getPreferredUnits(profile);
   const showsCycle = tracksCycle(profile);
-  const cycle = showsCycle ? getCycleToday(events) : null;
+  const cycle = showsCycle ? getCycleToday(events, new Date(), getCycleContext(profiles)) : null;
+  const cycleTile = cycle ? describeCycleStatus(cycle) : null;
   const report = getParentReport(events, childEvents, profile.id);
   const lastNight = report.nights[report.nights.length - 1];
   // Last night is the night keyed to yesterday evening — today's key only
@@ -110,12 +117,12 @@ export function ParentDashboard({ activeTimers, childEvents, events, profile, to
             </small>
           </div>
           <div className="hero-metric">
-            <span>{showsCycle ? 'Cycle day' : 'Nights logged'}</span>
-            <strong>{showsCycle ? (cycle ? cycle.dayOfCycle : '—') : report.nights.length}</strong>
+            <span>{showsCycle ? (cycle?.status === 'cycling' || !cycle ? 'Cycle day' : 'Cycle') : 'Nights logged'}</span>
+            <strong>{showsCycle ? (cycleTile ? cycleTile.headline : '—') : report.nights.length}</strong>
             <small>
               {showsCycle
-                ? cycle
-                  ? cyclePhaseLabels[cycle.phase]
+                ? cycleTile
+                  ? cycleTile.detail
                   : 'No period logged yet'
                 : report.averageSleepMinutes != null
                   ? `${formatDuration(report.averageSleepMinutes)} average`
@@ -147,7 +154,7 @@ export function ParentDashboard({ activeTimers, childEvents, events, profile, to
         })}
       </section>
 
-      {showsCycle && cycle?.prediction && (
+      {showsCycle && cycle?.status === 'cycling' && cycle.prediction && (
         <section className="status-list" aria-label="Cycle">
           <article className="status-row">
             <Waves aria-hidden="true" />
@@ -179,7 +186,30 @@ export function ParentDashboard({ activeTimers, childEvents, events, profile, to
         </section>
       )}
 
-      {showsCycle && !cycle?.prediction && (
+      {showsCycle && cycle?.status === 'pregnant' && (
+        <p className="field-note">
+          Cycle tracking is paused while a baby is on the way. It picks up again from the first period after the birth —
+          the ones logged before are left where they are.
+        </p>
+      )}
+
+      {showsCycle && cycle?.status === 'postpartum' && (
+        // Plain, not flagged: waiting for a cycle to come back is ordinary, not
+        // a warning. The one line worth keeping is that ovulation comes first.
+        <p className="field-note">
+          Cycles often take months to return, longer while breastfeeding. Ovulation comes first, so it can happen before
+          any period. Log the days when it returns.
+        </p>
+      )}
+
+      {showsCycle && cycle?.status === 'cycling' && !cycle.prediction && (
+        <p className="field-note">
+          Log the days of a period and BabySteps works out the cycle. It needs two cycles before it will estimate the
+          next one — until then it stays quiet rather than guessing.
+        </p>
+      )}
+
+      {showsCycle && !cycle && (
         <p className="field-note">
           Log the days of a period and BabySteps works out the cycle. It needs two cycles before it will estimate the
           next one — until then it stays quiet rather than guessing.
@@ -198,7 +228,10 @@ export function ParentDashboard({ activeTimers, childEvents, events, profile, to
           {/* Says "unbroken" because this sits under a larger nightly total and
               looks wrong otherwise: a night split by a wake-up adds up to more
               than any single run of it. */}
-          <small>unbroken, per night</small>
+          <small>
+            avg unbroken run
+            {report.bestStretchMinutes != null ? ` · best ${formatDuration(report.bestStretchMinutes)}` : ''}
+          </small>
         </article>
         <article className="metric-card">
           <span>Wake-ups</span>

@@ -54,6 +54,25 @@ describe('local baby tracker store', () => {
     expect(importedEvents[0]).toMatchObject({ amountOz: 2.5, method: 'bottle', type: 'feed' });
   });
 
+  it('keeps shopping and task rows in snapshots and exports', async () => {
+    const source = makeStore();
+    const seeded = await source.listShoppingItems();
+    expect(seeded).toContainEqual(expect.objectContaining({ name: 'Apples', status: 'done' }));
+
+    const apples = seeded.find((item) => item.name === 'Apples');
+    await source.saveShoppingItem({ id: apples?.id, status: 'need' });
+    await source.saveTask({ title: 'Wash bottles' });
+
+    const snapshot = await source.snapshot();
+    expect(snapshot.shopping).toContainEqual(expect.objectContaining({ name: 'Apples', status: 'need' }));
+    expect(snapshot.tasks).toContainEqual(expect.objectContaining({ status: 'open', title: 'Wash bottles' }));
+
+    const target = makeStore();
+    await target.importData(await source.exportData(), { mode: 'replace' });
+    expect(await target.listShoppingItems()).toContainEqual(expect.objectContaining({ name: 'Apples', status: 'need' }));
+    expect(await target.listTasks()).toContainEqual(expect.objectContaining({ title: 'Wash bottles' }));
+  });
+
   it('reads pre-merge nursing and bottle entries as feedings', async () => {
     const store = makeStore();
     // Written the way the old schema stored them, as an existing device would have.
@@ -100,16 +119,26 @@ describe('local baby tracker store', () => {
     expect(profiles.find((child) => child.id === theo.id)?.birthDate).toBeUndefined();
   });
 
-  // Removing a child is not a purge: it leaves the switcher, its entries stay.
-  it('removes a child without touching their entries', async () => {
+  // Archiving is never a deletion. A family may be setting a profile aside for
+  // the saddest of reasons, and everything has to still be there afterwards.
+  it('archives without touching the profile or its entries, and can undo it', async () => {
     const store = makeStore();
+    const theo = await store.initialize();
     const mila = await store.addProfile({ dueDate: '2028-03-04', name: 'Mila Roche' });
     await store.addEvent({ babyId: mila.id, kind: 'wet', startedAt: '2028-03-05T13:00:00.000Z', type: 'diaper' });
 
-    await store.deleteProfile(mila.id);
+    await store.archiveProfile(mila.id);
 
-    expect((await store.listProfiles()).map((child) => child.id)).not.toContain(mila.id);
-    expect((await store.listEvents({ babyId: mila.id }))).toHaveLength(1);
+    const archived = (await store.listProfiles()).find((person) => person.id === mila.id);
+    expect(archived?.archivedAt).toBeTruthy();
+    expect(archived?.name).toBe('Mila Roche');
+    expect(await store.listEvents({ babyId: mila.id })).toHaveLength(1);
+    // The switcher moves off them rather than opening on someone set aside.
+    expect((await store.snapshot({ babyId: mila.id })).profile.id).toBe(theo.id);
+
+    await store.restoreProfile(mila.id);
+
+    expect((await store.listProfiles()).find((person) => person.id === mila.id)?.archivedAt).toBeUndefined();
   });
 
   it('exports and imports every child, not just the first', async () => {

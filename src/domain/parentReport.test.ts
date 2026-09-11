@@ -287,4 +287,22 @@ describe('a parent report', () => {
       expect(report.nights[0]).toMatchObject({ inBedMinutes: 570, sessions: 2 });
     });
   });
+
+  // The average longest run can fall as a period widens and takes in worse
+  // nights; the best single night only ever goes up. Both are reported so the
+  // one that looks impossible can be read against the one that is not.
+  it('reports the best night\'s longest run as well as the average', () => {
+    const report = getParentReport(
+      [
+        sleep('2026-08-06T21:30:00', '2026-08-07T05:00:00'),
+        sleep('2026-08-07T21:30:00', '2026-08-08T05:00:00')
+      ],
+      [feed('2026-08-07T01:00:00', 'nursing', 'jenni-roche')],
+      'jenni-roche'
+    );
+
+    // One night runs unbroken (450); the other splits at 01:00 into 210 and 225.
+    expect(report.bestStretchMinutes).toBe(450);
+    expect(report.averageLongestStretchMinutes).toBe(338);
+  });
 });

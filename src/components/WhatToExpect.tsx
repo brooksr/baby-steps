@@ -35,6 +35,21 @@ function Facets({ facets }: { facets: Facet[] }) {
   );
 }
 
+/** The researched, actionable bullets for this stage. */
+function Facts({ facts }: { facts: string[] }) {
+  if (facts.length === 0) {
+    return null;
+  }
+
+  return (
+    <ul className="expect-facts">
+      {facts.map((fact) => (
+        <li key={fact}>{fact}</li>
+      ))}
+    </ul>
+  );
+}
+
 function dayWord(days: number) {
   return `${days} day${days === 1 ? '' : 's'}`;
 }
@@ -48,12 +63,11 @@ function Pregnancy({ outlook }: { outlook: PregnancyOutlook }) {
     <>
       <div className="section-heading">
         <div>
-          <h2>What to expect</h2>
+          <strong className="expect-title">Week {outlook.gestationWeeks}</strong>
           <span>
             {week.trimester} trimester · {countdown}
           </span>
         </div>
-        <span className="assess-pill band-pending">Week {outlook.gestationWeeks}</span>
       </div>
 
       <Facets
@@ -63,6 +77,8 @@ function Pregnancy({ outlook }: { outlook: PregnancyOutlook }) {
           { icon: Lightbulb, label: 'Heads up', text: week.headsUp }
         ]}
       />
+
+      <Facts facts={week.facts} />
     </>
   );
 }
@@ -77,8 +93,7 @@ function Child({ outlook, name }: { outlook: ChildOutlook; name: string }) {
       <>
         <div className="section-heading">
           <div>
-            <h2>What to expect</h2>
-            <span>Past two years</span>
+            <strong className="expect-title">Past two years</strong>
           </div>
         </div>
         <p>
@@ -93,10 +108,9 @@ function Child({ outlook, name }: { outlook: ChildOutlook; name: string }) {
     <>
       <div className="section-heading">
         <div>
-          <h2>What to expect</h2>
+          <strong className="expect-title">{stage.label}</strong>
           <span>{basis === 'corrected' ? 'At corrected age' : `${name} right now`}</span>
         </div>
-        <span className="assess-pill band-pending">{stage.label}</span>
       </div>
 
       <p className="expect-summary">{stage.summary}</p>
@@ -109,6 +123,8 @@ function Child({ outlook, name }: { outlook: ChildOutlook; name: string }) {
           { icon: Lightbulb, label: 'Heads up', text: stage.headsUp }
         ]}
       />
+
+      <Facts facts={stage.facts} />
 
       {outlook.notes.length > 0 && (
         <ul className="expect-notes">

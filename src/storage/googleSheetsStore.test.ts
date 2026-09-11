@@ -10,6 +10,17 @@ function makeApi() {
       ];
     }
 
+    if (range.startsWith('Shopping')) {
+      return [
+        ['id', 'name', 'category', 'isFood', 'status', 'quantity', 'notes', 'addedBy', 'createdAt', 'updatedAt', 'completedAt'],
+        ['shop_apples', 'Apples', 'produce', true, 'done', '', '', '', '2026-06-20T16:15:00.000Z', '2026-06-20T16:15:00.000Z', '']
+      ];
+    }
+
+    if (range.startsWith('Tasks')) {
+      return [['id', 'title', 'notes', 'status', 'dueAt', 'assigneeId', 'createdBy', 'createdAt', 'updatedAt', 'completedAt']];
+    }
+
     return [
       [
         'id',
@@ -47,11 +58,13 @@ function makeApi() {
   const batchGetValues = vi.fn(async (ranges: string[]) => Promise.all(ranges.map((range) => getValues(range))));
 
   return {
+    addSheets: vi.fn().mockResolvedValue(undefined),
     appendValues: vi.fn().mockResolvedValue(undefined),
     batchGetValues,
     clearValues: vi.fn().mockResolvedValue(undefined),
     deleteEventRow: vi.fn().mockResolvedValue(undefined),
     getValues,
+    listSheetTitles: vi.fn().mockResolvedValue(['Events', 'Profile', 'Shopping', 'Tasks']),
     updateValues: vi.fn().mockResolvedValue(undefined)
   } as unknown as GoogleSheetsApi & {
     appendValues: ReturnType<typeof vi.fn>;
@@ -105,9 +118,54 @@ describe('Google Sheets tracker store', () => {
 
     // Header rows only — never the profile row itself.
     expect(api.updateValues).toHaveBeenCalledTimes(2);
-    expect(api.updateValues).toHaveBeenCalledWith('Events!A1:AH1', [expect.arrayContaining(['id', 'babyId', 'type', 'poopSize'])]);
-    expect(api.updateValues).toHaveBeenCalledWith('Profile!A1:N1', [expect.arrayContaining(['id', 'name', 'gender', 'preferredUnits'])]);
-    expect(api.updateValues).not.toHaveBeenCalledWith('Profile!A2:N2', expect.anything());
+    expect(api.updateValues).toHaveBeenCalledWith('Events!A1:AN1', [expect.arrayContaining(['id', 'babyId', 'type', 'poopSize'])]);
+    expect(api.updateValues).toHaveBeenCalledWith('Profile!A1:O1', [expect.arrayContaining(['id', 'name', 'gender', 'preferredUnits'])]);
+    expect(api.updateValues).not.toHaveBeenCalledWith('Profile!A2:O2', expect.anything());
+  });
+
+  it('creates missing household tabs and seeds the supplied shopping history', async () => {
+    const api = makeApi();
+    api.listSheetTitles = vi.fn().mockResolvedValue(['Events', 'Profile']);
+    api.getValues.mockImplementation(async (range: string) => {
+      if (range.startsWith('Profile')) {
+        return [
+          ['id', 'name'],
+          ['theo-roche', 'Theo Roche']
+        ];
+      }
+
+      if (range.startsWith('Shopping')) {
+        return [['id', 'name', 'category', 'isFood', 'status']];
+      }
+
+      return [['id', 'babyId', 'type', 'startedAt']];
+    });
+
+    await createGoogleSheetsBabyTrackerStore(api).initialize();
+
+    expect(api.addSheets).toHaveBeenCalledWith(['Shopping', 'Tasks']);
+    expect(api.updateValues).toHaveBeenCalledWith('Shopping!A1:K1', [expect.arrayContaining(['name', 'isFood', 'status'])]);
+    expect(api.updateValues).toHaveBeenCalledWith(
+      expect.stringMatching(/^Shopping!A2:K\d+$/),
+      expect.arrayContaining([expect.arrayContaining(['Apples', 'produce', 'yes', 'done'])])
+    );
+  });
+
+  it('writes shopping items and tasks to their own sheet rows', async () => {
+    const api = makeApi();
+    const store = createGoogleSheetsBabyTrackerStore(api);
+
+    await store.saveShoppingItem({ category: 'produce', isFood: true, name: 'Bananas' });
+    await store.saveTask({ title: 'Wash bottles' });
+
+    expect(api.updateValues).toHaveBeenCalledWith(
+      'Shopping!A3:K3',
+      [expect.arrayContaining(['Bananas', 'produce', 'yes', 'need'])]
+    );
+    expect(api.updateValues).toHaveBeenCalledWith(
+      'Tasks!A2:J2',
+      [expect.arrayContaining(['Wash bottles', 'open'])]
+    );
   });
 
   // Regression: the Settings form saves a bare `YYYY-MM-DD`, which USER_ENTERED
@@ -140,7 +198,7 @@ describe('Google Sheets tracker store', () => {
     const saved = await store.saveProfile({ gender: 'girl' });
 
     expect(saved.gender).toBe('girl');
-    expect(api.updateValues).toHaveBeenCalledWith('Profile!A2:N2', [expect.arrayContaining(['theo-roche', 'Theo Roche', 'girl'])]);
+    expect(api.updateValues).toHaveBeenCalledWith('Profile!A2:O2', [expect.arrayContaining(['theo-roche', 'Theo Roche', 'girl'])]);
   });
 
   it('round-trips preferred units through the profile row', async () => {
@@ -151,7 +209,7 @@ describe('Google Sheets tracker store', () => {
 
     expect(saved.preferredUnits).toEqual({ system: 'metric', weightDisplay: 'ounces' });
     expect(api.updateValues).toHaveBeenCalledWith(
-      'Profile!A2:N2',
+      'Profile!A2:O2',
       [expect.arrayContaining(['{"system":"metric","weightDisplay":"ounces"}'])]
     );
   });
@@ -167,7 +225,7 @@ describe('Google Sheets tracker store', () => {
     });
 
     expect(api.appendValues).toHaveBeenCalledWith(
-      'Events!A:AH',
+      'Events!A:AN',
       [
         expect.arrayContaining([
           expect.stringMatching(/^event_/),
@@ -190,7 +248,7 @@ describe('Google Sheets tracker store', () => {
       type: 'diaper'
     });
 
-    expect(api.appendValues).toHaveBeenCalledWith('Events!A:AH', [expect.arrayContaining(['diaper', 'dirty', 'large'])]);
+    expect(api.appendValues).toHaveBeenCalledWith('Events!A:AN', [expect.arrayContaining(['diaper', 'dirty', 'large'])]);
   });
 
   it('maps birth rows into birth events', async () => {
@@ -264,8 +322,8 @@ describe('Google Sheets API writes', () => {
     });
 
     const api = new GoogleSheetsApi(async () => 'token');
-    await api.updateValues('Profile!A2:N2', [['theo-roche']]);
-    await api.appendValues('Events!A:AH', [['event_1']]);
+    await api.updateValues('Profile!A2:O2', [['theo-roche']]);
+    await api.appendValues('Events!A:AN', [['event_1']]);
 
     expect(urls).toHaveLength(2);
 
@@ -343,8 +401,8 @@ describe('Google Sheets API writes', () => {
     const saved = await store.saveProfile({ birthDate: '2028-03-06', id: 'mila-roche' });
 
     expect(saved.name).toBe('Mila Roche');
-    expect(api.updateValues).toHaveBeenCalledWith('Profile!A3:N3', [expect.arrayContaining(['mila-roche', 'Mila Roche', '2028-03-06'])]);
-    expect(api.updateValues).not.toHaveBeenCalledWith('Profile!A2:N2', expect.anything());
+    expect(api.updateValues).toHaveBeenCalledWith('Profile!A3:O3', [expect.arrayContaining(['mila-roche', 'Mila Roche', '2028-03-06'])]);
+    expect(api.updateValues).not.toHaveBeenCalledWith('Profile!A2:O2', expect.anything());
   });
 
   it('adds a sibling on the next free row', async () => {
@@ -354,19 +412,32 @@ describe('Google Sheets API writes', () => {
     const added = await store.addProfile({ dueDate: '2028-03-04', name: 'Mila Roche' });
 
     expect(added.id).toBe('mila-roche');
-    expect(api.updateValues).toHaveBeenCalledWith('Profile!A3:N3', [expect.arrayContaining(['mila-roche', 'Mila Roche', '2028-03-04'])]);
+    expect(api.updateValues).toHaveBeenCalledWith('Profile!A3:O3', [expect.arrayContaining(['mila-roche', 'Mila Roche', '2028-03-04'])]);
   });
 
-  // Blanking the row leaves the child's entries where they are: we migrate and
-  // leave history alone rather than deleting rows someone else may be reading.
-  it('removes a child by clearing their row, never their entries', async () => {
+  // Archiving stamps the row and changes nothing else — no cleared row, no
+  // deleted entries, and it can be undone.
+  it('archives by stamping the row, never by clearing it', async () => {
     const api = makeApi();
     const store = createGoogleSheetsBabyTrackerStore(api);
 
-    await store.deleteProfile('theo-roche');
+    await store.archiveProfile('theo-roche');
 
-    expect(api.clearValues).toHaveBeenCalledWith('Profile!A2:N2');
+    expect(api.clearValues).not.toHaveBeenCalled();
     expect(api.deleteEventRow).not.toHaveBeenCalled();
+    const written = api.updateValues.mock.calls.find((call: unknown[]) => call[0] === 'Profile!A2:O2')?.[1][0];
+    expect(written[0]).toBe('theo-roche');
+    expect(written[written.length - 1]).toBeTruthy();
+  });
+
+  it('brings an archived profile back', async () => {
+    const api = makeApi();
+    const store = createGoogleSheetsBabyTrackerStore(api);
+
+    await store.restoreProfile('theo-roche');
+
+    const written = api.updateValues.mock.calls.find((call: unknown[]) => call[0] === 'Profile!A2:O2')?.[1][0];
+    expect(written[written.length - 1]).toBe('');
   });
 
   // A profile row written before parents existed has no `kind` column at all,
@@ -400,7 +471,7 @@ describe('Google Sheets API writes', () => {
     const added = await store.addProfile({ birthDate: '1994-05-11', kind: 'parent', name: 'Sara Roche', parentRole: 'mom' });
 
     expect(added.kind).toBe('parent');
-    expect(api.updateValues).toHaveBeenCalledWith('Profile!A3:N3', [expect.arrayContaining(['sara-roche', 'Sara Roche', 'parent', 'mom'])]);
+    expect(api.updateValues).toHaveBeenCalledWith('Profile!A3:O3', [expect.arrayContaining(['sara-roche', 'Sara Roche', 'parent', 'mom'])]);
   });
 
   it('round-trips a period entry through the flow column', async () => {
@@ -409,7 +480,71 @@ describe('Google Sheets API writes', () => {
 
     await store.addEvent({ babyId: 'sara-roche', flow: 'heavy', startedAt: '2026-09-10T08:00:00.000Z', type: 'menses' });
 
-    expect(api.appendValues).toHaveBeenCalledWith('Events!A:AH', [expect.arrayContaining(['sara-roche', 'menses', 'heavy'])]);
+    expect(api.appendValues).toHaveBeenCalledWith('Events!A:AN', [expect.arrayContaining(['sara-roche', 'menses', 'heavy'])]);
+  });
+
+  // A parent's own rows. The tag list is one cell, so it has to survive being
+  // flattened and split again — that list is the half a later association pass
+  // can actually count.
+  it('round-trips an input with its food-group tags in one cell', async () => {
+    const api = makeApi();
+    const store = createGoogleSheetsBabyTrackerStore(api);
+
+    await store.addEvent({
+      babyId: 'sara-roche',
+      items: 'Iced latte',
+      kind: 'drink',
+      startedAt: '2026-09-10T08:00:00.000Z',
+      tags: ['caffeine', 'dairy'],
+      type: 'intake'
+    });
+
+    expect(api.appendValues).toHaveBeenCalledWith('Events!A:AN', [
+      expect.arrayContaining(['intake', 'drink', 'Iced latte', 'caffeine,dairy'])
+    ]);
+  });
+
+  it('reads an input row back with its tags split again', async () => {
+    const api = makeApi();
+    api.getValues.mockImplementation(async (range: string) => {
+      if (range.startsWith('Profile')) {
+        return [['id', 'name', 'timezone'], ['sara-roche', 'Sara Roche', 'America/Los_Angeles']];
+      }
+
+      return [
+        ['id', 'babyId', 'type', 'startedAt', 'kind', 'items', 'tags', 'portion'],
+        ['in_1', 'sara-roche', 'intake', '2026-09-10T08:00:00.000Z', 'food', 'Bean chili', 'legumes, spicy', 'large']
+      ];
+    });
+
+    const events = await createGoogleSheetsBabyTrackerStore(api).listEvents();
+
+    expect(events[0]).toMatchObject({
+      items: 'Bean chili',
+      kind: 'food',
+      portion: 'large',
+      tags: ['legumes', 'spicy'],
+      type: 'intake'
+    });
+  });
+
+  it('round-trips an output with its severity and stool detail', async () => {
+    const api = makeApi();
+    const store = createGoogleSheetsBabyTrackerStore(api);
+
+    await store.addEvent({
+      babyId: 'sara-roche',
+      bristol: 6,
+      color: 'normal',
+      kind: 'poo',
+      severity: 4,
+      startedAt: '2026-09-10T14:00:00.000Z',
+      type: 'output'
+    });
+
+    expect(api.appendValues).toHaveBeenCalledWith('Events!A:AN', [
+      expect.arrayContaining(['output', 'poo', 'normal', 4, 6])
+    ]);
   });
 
   it('round-trips the caregiver on an event row', async () => {
@@ -418,7 +553,7 @@ describe('Google Sheets API writes', () => {
 
     await store.addEvent({ caregiverId: 'sara-roche', kind: 'wet', startedAt: '2026-09-10T11:00:00.000Z', type: 'diaper' });
 
-    expect(api.appendValues).toHaveBeenCalledWith('Events!A:AH', [expect.arrayContaining(['diaper', 'wet', 'sara-roche'])]);
+    expect(api.appendValues).toHaveBeenCalledWith('Events!A:AN', [expect.arrayContaining(['diaper', 'wet', 'sara-roche'])]);
   });
 
   // Every row logged before the column existed carries no caregiver, and must
@@ -448,8 +583,8 @@ describe('Google Sheets API writes', () => {
       return api;
     }
 
-    const base = ['id', 'name', 'dueDate', 'birthDate', 'timezone', 'createdAt', 'updatedAt', 'syncState', 'careInfo', 'gender', 'preferredUnits', 'kind', 'parentRole', 'phone'];
-    const sara = ['sara-roche', 'Sara Roche', '', '1994-05-11', 'America/Los_Angeles', '2026-09-10T16:15:00.000Z', '2026-09-10T16:15:00.000Z', 'synced', '', '', '', 'parent', 'mom', '8053009852'];
+    const base = ['id', 'name', 'dueDate', 'birthDate', 'timezone', 'createdAt', 'updatedAt', 'syncState', 'careInfo', 'gender', 'preferredUnits', 'kind', 'parentRole', 'phone', 'archivedAt'];
+    const sara = ['sara-roche', 'Sara Roche', '', '1994-05-11', 'America/Los_Angeles', '2026-09-10T16:15:00.000Z', '2026-09-10T16:15:00.000Z', 'synced', '', '', '', 'parent', 'mom', '8053009852', ''];
 
     it('ignores a duplicate header past the end', async () => {
       const api = withHeaders([...base, 'parentRole'], sara);
@@ -483,7 +618,7 @@ describe('Google Sheets API writes', () => {
     it('blanks a stray duplicate header, and leaves an unrecognised one alone', async () => {
       const duplicated = withHeaders([...base, 'parentRole'], sara);
       await createGoogleSheetsBabyTrackerStore(duplicated).initialize();
-      expect(duplicated.clearValues).toHaveBeenCalledWith('Profile!O1:O1');
+      expect(duplicated.clearValues).toHaveBeenCalledWith('Profile!P1:P1');
 
       const theirs = withHeaders([...base, 'nannyPhone'], sara);
       await createGoogleSheetsBabyTrackerStore(theirs).initialize();
@@ -498,7 +633,7 @@ describe('Google Sheets API writes', () => {
     const saved = await store.saveProfile({ id: 'theo-roche', phone: '8053009852' });
 
     expect(saved.phone).toBe('8053009852');
-    expect(api.updateValues).toHaveBeenCalledWith('Profile!A2:N2', [expect.arrayContaining(['8053009852'])]);
+    expect(api.updateValues).toHaveBeenCalledWith('Profile!A2:O2', [expect.arrayContaining(['8053009852'])]);
   });
 
   // Attributing months of history a row at a time would be hundreds of round

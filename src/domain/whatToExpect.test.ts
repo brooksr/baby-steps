@@ -247,3 +247,32 @@ describe('FUTURE_STAGE_OUTLINE', () => {
     }
   });
 });
+
+describe('the researched facts on every stage', () => {
+  // A row added without facts would render an empty card section, so coverage
+  // is asserted rather than left to whoever edits the sheet next.
+  it('gives every week of pregnancy at least two actionable bullets', () => {
+    for (const week of getFetalWeeks()) {
+      expect(week.facts.length, `week ${week.week}`).toBeGreaterThanOrEqual(2);
+      expect(week.facts.every((fact) => fact.trim().length > 0)).toBe(true);
+    }
+  });
+
+  it('gives every stage of the first two years at least two', () => {
+    for (const stage of getAgeStages()) {
+      expect(stage.facts.length, stage.label).toBeGreaterThanOrEqual(2);
+      expect(stage.facts.every((fact) => fact.trim().length > 0)).toBe(true);
+    }
+  });
+
+  // The safety point stands; the framing does not need to name the worst thing
+  // a frightened parent could do at 3am.
+  it('asks a parent to put the baby down without naming shaking', () => {
+    const copy = getAgeStages()
+      .flatMap((stage) => [stage.headsUp, stage.summary, ...stage.facts])
+      .join(' ');
+
+    expect(copy).not.toMatch(/shak/i);
+    expect(copy).toMatch(/put \{them\} down somewhere safe/);
+  });
+});

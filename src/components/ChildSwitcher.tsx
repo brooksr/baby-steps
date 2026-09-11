@@ -1,4 +1,4 @@
-import { getFirstName } from '../domain/family';
+import { getActiveProfiles, getFirstName } from '../domain/family';
 import type { BabyProfile } from '../domain/types';
 
 interface ChildSwitcherProps {
@@ -16,13 +16,17 @@ interface ChildSwitcherProps {
  * looks exactly as it did.
  */
 export function ChildSwitcher({ activeId, profiles, onSelect }: ChildSwitcherProps) {
-  if (profiles.length < 2) {
+  // Archived profiles are set aside, not gone: they keep their entries and stay
+  // in Settings, but the switcher is for whoever is being tracked now.
+  const showing = getActiveProfiles(profiles);
+
+  if (showing.length < 2) {
     return null;
   }
 
   return (
-    <div className="child-switcher" role="group" aria-label="Child">
-      {profiles.map((child) => {
+    <div className="child-switcher" role="group" aria-label="Family">
+      {showing.map((child) => {
         const selected = child.id === activeId;
 
         return (

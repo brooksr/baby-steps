@@ -2,14 +2,21 @@ import { Play, Square, X } from 'lucide-react';
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { addMinutes, fromDateTimeInputValue, getAgeDays, toDateTimeInputValue } from '../domain/dates';
 import { DEFAULT_STOOL_COLOR } from '../domain/diaperDetails';
-import { getMoodScale, getStoolColorById, getStoolColors, isStoolColorFlagged } from '../domain/reference';
+import { CAFFEINE_TAG, INTAKE_KINDS, OUTPUT_KINDS, hasStoolDetail, parseIntakeTags } from '../domain/intakeOutput';
+import { getBristolScale, getFoodTriggers, getMoodScale, getStoolColorById, getStoolColors, isStoolColorFlagged } from '../domain/reference';
 import { getCaregivers, getStoredCaregiverId, isParent, storeCaregiverId } from '../domain/family';
 import { type ActiveTimers, type TimerType, formatElapsed, getElapsedSeconds, isTimerType } from '../domain/timers';
-import { careEventLabels, mensesFlowLabels, type BabyProfile, type CareEvent, type CareEventType, type CreateCareEventInput, type DiaperKind, type DiaperPoopSize, type FeedMethod, type MensesFlow } from '../domain/types';
+import { careEventLabels, intakeKindLabels, intakePortionLabels, mensesFlowLabels, outputKindLabels, type BabyProfile, type CareEvent, type CareEventType, type CreateCareEventInput, type DiaperKind, type DiaperPoopSize, type FeedMethod, type IntakeKind, type IntakePortion, type MensesFlow, type OutputKind } from '../domain/types';
 import { getPreferredUnits, toStoredLength, toStoredVolume, toStoredWeight, toUnitLength, toUnitVolume, toUnitWeight } from '../domain/units';
 
 const moodLevels = getMoodScale();
 const stoolColors = getStoolColors();
+const bristolScale = getBristolScale();
+const foodTriggers = getFoodTriggers();
+/** Small, medium, large — the same three sizes a diaper already uses. */
+const INTAKE_PORTIONS = ['small', 'medium', 'large'] as const;
+/** 1 slight to 5 severe. One scale across every output is what makes them comparable. */
+const SEVERITY_LEVELS = [1, 2, 3, 4, 5];
 /** Lightest to heaviest, so the selector reads as a scale. */
 const MENSES_FLOWS = ['spotting', 'light', 'medium', 'heavy'] as const;
 
@@ -21,6 +28,13 @@ interface QuickAddDialogProps {
   editEvent?: CareEvent | null;
   onClose: () => void;
   onSave: (input: CreateCareEventInput) => Promise<void>;
+  /**
+   * Names to offer under "what you ate" — the edible half of the shopping list.
+   * A suggestion is a convenience, never a constraint: anything can be typed.
+   */
+  foodNames?: string[];
+  /** Optional subtype already named by the button that opened the dialog. */
+  presetKind?: IntakeKind | OutputKind | null;
   onTimerStart: (type: TimerType) => void;
   onTimerStop: (type: TimerType) => void;
   profile?: BabyProfile;
@@ -44,7 +58,7 @@ function roundedInputValue(value: number, fractionDigits: number) {
   return String(Number(value.toFixed(fractionDigits)));
 }
 
-export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, onClose, onSave, onTimerStart, onTimerStop, profile, profiles = [] }: QuickAddDialogProps) {
+export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, foodNames = [], onClose, onSave, onTimerStart, onTimerStop, presetKind, profile, profiles = [] }: QuickAddDialogProps) {
   const preferredUnits = getPreferredUnits(profile);
   const unitSystem = preferredUnits.system;
   const [startedAt, setStartedAt] = useState(() => toDateTimeInputValue(new Date().toISOString()));
@@ -73,6 +87,15 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
   const [temperatureUnit, setTemperatureUnit] = useState('f');
   const [moodLevel, setMoodLevel] = useState('2');
   const [flow, setFlow] = useState<MensesFlow>('medium');
+  const [intakeKind, setIntakeKind] = useState<IntakeKind>('food');
+  const [items, setItems] = useState('');
+  const [intakeTags, setIntakeTags] = useState<string[]>([]);
+  const [portion, setPortion] = useState<IntakePortion>('medium');
+  const [caffeineMg, setCaffeineMg] = useState('');
+  const [outputKind, setOutputKind] = useState<OutputKind>('pee');
+  const [severity, setSeverity] = useState('2');
+  const [bristol, setBristol] = useState('4');
+  const [outputColor, setOutputColor] = useState(DEFAULT_STOOL_COLOR);
   const [caregiverId, setCaregiverId] = useState('');
   const [saving, setSaving] = useState(false);
   const [timerElapsed, setTimerElapsed] = useState(0);
@@ -133,6 +156,15 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
     setTemperature(unitSystem === 'metric' ? '37' : '98.6');
     setTemperatureUnit(unitSystem === 'metric' ? 'c' : 'f');
     setMoodLevel('2');
+    setIntakeKind(eventType === 'intake' && presetKind ? presetKind as IntakeKind : 'food');
+    setItems('');
+    setIntakeTags([]);
+    setPortion('medium');
+    setCaffeineMg('');
+    setOutputKind(eventType === 'output' && presetKind ? presetKind as OutputKind : 'pee');
+    setSeverity('2');
+    setBristol('4');
+    setOutputColor(DEFAULT_STOOL_COLOR);
 
     if (!editEvent) {
       return;
@@ -196,10 +228,26 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
       case 'menses':
         setFlow(editEvent.flow);
         break;
+      case 'intake':
+        setIntakeKind(editEvent.kind);
+        setItems(editEvent.items ?? '');
+        setIntakeTags(parseIntakeTags(editEvent.tags?.join(',')));
+        setPortion(editEvent.portion ?? 'medium');
+        setAmountOz(editEvent.amountOz == null ? '' : roundedInputValue(toUnitVolume(editEvent.amountOz, unitSystem), unitSystem === 'metric' ? 0 : 2));
+        setCaffeineMg(numberInputValue(editEvent.caffeineMg));
+        break;
+      case 'output':
+        setOutputKind(editEvent.kind);
+        setSeverity(numberInputValue(editEvent.severity) || '2');
+        setBristol(numberInputValue(editEvent.bristol) || '4');
+        // Falling back to the default keeps the select honest: an empty value
+        // would still display the first option while saving nothing.
+        setOutputColor(editEvent.color ?? DEFAULT_STOOL_COLOR);
+        break;
       default:
         break;
     }
-  }, [eventType, editEvent, preferredUnits.weightDisplay, unitSystem]);
+  }, [eventType, editEvent, preferredUnits.weightDisplay, presetKind, unitSystem]);
 
   const caregivers = useMemo(() => getCaregivers(profiles), [profiles]);
   // Only a child's entry has a caregiver worth recording — a parent logging
@@ -229,6 +277,12 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
     return { flagged: isStoolColorFlagged(color, ageDays), text: color.guidance };
   }, [diaperColor, diaperKind, eventType, profile, startedAt]);
 
+  // What that consistency usually means. Reference copy, the way the stool
+  // color guidance is — it repeats the row, it does not diagnose.
+  const bristolReading = eventType === 'output' && hasStoolDetail(outputKind)
+    ? bristolScale.find((row) => row.type === Number(bristol))?.reading
+    : undefined;
+
   if (!eventType) {
     return null;
   }
@@ -255,6 +309,17 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
       setDurationMinutes('');
       setAmountOz((current) => current || roundedInputValue(toUnitVolume(2, unitSystem), 0));
     }
+  }
+
+  // Switching to a drink clears the portion's counterpart and opens the volume
+  // box on nothing — a glass of water rarely has a measured amount either.
+  function handleIntakeKind(next: IntakeKind) {
+    setIntakeKind(next);
+    setAmountOz('');
+  }
+
+  function toggleIntakeTag(tag: string) {
+    setIntakeTags((current) => (current.includes(tag) ? current.filter((entry) => entry !== tag) : [...current, tag]));
   }
 
   // A wet-only change has no stool to describe, so both stool fields clear; the
@@ -430,6 +495,35 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
           startedAt: startedAtIso
         };
         break;
+      case 'intake': {
+        const drink = intakeKind === 'drink';
+        payload = {
+          type: 'intake',
+          // Volume belongs to a drink; a portion describes a plate.
+          amountOz: !drink || numberOrUndefined(amountOz) == null ? undefined : toStoredVolume(Number(amountOz), unitSystem),
+          caffeineMg: intakeTags.includes(CAFFEINE_TAG) ? numberOrUndefined(caffeineMg) : undefined,
+          items: items.trim() || undefined,
+          kind: intakeKind,
+          notes: trimmedNotes,
+          portion: drink ? undefined : portion,
+          startedAt: startedAtIso,
+          tags: intakeTags.length > 0 ? intakeTags : undefined
+        };
+        break;
+      }
+      case 'output': {
+        const stool = hasStoolDetail(outputKind);
+        payload = {
+          type: 'output',
+          bristol: stool ? Number(bristol) : undefined,
+          color: stool ? outputColor || undefined : undefined,
+          kind: outputKind,
+          notes: trimmedNotes,
+          severity: numberOrUndefined(severity),
+          startedAt: startedAtIso
+        };
+        break;
+      }
       default:
         // milestone / vaccine are toggled from the Care view, so there is nothing
         // to add here — but an existing one can still be re-timed or annotated.
@@ -602,6 +696,150 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
                   {colorGuidance && (
                     <p className={colorGuidance.flagged ? 'form-grid-wide field-note flagged' : 'form-grid-wide field-note'}>{colorGuidance.text}</p>
                   )}
+                </>
+              )}
+            </>
+          )}
+
+          {eventType === 'intake' && (
+            <>
+              <div className="form-grid-wide segmented-control" role="radiogroup" aria-label="Input kind">
+                {INTAKE_KINDS.map((kind) => (
+                  <button
+                    key={kind}
+                    type="button"
+                    role="radio"
+                    aria-checked={intakeKind === kind}
+                    className={intakeKind === kind ? 'active' : ''}
+                    onClick={() => handleIntakeKind(kind)}
+                  >
+                    {intakeKindLabels[kind]}
+                  </button>
+                ))}
+              </div>
+              <label className="form-grid-wide">
+                {intakeKind === 'drink' ? 'What you drank' : 'What you ate'}
+                <input
+                  list={foodNames.length > 0 ? 'intake-food-names' : undefined}
+                  placeholder={intakeKind === 'drink' ? 'Iced coffee, sparkling water' : 'Toast and eggs, leftover curry'}
+                  value={items}
+                  onChange={(event) => setItems(event.target.value)} />
+                {/* The edible half of the shopping list, so what the household
+                    actually buys is one keystroke rather than a retype. */}
+                {foodNames.length > 0 && (
+                  <datalist id="intake-food-names">
+                    {foodNames.map((name) => (
+                      <option key={name} value={name} />
+                    ))}
+                  </datalist>
+                )}
+              </label>
+              {intakeKind === 'drink' ? (
+                <label>
+                  {unitSystem === 'metric' ? 'Milliliters' : 'Ounces'} <small>optional</small>
+                  <input min="0" step={unitSystem === 'metric' ? '1' : '0.25'} type="number" value={amountOz} onChange={(event) => setAmountOz(event.target.value)} />
+                </label>
+              ) : (
+                <div className="option-field">
+                  <span>Portion</span>
+                  <div className="segmented-control three-option" role="radiogroup" aria-label="Portion">
+                    {INTAKE_PORTIONS.map((size) => (
+                      <button
+                        key={size}
+                        type="button"
+                        role="radio"
+                        aria-checked={portion === size}
+                        className={portion === size ? 'active' : ''}
+                        onClick={() => setPortion(size)}
+                      >
+                        {intakePortionLabels[size]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {intakeTags.includes(CAFFEINE_TAG) && (
+                <label>
+                  Caffeine mg <small>optional</small>
+                  <input min="0" step="5" type="number" value={caffeineMg} onChange={(event) => setCaffeineMg(event.target.value)} />
+                </label>
+              )}
+              {/* The free-text box above says what it was; these say what it
+                  *counts as*, and they are the half a later association pass can
+                  group — "oat milk latte" and "flat white" are one tag and two
+                  strings. Tap none and the entry is still a perfectly good log. */}
+              <div className="form-grid-wide option-field">
+                <span>Tags <small>optional</small></span>
+                <div className="tag-picker" role="group" aria-label="Food and drink groups">
+                  {foodTriggers.map((trigger) => (
+                    <button
+                      key={trigger.id}
+                      type="button"
+                      aria-pressed={intakeTags.includes(trigger.id)}
+                      className={intakeTags.includes(trigger.id) ? 'tag-chip active' : 'tag-chip'}
+                      title={trigger.examples}
+                      onClick={() => toggleIntakeTag(trigger.id)}
+                    >
+                      {trigger.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+
+          {eventType === 'output' && (
+            <>
+              <div className="form-grid-wide option-field">
+                <span>Kind</span>
+                <div className="tag-picker" role="radiogroup" aria-label="Output kind">
+                  {OUTPUT_KINDS.map((kind) => (
+                    <button
+                      key={kind}
+                      type="button"
+                      role="radio"
+                      aria-checked={outputKind === kind}
+                      className={outputKind === kind ? 'tag-chip active' : 'tag-chip'}
+                      onClick={() => setOutputKind(kind)}
+                    >
+                      {outputKindLabels[kind]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {/* One scale across every kind on purpose: a 4/5 of gas and a 4/5
+                  of cramping are the only way the two are ever comparable. */}
+              <label>
+                Severity <small>1 slight – 5 severe</small>
+                <select value={severity} onChange={(event) => setSeverity(event.target.value)}>
+                  {SEVERITY_LEVELS.map((level) => (
+                    <option key={level} value={level}>{level}</option>
+                  ))}
+                </select>
+              </label>
+              {hasStoolDetail(outputKind) && (
+                <>
+                  <label className="form-grid-wide">
+                    Consistency
+                    <select value={bristol} onChange={(event) => setBristol(event.target.value)}>
+                      {bristolScale.map((row) => (
+                        <option key={row.type} value={row.type}>
+                          Type {row.type} · {row.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Color
+                    <select value={outputColor} onChange={(event) => setOutputColor(event.target.value)}>
+                      {stoolColors.map((color) => (
+                        <option key={color.id} value={color.id}>
+                          {color.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {bristolReading && <p className="form-grid-wide field-note">{bristolReading}</p>}
                 </>
               )}
             </>

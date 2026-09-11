@@ -5,6 +5,7 @@ import type { CareEvent } from '../domain/types';
 import { ParentReports } from './ParentReports';
 
 const jenni = createFamilyProfile({ kind: 'parent', name: 'Jenni Roche', parentRole: 'mom' });
+const theo = createFamilyProfile({ dueDate: '2026-09-01', name: 'Theo Roche' }, [jenni]);
 
 /** Last night, 9:30pm to 5am. */
 function lastNight() {
@@ -77,5 +78,40 @@ describe('ParentReports', () => {
 
     const inBed = screen.getByText('In bed').closest('.metric-card');
     expect(inBed).toHaveTextContent('0m of it awake');
+  });
+
+  describe('the cycle around a birth', () => {
+    /** A period logged long before conception. */
+    function oldPeriod(): CareEvent {
+      return {
+        babyId: jenni.id,
+        createdAt: '2025-11-20T08:00:00',
+        flow: 'medium',
+        id: 'menses_old',
+        startedAt: '2025-11-20T08:00:00',
+        syncState: 'synced',
+        type: 'menses',
+        updatedAt: '2025-11-20T08:00:00'
+      } as CareEvent;
+    }
+
+    it('says the cycle is paused while a baby is on the way', () => {
+      const expecting = { ...theo, birthDate: undefined, dueDate: '2099-04-01' };
+
+      render(<ParentReports childEvents={[]} events={[oldPeriod()]} profile={jenni} profiles={[expecting, jenni]} />);
+
+      expect(screen.getByText(/Cycle tracking is paused while a baby is on the way/)).toBeInTheDocument();
+    });
+
+    // Counting a pre-pregnancy period forward gave "cycle day 291".
+    it('waits for the first period back rather than counting through the pregnancy', () => {
+      const born = { ...theo, birthDate: '2026-09-02' };
+
+      render(<ParentReports childEvents={[]} events={[oldPeriod()]} profile={jenni} profiles={[born, jenni]} />);
+
+      expect(screen.getByText(/No period logged yet/)).toBeInTheDocument();
+      expect(screen.getByText(/Ovulation comes first/)).toBeInTheDocument();
+      expect(screen.queryByText('Cycle day')).toBeNull();
+    });
   });
 });

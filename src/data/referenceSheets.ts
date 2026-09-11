@@ -2,13 +2,16 @@
 // Each CSV is imported as raw text (bundled at build time, so it works
 // offline) and surfaced on the Learn page as a table + download.
 
+import bristolStoolScale from './reference/bristol-stool-scale.csv?raw';
 import expectationNotes from './reference/what-to-expect-notes.csv?raw';
 import fetalDevelopment from './reference/fetal-development-by-week.csv?raw';
+import foodTriggers from './reference/food-triggers.csv?raw';
 import headForAge from './reference/head-circumference-for-age-boys.csv?raw';
 import lengthForAge from './reference/length-for-age-boys.csv?raw';
 import milestones from './reference/developmental-milestones.csv?raw';
 import moodScale from './reference/mood-scale.csv?raw';
 import newbornExpectations from './reference/newborn-daily-expectations.csv?raw';
+import shoppingCatalog from './reference/shopping-catalog.csv?raw';
 import stoolColors from './reference/stool-colors.csv?raw';
 import temperatureRanges from './reference/temperature-ranges.csv?raw';
 import tummyTime from './reference/tummy-time-by-age.csv?raw';
@@ -132,6 +135,32 @@ export const referenceSheets: ReferenceSheet[] = [
     id: 'stool-colors',
     text: stoolColors,
     title: 'Stool colors'
+  },
+  {
+    category: 'feature',
+    description:
+      'Food and drink groups offered as tags when a parent logs an input \u2014 the structured half of what is otherwise free text.',
+    filename: 'food-triggers.csv',
+    id: 'food-triggers',
+    text: foodTriggers,
+    title: 'Food & drink groups'
+  },
+  {
+    category: 'feature',
+    description: 'The Bristol stool scale, types 1\u20137 \u2014 the consistency recorded on a parent\u2019s output entry.',
+    filename: 'bristol-stool-scale.csv',
+    id: 'bristol',
+    text: bristolStoolScale,
+    title: 'Bristol stool scale'
+  },
+  {
+    category: 'feature',
+    description:
+      'The household\u2019s starting shopping catalogue \u2014 seeded into the Shopping tab once, then owned by the sheet.',
+    filename: 'shopping-catalog.csv',
+    id: 'shopping-catalog',
+    text: shoppingCatalog,
+    title: 'Shopping catalogue'
   }
 ];
 

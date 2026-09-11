@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { getCycleStats, getCycleToday, getPeriods, predictCycle } from './cycle';
-import type { CareEvent, MensesFlow } from './types';
+import { getCycleContext, getCycleStats, getCycleToday, getPeriods, predictCycle } from './cycle';
+import { createFamilyProfile } from './family';
+import type { BabyProfile, CareEvent, MensesFlow } from './types';
 
 function menses(dateKey: string, flow: MensesFlow = 'medium'): CareEvent {
   return {
@@ -168,5 +169,59 @@ describe('where today sits', () => {
 
   it('has nothing to say with no period logged', () => {
     expect(getCycleToday([], new Date('2026-03-20T09:00:00'))).toBeNull();
+  });
+});
+
+function child(overrides: Partial<BabyProfile>): BabyProfile {
+  return { ...createFamilyProfile({ dueDate: '2026-09-01', name: 'Theo Roche' }), ...overrides };
+}
+
+describe('a pregnancy and a birth', () => {
+  const mom = createFamilyProfile({ kind: 'parent', name: 'Jenni Roche', parentRole: 'mom' });
+
+  it('reads the babies for what they mean for the cycle', () => {
+    expect(getCycleContext([mom, child({ birthDate: '2026-09-02' })])).toEqual({
+      expectingDueKey: undefined,
+      lastBirthKey: '2026-09-02'
+    });
+    expect(getCycleContext([mom, child({ birthDate: undefined, dueDate: '2027-04-01' })])).toMatchObject({
+      expectingDueKey: '2027-04-01'
+    });
+  });
+
+  // The screen that prompted this said "cycle day 291", counting a period from
+  // before conception straight through a pregnancy.
+  it('does not count a pre-pregnancy period as a cycle in progress', () => {
+    const events = period('2025-11-20');
+    const born = getCycleToday(events, new Date('2026-09-11T09:00:00'), { lastBirthKey: '2026-09-02' });
+
+    expect(born?.status).toBe('postpartum');
+    expect(born?.dayOfCycle).toBeNull();
+    expect(born?.daysSinceBirth).toBe(9);
+  });
+
+  it('pauses while a baby is on the way', () => {
+    const cycle = getCycleToday(period('2025-11-20'), new Date('2026-03-01T09:00:00'), { expectingDueKey: '2026-09-01' });
+
+    expect(cycle?.status).toBe('pregnant');
+    expect(cycle?.prediction).toBeNull();
+    expect(cycle?.daysUntilDue).toBe(184);
+  });
+
+  // A "cycle" spanning conception to birth is not a cycle.
+  it('restarts from the first period after the birth', () => {
+    const events = [...period('2025-11-20'), ...period('2026-12-04'), ...period('2027-01-01')];
+    const cycle = getCycleToday(events, new Date('2027-01-03T09:00:00'), { lastBirthKey: '2026-09-02' });
+
+    expect(cycle?.status).toBe('cycling');
+    expect(cycle?.stats.periods).toHaveLength(2);
+    expect(cycle?.dayOfCycle).toBe(3);
+    // 28 days apart, but one cycle is not enough to predict from.
+    expect(cycle?.stats.averageCycleDays).toBe(28);
+    expect(cycle?.prediction).toBeNull();
+  });
+
+  it('has nothing to say with no periods and no babies', () => {
+    expect(getCycleToday([], new Date('2026-09-11T09:00:00'))).toBeNull();
   });
 });

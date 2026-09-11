@@ -7,6 +7,96 @@ import type { FeedEvent } from '../domain/types';
 import { QuickAddDialog } from './QuickAddDialog';
 
 describe('QuickAddDialog', () => {
+  // A parent's own input. The free-text box says what it was; the tags say what
+  // it counts as, and the tags are the half a later association pass can group.
+  it('submits an input with its food-group tags', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+
+    render(<QuickAddDialog activeTimers={{}} eventType="intake" onClose={vi.fn()} onSave={onSave} onTimerStart={vi.fn()} onTimerStop={vi.fn()} />);
+
+    await user.type(screen.getByLabelText(/what you ate/i), 'Bean chili');
+    await user.click(screen.getByRole('button', { name: /beans & legumes/i }));
+    await user.click(screen.getByRole('button', { name: /^spicy food$/i }));
+    await user.click(screen.getByRole('button', { name: /save/i }));
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        items: 'Bean chili',
+        kind: 'food',
+        portion: 'medium',
+        tags: ['legumes', 'spicy'],
+        type: 'intake'
+      })
+    );
+  });
+
+  // A portion describes a plate and a volume a glass; neither belongs on the
+  // other, so switching kind must not leave the one that does not apply behind.
+  it('sends a drink its volume and no portion', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+
+    render(<QuickAddDialog activeTimers={{}} eventType="intake" onClose={vi.fn()} onSave={onSave} onTimerStart={vi.fn()} onTimerStop={vi.fn()} />);
+
+    await user.click(screen.getByRole('radio', { name: /drink/i }));
+    await user.type(screen.getByLabelText(/ounces/i), '12');
+    await user.click(screen.getByRole('button', { name: /save/i }));
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ amountOz: 12, kind: 'drink', portion: undefined, type: 'intake' })
+    );
+  });
+
+  // A quick button that already says "Poo" must not then ask what kind it was.
+  it('opens an output on the kind the button named', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <QuickAddDialog
+        activeTimers={{}}
+        eventType="output"
+        onClose={vi.fn()}
+        onSave={onSave}
+        onTimerStart={vi.fn()}
+        onTimerStop={vi.fn()}
+        presetKind="poo" />
+    );
+
+    await user.selectOptions(screen.getByLabelText(/severity/i), '4');
+    await user.click(screen.getByRole('button', { name: /save/i }));
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ bristol: 4, color: 'normal', kind: 'poo', severity: 4, type: 'output' })
+    );
+  });
+
+  // Only a stool has a consistency or a color. Carrying either on a burp would
+  // put a field in the row that nothing could ever mean anything by.
+  it('leaves the stool fields off an output that has none', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <QuickAddDialog
+        activeTimers={{}}
+        eventType="output"
+        onClose={vi.fn()}
+        onSave={onSave}
+        onTimerStart={vi.fn()}
+        onTimerStop={vi.fn()}
+        presetKind="burp" />
+    );
+
+    expect(screen.queryByLabelText(/consistency/i)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /save/i }));
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ bristol: undefined, color: undefined, kind: 'burp', type: 'output' })
+    );
+  });
+
   it('submits a bottle feeding payload', async () => {
     const user = userEvent.setup();
     const onSave = vi.fn().mockResolvedValue(undefined);

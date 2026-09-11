@@ -59,6 +59,19 @@ export function isChild(profile: Pick<BabyProfile, 'kind'>): boolean {
   return getProfileKind(profile) === 'child';
 }
 
+export function isArchived(profile: Pick<BabyProfile, 'archivedAt'>): boolean {
+  return Boolean(profile.archivedAt);
+}
+
+/** Everyone the switcher shows: archived profiles are kept, just set aside. */
+export function getActiveProfiles(profiles: BabyProfile[]): BabyProfile[] {
+  return sortProfiles(profiles.filter((profile) => !isArchived(profile)));
+}
+
+export function getArchivedProfiles(profiles: BabyProfile[]): BabyProfile[] {
+  return sortProfiles(profiles.filter(isArchived));
+}
+
 /**
  * Cycle tracking is offered to a parent whose role is `mom` — the role the
  * feature was asked for. Everyone else's profile simply never shows it.
@@ -102,7 +115,7 @@ export function sortProfiles(profiles: BabyProfile[]): BabyProfile[] {
 
 /** Who an entry can be attributed to: the tracked parents, in switcher order. */
 export function getCaregivers(profiles: BabyProfile[]): BabyProfile[] {
-  return sortProfiles(profiles).filter(isParent);
+  return getActiveProfiles(profiles).filter(isParent);
 }
 
 /**

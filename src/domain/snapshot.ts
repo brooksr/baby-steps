@@ -1,4 +1,4 @@
-import type { BabyProfile, CareEvent } from './types';
+import type { BabyProfile, CareEvent, ShoppingItem, TaskItem } from './types';
 
 /**
  * Key order differs between a locally built event and one parsed back out of
@@ -43,9 +43,17 @@ export function eventsSignature(events: CareEvent[]) {
  * swap state when the shared sheet actually moved, so a quiet sheet costs no
  * re-renders and never interrupts what someone is doing.
  */
-export function snapshotSignature(profile: BabyProfile | null | undefined, events: CareEvent[], profiles?: BabyProfile[]) {
+export function snapshotSignature(
+  profile: BabyProfile | null | undefined,
+  events: CareEvent[],
+  profiles?: BabyProfile[],
+  shopping: ShoppingItem[] = [],
+  tasks: TaskItem[] = []
+) {
   const children = profiles?.length ? profiles : profile ? [profile] : [];
   const identity = children.length > 0 ? hash(stableStringify([profile?.id ?? null, children])) : 'none';
 
-  return `${identity}~${eventsSignature(events)}`;
+  const lists = hash(stableStringify([shopping, tasks]));
+
+  return `${identity}~${eventsSignature(events)}~${lists}`;
 }
