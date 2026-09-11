@@ -6,6 +6,7 @@ import { CsvTable } from './CsvTable';
 const sheetGroups: Array<{ category: SheetCategory; title: string; blurb: string }> = [
   { blurb: 'WHO Child Growth Standards (2006), boys — the curves the growth charts compare against.', category: 'growth', title: 'Growth standards' },
   { blurb: 'Typical newborn output used for the first-weeks diaper & feed checks.', category: 'newborn', title: 'Newborn expectations' },
+  { blurb: 'The pregnancy, age and personal-note copy behind the Home “What to expect” card.', category: 'expect', title: 'What to expect' },
   { blurb: 'The tables behind the milestone, vaccine, temperature, tummy-time, mood and stool-color features.', category: 'feature', title: 'Feature reference data' }
 ];
 
@@ -20,9 +21,11 @@ const tracked: Array<{ title: string; detail: string }> = [
   { detail: 'Temperature in °F or °C — stored once in °C, so both devices agree.', title: 'Temperature' },
   { detail: 'Minutes per tummy-time session.', title: 'Tummy time' },
   { detail: 'A 1–5 mood / fussiness level per entry.', title: 'Mood' },
+  { detail: 'For a parent tracked here: one entry per day of a period, with how heavy it was. Days are grouped back into periods on read, so missing one does not split a period in two.', title: 'Period days' },
   { detail: 'Scheduled, given, or skipped doses with the medication name and dose.', title: 'Medications' },
   { detail: 'Upcoming visits with provider, location, and reason.', title: 'Appointments' },
   { detail: 'Free-text notes with an optional title.', title: 'Notes' },
+  { detail: 'Optionally, which parent logged a baby’s entry. The form remembers who this device logs as, so it fills itself in; left blank, the entry simply says nobody.', title: 'Who logged it' },
   { detail: 'Tick off developmental milestones and immunisations from the bundled schedules.', title: 'Milestones & vaccines' }
 ];
 
@@ -30,12 +33,15 @@ const tracked: Array<{ title: string; detail: string }> = [
 const derived: Array<{ title: string; detail: string }> = [
   { detail: 'In the first weeks, checks the day’s diapers and feeds against typical newborn minimums for that day of life — judged on pace while the day is still running, so a half-done day stays neutral rather than alarming.', title: 'Newborn daily check' },
   { detail: 'Plots weight, length and head circumference against the WHO boys’ curves (−2 SD to +2 SD), with a corrected-age view when the birth was preterm.', title: 'Growth charts' },
+  { detail: 'Before the birth, the week of the pregnancy; after it, what this day, week or month of life usually looks like — written through age two, in your baby’s name and pronouns, and read at corrected age once a preterm birth is past the newborn window.', title: 'What to expect' },
   { detail: 'Learns the recent gap between changes — weighted so a changing routine shows up fast — and projects the next one with a window and a confidence. It stays quiet under four intervals rather than guessing.', title: 'Next-diaper prediction' },
   { detail: 'Average wait from a feed to the next wet and the next dirty diaper, ignoring pairs more than six hours apart.', title: 'Feed → diaper timing' },
   { detail: 'A quiet nudge when a feed is past about three hours or a bath is past about three days. Nothing fires while a timer is running or with no earlier entry to measure from.', title: 'Gentle rhythm reminders' },
   { detail: 'Flags a logged temperature in the fever band, and says so more urgently under three months old. Logging and comparison only — never a diagnosis.', title: 'Fever flag' },
   { detail: 'Daily totals, first-year trend charts, and per-day averages for feeds, diapers, sleep and milk — by day, week, month, year, or a date range you pick.', title: 'Reports & trends' },
-  { detail: 'Search the log, filter by type, and narrow to a date range.', title: 'Log filters' }
+  { detail: 'Search the log, filter by type, and narrow to a date range.', title: 'Log filters' },
+  { detail: 'For a parent: sleep totalled per night rather than per calendar day, the longest unbroken stretch, and how many of the baby’s entries landed inside that sleep. Entries are not signed, so the baby-care counts beside it are the household’s load, not one person’s share.', title: 'Parent sleep & night duty' },
+  { detail: 'Averages the recent cycles (start to start), then estimates the next period, ovulation about 14 days before it, and the fertile window around that. It needs two cycles before it will say anything, drops gaps under 21 or over 60 days as missed logging rather than averaging them in, and shows the date range the estimate actually spans. An estimate from logged dates — never contraception, a fertility test, or a pregnancy test.', title: 'Cycle & fertility estimate' }
 ];
 
 const storage: Array<{ title: string; detail: string }> = [
@@ -50,7 +56,8 @@ const neverSupport: Array<{ title: string; detail: string }> = [
   { detail: 'Deciding whether a symptom (jaundice, dehydration, fever, infection) is dangerous is a clinical judgment that only a licensed clinician can make.', title: 'Diagnosing illness' },
   { detail: 'Recommending medications or doses is medical advice and must come from your pediatrician or pharmacist.', title: 'Medical advice & dosing' },
   { detail: 'Live audio/video baby monitoring needs dedicated camera hardware and is outside what a tracking log does.', title: 'Live baby monitoring' },
-  { detail: 'Identifying allergies or interpreting reactions requires testing and clinical evaluation.', title: 'Allergy diagnosis' }
+  { detail: 'Identifying allergies or interpreting reactions requires testing and clinical evaluation.', title: 'Allergy diagnosis' },
+  { detail: 'The cycle estimate is arithmetic on the dates you logged. It cannot confirm ovulation, prevent or achieve a pregnancy, or tell you whether an irregular cycle needs looking at — that is a conversation with your doctor or midwife.', title: 'Contraception & fertility advice' }
 ];
 
 interface LearnListProps {

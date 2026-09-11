@@ -7,6 +7,8 @@ import { KeyInfo } from './KeyInfo';
 interface CareProps {
   events: CareEvent[];
   profile: BabyProfile;
+  /** Everyone tracked — the parents among them are the guardians. */
+  profiles?: BabyProfile[];
   onSaveProfile: (patch: Partial<BabyProfile>) => Promise<void>;
   onToggle: (type: 'milestone' | 'vaccine', refId: string, on: boolean) => Promise<void>;
 }
@@ -23,7 +25,7 @@ function addMonths(birthDate: string, months: number) {
   return date;
 }
 
-export function Care({ events, profile, onSaveProfile, onToggle }: CareProps) {
+export function Care({ events, profile, profiles = [], onSaveProfile, onToggle }: CareProps) {
   const ageMonths = profile.birthDate ? getAgeDays(profile) / AVG_DAYS_PER_MONTH : null;
 
   const achieved = new Map<string, CareEvent>();
@@ -62,7 +64,7 @@ export function Care({ events, profile, onSaveProfile, onToggle }: CareProps) {
         </div>
       </section>
 
-      <KeyInfo profile={profile} onSave={onSaveProfile} />
+      <KeyInfo profile={profile} profiles={profiles} onSave={onSaveProfile} />
 
       <section className="section-block" data-event="milestone">
         <div className="section-heading">

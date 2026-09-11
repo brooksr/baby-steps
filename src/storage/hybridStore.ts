@@ -1,3 +1,4 @@
+import type { NewProfileInput } from '../domain/family';
 import type { BabyProfile, CareEvent, CreateCareEventInput, TrackerExport, TrackerSnapshot } from '../domain/types';
 import { getGoogleSheetsAccessToken, GoogleAuthRequiredError, hasGoogleClientId, requestGoogleSheetsAccessToken } from './googleSheetsAuth';
 import { createGoogleSheetsBabyTrackerStore, GOOGLE_SHEET_ID, GOOGLE_SHEET_URL, GoogleSheetsApi } from './googleSheetsStore';
@@ -37,14 +38,22 @@ export function createHybridBabyTrackerStore(): BabyTrackerStore {
     const connecting = createGoogleSheetsBabyTrackerStore(api);
     const sheetProfile = await connecting.initialize();
     sheetStore = connecting;
-    if (localData.events.length > 0) {
+    const firstChild = {
+      ...sheetProfile,
+      birthDate: sheetProfile.birthDate ?? localData.profile.birthDate
+    };
+    // The first child keeps the sheet's row — that is the copy other caregivers
+    // have been editing. Siblings added while offline come up alongside it.
+    const localSiblings = (localData.profiles ?? [localData.profile]).filter(
+      (child) => child.id !== localData.profile.id && child.id !== sheetProfile.id
+    );
+
+    if (localData.events.length > 0 || localSiblings.length > 0) {
       await sheetStore.importData(
         {
           ...localData,
-          profile: {
-            ...sheetProfile,
-            birthDate: sheetProfile.birthDate ?? localData.profile.birthDate
-          }
+          profile: firstChild,
+          profiles: [firstChild, ...localSiblings]
         },
         { mode: 'merge' }
       );
@@ -68,6 +77,9 @@ export function createHybridBabyTrackerStore(): BabyTrackerStore {
     addEvent(input: CreateCareEventInput) {
       return trySheet(() => currentStore().addEvent(input), () => localStore.addEvent(input));
     },
+    addProfile(input: NewProfileInput) {
+      return trySheet(() => currentStore().addProfile(input), () => localStore.addProfile(input));
+    },
     async clear() {
       await currentStore().clear();
     },
@@ -78,6 +90,9 @@ export function createHybridBabyTrackerStore(): BabyTrackerStore {
     connect,
     deleteEvent(id: string) {
       return trySheet(() => currentStore().deleteEvent(id), () => localStore.deleteEvent(id));
+    },
+    deleteProfile(id: string) {
+      return trySheet(() => currentStore().deleteProfile(id), () => localStore.deleteProfile(id));
     },
     exportData() {
       return trySheet(() => currentStore().exportData(), () => localStore.exportData());
@@ -104,6 +119,9 @@ export function createHybridBabyTrackerStore(): BabyTrackerStore {
     },
     listEvents(query?: EventQuery): Promise<CareEvent[]> {
       return trySheet(() => currentStore().listEvents(query), () => localStore.listEvents(query));
+    },
+    listProfiles(): Promise<BabyProfile[]> {
+      return trySheet(() => currentStore().listProfiles(), () => localStore.listProfiles());
     },
     saveProfile(profile: Partial<BabyProfile>) {
       return trySheet(() => currentStore().saveProfile(profile), () => localStore.saveProfile(profile));

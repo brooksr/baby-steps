@@ -10,7 +10,7 @@ const OZ_TO_KG = 0.0283495;
 const IN_TO_CM = 2.54;
 
 /** A pregnancy carried to 40w0d. Anything earlier leaves age to correct for. */
-const TERM_GESTATION_DAYS = 280;
+export const TERM_GESTATION_DAYS = 280;
 /** Below 37w0d is preterm; 34w0d–36w6d is the "late preterm" window. */
 const PRETERM_GESTATION_DAYS = 37 * 7;
 const LATE_PRETERM_GESTATION_DAYS = 34 * 7;
@@ -35,7 +35,9 @@ export interface GestationInfo {
 }
 
 export function getGestationInfo(profile: BabyProfile): GestationInfo | null {
-  if (!profile.birthDate) {
+  // Without both dates there is nothing to correct against, so the charts read
+  // actual age rather than inventing a gestation.
+  if (!profile.birthDate || !profile.dueDate) {
     return null;
   }
 

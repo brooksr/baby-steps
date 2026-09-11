@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { getFirstName } from '../domain/family';
 import { assessLatestGrowth, getGestationInfo, getGrowthMeasurements, getMetricPlots, type AgeBasis, type GrowthBand, type MetricPlot } from '../domain/growth/assess';
 import { boyGrowthStandards, type GrowthMetric, type GrowthStandard } from '../domain/growth/whoBoyStandards';
 import type { BabyProfile, CareEvent, PreferredUnits } from '../domain/types';
@@ -72,6 +73,7 @@ export function GrowthStandards({ events, profile }: GrowthStandardsProps) {
   // built on term births. `activeBasis` falls back to actual when there is no
   // gestation to correct for, so a term profile never sees the difference.
   const [basis, setBasis] = useState<AgeBasis>('corrected');
+  const firstName = getFirstName(profile);
   const preferredUnits = getPreferredUnits(profile);
 
   if (!profile.birthDate) {
@@ -80,7 +82,7 @@ export function GrowthStandards({ events, profile }: GrowthStandardsProps) {
         <div className="section-heading">
           <h2>Growth standards</h2>
         </div>
-        <p className="empty-state">Log Theo's birth to compare measurements against WHO boy growth standards.</p>
+        <p className="empty-state">Log {firstName}'s birth to compare measurements against WHO boy growth standards.</p>
       </section>
     );
   }
@@ -146,7 +148,7 @@ export function GrowthStandards({ events, profile }: GrowthStandardsProps) {
         )}
 
         {assessments.length === 0 ? (
-          <p className="empty-state">Add a growth entry (weight, length, or head) to see how Theo compares.</p>
+          <p className="empty-state">Add a growth entry (weight, length, or head) to see how {firstName} compares.</p>
         ) : (
           <div className="assess-list">
             {assessments.map((assessment) => (

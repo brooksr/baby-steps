@@ -10,6 +10,10 @@ import { LoginSplash } from './components/LoginSplash';
 import { QuickAddDialog } from './components/QuickAddDialog';
 import { Reports } from './components/Reports';
 import { SettingsPanel } from './components/SettingsPanel';
+import { ChildSwitcher } from './components/ChildSwitcher';
+import { ParentDashboard } from './components/ParentDashboard';
+import { ParentReports } from './components/ParentReports';
+import { isParent, getStoredActiveProfileId, storeActiveProfileId, type NewProfileInput } from './domain/family';
 import { getLocalDateKey } from './domain/dates';
 import { getFirstYearEvents } from './domain/firstYear';
 import { snapshotSignature } from './domain/snapshot';
@@ -78,9 +82,16 @@ const tabs = [
   { icon: Settings, id: 'settings', label: 'Settings' }
 ] satisfies Array<{ icon: typeof Home; id: View; label: string }>;
 
+/** Milestones and immunisations are a child's, so a parent has no Care tab. */
+const PARENT_TABS = new Set<View>(['dashboard', 'log', 'reports', 'settings']);
+
 function App() {
   const [profile, setProfile] = useState<BabyProfile | null>(null);
+  // Everyone on the tracker, for the switcher; `profile` is the one on screen.
+  const [profiles, setProfiles] = useState<BabyProfile[]>([]);
   const [events, setEvents] = useState<CareEvent[]>([]);
+  // The babies' entries, carried only while a parent is on screen.
+  const [childEvents, setChildEvents] = useState<CareEvent[]>([]);
   const [activeView, setActiveView] = useState<View>(viewFromHash);
   const [dialogType, setDialogType] = useState<CareEventType | null>(null);
   const [editEvent, setEditEvent] = useState<CareEvent | null>(null);
@@ -90,7 +101,7 @@ function App() {
   const [error, setError] = useState('');
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
   const [storeStatus, setStoreStatus] = useState<StoreStatus | null>(() => trackerStore.getStatus?.() ?? null);
-  const [activeTimers, setActiveTimers] = useState<ActiveTimers>(loadActiveTimers);
+  const [activeTimers, setActiveTimers] = useState<ActiveTimers>({});
 
   const hasActiveTimer = Object.keys(activeTimers).length > 0;
   useEffect(() => {
@@ -103,27 +114,41 @@ function App() {
     applyTheme(theme);
   }, [theme]);
 
+  // Timers belong to a child, not to the device — follow whoever is on screen.
+  const activeChildId = profile?.id;
+  useEffect(() => {
+    setActiveTimers(activeChildId ? loadActiveTimers(activeChildId) : {});
+  }, [activeChildId]);
+
   // What the UI is currently showing, so a poll that finds nothing new can bail
   // out without re-rendering the tree under someone's fingers.
   const signatureRef = useRef('');
   // Bumped before every write, so a read that started earlier can't reinstate
   // the rows it saw before that write landed.
   const mutationRef = useRef(0);
+  // Which child every read is about. A ref as well as state, because a poll
+  // scheduled before a switch must read the child that is on screen now.
+  const activeChildRef = useRef<string | undefined>(getStoredActiveProfileId());
 
   const applySnapshot = useCallback((snapshot: TrackerSnapshot) => {
-    const signature = snapshotSignature(snapshot.profile, snapshot.events);
+    const signature = snapshotSignature(snapshot.profile, [...snapshot.events, ...(snapshot.childEvents ?? [])], snapshot.profiles);
 
     if (signature === signatureRef.current) {
       return;
     }
 
     signatureRef.current = signature;
+    // The stored person may have been removed on another device, so follow what
+    // the snapshot actually resolved to rather than insisting on the old id.
+    activeChildRef.current = snapshot.profile.id;
     setProfile(snapshot.profile);
+    setProfiles(snapshot.profiles);
     setEvents(snapshot.events);
+    setChildEvents(snapshot.childEvents ?? []);
   }, []);
 
   const refresh = useCallback(async () => {
-    applySnapshot(await trackerStore.snapshot());
+    applySnapshot(await trackerStore.snapshot({ babyId: activeChildRef.current }));
     setStoreStatus(trackerStore.getStatus?.() ?? null);
   }, [applySnapshot]);
 
@@ -134,12 +159,31 @@ function App() {
     }
 
     const seen = mutationRef.current;
-    const snapshot = await trackerStore.snapshot();
+    const child = activeChildRef.current;
+    const snapshot = await trackerStore.snapshot({ babyId: child });
 
-    if (mutationRef.current === seen) {
+    // A switch that happened while this read was in flight wins — its own read
+    // is already on the way, and this one is about the previous child.
+    if (mutationRef.current === seen && activeChildRef.current === child) {
       applySnapshot(snapshot);
     }
   }, [applySnapshot]);
+
+  const selectChild = useCallback(
+    async (babyId: string) => {
+      if (babyId === activeChildRef.current) {
+        return;
+      }
+
+      activeChildRef.current = babyId;
+      storeActiveProfileId(babyId);
+      // The events on screen belong to the other child, so drop the fingerprint
+      // rather than letting an identical-looking read decide nothing moved.
+      signatureRef.current = '';
+      await refresh();
+    },
+    [refresh]
+  );
 
   const todayKey = useMemo(() => getLocalDateKey(new Date()), []);
 
@@ -277,16 +321,24 @@ function App() {
   }
 
   function handleTimerStart(type: TimerType) {
-    const next = { ...loadActiveTimers(), [type]: { startedAt: new Date().toISOString() } };
-    saveActiveTimers(next);
+    if (!activeChildId) {
+      return;
+    }
+
+    const next = { ...loadActiveTimers(activeChildId), [type]: { startedAt: new Date().toISOString() } };
+    saveActiveTimers(activeChildId, next);
     setActiveTimers(next);
     setDialogType(null);
   }
 
   function handleTimerStop(type: TimerType) {
-    const next = { ...loadActiveTimers() };
+    if (!activeChildId) {
+      return;
+    }
+
+    const next = { ...loadActiveTimers(activeChildId) };
     delete next[type];
-    saveActiveTimers(next);
+    saveActiveTimers(activeChildId, next);
     setActiveTimers(next);
   }
 
@@ -299,13 +351,14 @@ function App() {
     mutationRef.current += 1;
 
     if (editEvent) {
+      // An edit keeps the child it was logged against, even mid-switch.
       await trackerStore.updateEvent({ ...editEvent, ...input } as CareEvent);
     } else {
-      await trackerStore.addEvent(input);
+      await trackerStore.addEvent({ ...input, babyId: input.babyId ?? activeChildId });
     }
 
     if (input.type === 'birth') {
-      await trackerStore.saveProfile({ birthDate: input.startedAt });
+      await trackerStore.saveProfile({ birthDate: input.startedAt, id: activeChildId });
     }
     // Clear any active timer for this event type when saving
     if (!editEvent && input.type in activeTimers) {
@@ -325,7 +378,7 @@ function App() {
     mutationRef.current += 1;
 
     if (on) {
-      await trackerStore.addEvent({ refId, startedAt: new Date().toISOString(), type } as CreateCareEventInput);
+      await trackerStore.addEvent({ babyId: activeChildId, refId, startedAt: new Date().toISOString(), type } as CreateCareEventInput);
     } else {
       const existing = events.find((event) => event.type === type && 'refId' in event && event.refId === refId);
       if (existing) {
@@ -337,11 +390,39 @@ function App() {
 
   async function handleSaveProfile(profilePatch: Partial<BabyProfile>) {
     mutationRef.current += 1;
-    const saved = await trackerStore.saveProfile(profilePatch);
+    // Always name the child being edited — without an id the store would patch
+    // whichever one happens to be first, which is the wrong baby on a switch.
+    const saved = await trackerStore.saveProfile({ ...profilePatch, id: profilePatch.id ?? activeChildId });
     setProfile(saved);
+    setProfiles((current) => current.map((child) => (child.id === saved.id ? saved : child)));
     // The signature is stale now, so the next poll reconciles rather than
     // deciding nothing changed.
     signatureRef.current = '';
+  }
+
+  async function handleAddChild(input: NewProfileInput) {
+    mutationRef.current += 1;
+    const added = await trackerStore.addProfile(input);
+    // Land on the new child: whoever just added one is about to log for them.
+    await selectChild(added.id);
+  }
+
+  /**
+   * Takes a child out of the switcher. Their entries stay in the sheet — this
+   * is a tracker with several children in it, not a delete button for a life.
+   */
+  async function handleRemoveChild(babyId: string) {
+    mutationRef.current += 1;
+    await trackerStore.deleteProfile(babyId);
+    const remaining = profiles.filter((child) => child.id !== babyId);
+    signatureRef.current = '';
+
+    if (babyId === activeChildRef.current && remaining[0]) {
+      await selectChild(remaining[0].id);
+      return;
+    }
+
+    await refresh();
   }
 
   async function handleExport() {
@@ -405,41 +486,76 @@ function App() {
   }
 
   const firstYearEvents = getFirstYearEvents(profile, events);
+  const parentMode = isParent(profile);
+  const visibleTabs = parentMode ? tabs.filter((tab) => PARENT_TABS.has(tab.id)) : tabs;
+  // The Care tab is a child's. Landing on it and then switching to a parent
+  // must not leave an empty view up.
+  const view = parentMode && !PARENT_TABS.has(activeView) ? 'dashboard' : activeView;
 
   return (
     <div className="app-shell">
       <header className="app-header">
         <span className="app-wordmark">BabySteps</span>
+        {profiles.length > 1 && <ChildSwitcher activeId={profile.id} profiles={profiles} onSelect={selectChild} />}
       </header>
 
       {error && <p className="error-banner" role="alert">{error}</p>}
 
-      {activeView === 'dashboard' && <Dashboard activeTimers={activeTimers} events={events} profile={profile} todayKey={todayKey} onAdd={setDialogType} />}
+      {view === 'dashboard' &&
+        (parentMode ? (
+          <ParentDashboard
+            activeTimers={activeTimers}
+            childEvents={childEvents}
+            events={events}
+            profile={profile}
+            todayKey={todayKey}
+            onAdd={setDialogType}
+          />
+        ) : (
+          <Dashboard
+            activeTimers={activeTimers}
+            events={events}
+            profile={profile}
+            profiles={profiles}
+            todayKey={todayKey}
+            onAdd={setDialogType}
+          />
+        ))}
 
-      {activeView === 'log' && (
+      {view === 'log' && (
         <Log
           events={events}
           firstYearEvents={firstYearEvents}
           profile={profile}
+          profiles={profiles}
           onAdd={setDialogType}
           onDelete={handleDeleteEvent}
           onEdit={setEditEvent}
         />
       )}
 
-      {activeView === 'reports' && <Reports events={events} profile={profile} />}
+      {view === 'reports' &&
+        (parentMode ? (
+          <ParentReports childEvents={childEvents} events={events} profile={profile} />
+        ) : (
+          <Reports events={events} profile={profile} profiles={profiles} />
+        ))}
 
-      {activeView === 'care' && <Care events={events} profile={profile} onSaveProfile={handleSaveProfile} onToggle={handleToggleRef} />}
+      {view === 'care' && <Care events={events} profile={profile} profiles={profiles} onSaveProfile={handleSaveProfile} onToggle={handleToggleRef} />}
 
-      {activeView === 'learn' && <Learn />}
+      {view === 'learn' && <Learn />}
 
-      {activeView === 'settings' && (
+      {view === 'settings' && (
         <SettingsPanel
           events={events}
           profile={profile}
+          profiles={profiles}
           storeStatus={storeStatus}
           theme={theme}
+          onAddChild={handleAddChild}
           onConnectSheet={handleConnectSheet}
+          onRemoveChild={handleRemoveChild}
+          onSelectChild={selectChild}
           onExport={handleExport}
           onImport={handleImport}
           onOpenLearn={() => navigate('learn')}
@@ -448,10 +564,14 @@ function App() {
         />
       )}
 
-      <nav className="bottom-nav" aria-label="Primary">
-        {tabs.map((tab) => {
+      <nav
+        className="bottom-nav"
+        aria-label="Primary"
+        style={{ gridTemplateColumns: `repeat(${visibleTabs.length}, minmax(0, 1fr))` }}
+      >
+        {visibleTabs.map((tab) => {
           const Icon = tab.icon;
-          const selected = activeView === tab.id;
+          const selected = view === tab.id;
 
           return (
             <button
@@ -478,6 +598,7 @@ function App() {
         onTimerStart={handleTimerStart}
         onTimerStop={handleTimerStop}
         profile={profile}
+        profiles={profiles}
       />
     </div>
   );

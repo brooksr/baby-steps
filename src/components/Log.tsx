@@ -16,7 +16,7 @@ const FILTER_OPTIONS: Array<{ id: FilterGroup; label: string; types: CareEventTy
   { id: 'sleep', label: 'Sleep', types: ['sleep'] },
   { id: 'health', label: 'Health', types: ['medication', 'temperature', 'vaccine'] },
   { id: 'growth', label: 'Growth', types: ['birth', 'growth', 'milestone', 'tummytime'] },
-  { id: 'other', label: 'Other', types: ['appointment', 'bath', 'mood', 'note'] }
+  { id: 'other', label: 'Other', types: ['appointment', 'bath', 'menses', 'mood', 'note'] }
 ];
 
 function searchText(event: CareEvent): string {
@@ -48,6 +48,9 @@ function searchText(event: CareEvent): string {
     case 'mood':
       parts.push(`level ${event.level}`);
       break;
+    case 'menses':
+      parts.push(event.flow);
+      break;
     default:
       break;
   }
@@ -61,12 +64,14 @@ interface LogProps {
   events: CareEvent[];
   firstYearEvents: CareEvent[];
   profile: BabyProfile;
+  /** Everyone tracked, so an entry can name the parent who logged it. */
+  profiles?: BabyProfile[];
   onAdd: (type: CareEventType) => void;
   onDelete: (id: string) => void;
   onEdit: (event: CareEvent) => void;
 }
 
-export function Log({ events, firstYearEvents, profile, onAdd, onDelete, onEdit }: LogProps) {
+export function Log({ events, firstYearEvents, profile, profiles = [], onAdd, onDelete, onEdit }: LogProps) {
   const [scope, setScope] = useState<'all' | 'first-year'>('all');
   const [filter, setFilter] = useState<FilterGroup>('all');
   const [range, setRange] = useState<DateRange>(ALL_TIME);
@@ -164,6 +169,7 @@ export function Log({ events, firstYearEvents, profile, onAdd, onDelete, onEdit 
         <Timeline
           events={visible}
           profile={profile}
+          profiles={profiles}
           onDelete={onDelete}
           onEdit={onEdit}
           emptyMessage={search || filter !== 'all' || isRangeActive(range) ? 'No matching entries.' : 'No entries yet.'}

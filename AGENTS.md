@@ -5,8 +5,9 @@ Guidance for AI agents (and humans) working in the BabySteps repo.
 ## What this app is
 
 BabySteps is an offline-first PWA for shared baby-care tracking (built around
-one baby, Theo). React 18 + TypeScript + Vite, with a hybrid local
-(Dexie/IndexedDB) + Google Sheets store. No backend of our own.
+Theo, plus any sibling added since — and the parents doing the tracking). React
+18 + TypeScript + Vite, with a hybrid local (Dexie/IndexedDB) + Google Sheets
+store. No backend of our own.
 
 ## Commands
 
@@ -49,6 +50,9 @@ change done.
     over a feeding day that runs 5am to 5am and only over days whose feed count
     was an ordinary one.
   - `domain/cadence.ts` — gentle feed/bath rhythm nudges.
+  - `domain/whatToExpect.ts` — picks the Home "What to expect" copy for one
+    profile at one moment: the pregnancy by gestational week before the birth,
+    the day/week/month window after it.
   - `domain/growth/` — WHO standards data + assessment logic.
   - `domain/csv.ts`, `domain/reference.ts` — CSV parsing + typed reference-data accessors.
   - `domain/dateRange.ts` — the inclusive local-day span behind the Log and
@@ -91,11 +95,77 @@ converts a numeric cell back to a date string on read (Sheets epoch is
 
 ### Adding a new profile field
 
-`profileHeaders` in `googleSheetsStore.ts` is positional: append the new key at
-the end so existing sheet rows keep their columns, and widen `PROFILE_RANGE`,
-`PROFILE_ROW_RANGE`, and the header write in `initialize()` to match (they are
-`A:K` as of `preferredUnits`). The local Dexie store needs no change — it stores the
-whole profile object.
+Append the new key to the end of `profileHeaders` so existing sheet rows keep
+their columns, and widen `PROFILE_RANGE`, `PROFILE_HEADER_RANGE`, and
+`profileRowRange()` to match (they are `A:N` as of `phone`). The local Dexie
+store needs no change — it stores the whole profile object.
+
+**Reads find a column by header name, not by position.** `columnIndex()` builds
+the map from the sheet's own header row, first occurrence winning, and falls back
+to our array position for any header the sheet does not name (which is what a
+sheet written by an older build looks like). This exists because the live Profile
+tab grew a duplicate `parentRole` header past the end of the columns we write:
+harmless where it sat, but one hand-inserted column away from shifting every
+field after it and misreading whole rows. Writes stay in our canonical order, and
+`initialize()` rewrites the header row once a session — including blanking a
+trailing header cell that repeats one of our own names. A header we do not
+recognise belongs to whoever added it and is left alone.
+
+### Several children — and the parents
+
+One profile row is one tracked person, and an event has always carried `babyId`,
+so the data model needed no new shapes — what changed is that nothing may assume
+there is exactly one profile, or that a profile is a baby.
+
+- `profile.kind` is `child` or `parent`; **a row written before parents existed
+  has no `kind`, and every one of those is a child**, so `getProfileKind`
+  defaults rather than guessing. A parent carries `parentRole` (`mom`/`dad`/
+  `parent`) and **no `dueDate`** — `dueDate` is optional on `BabyProfile` for
+  exactly that reason, and the baby-only modules (`getDueDateStatus`,
+  `getGestationInfo`, `getPregnancyOutlook`) return nothing without it instead of
+  inventing one. Do not give a parent a due date to satisfy a type.
+- `tracksCycle()` gates the cycle feature on `parentRole === 'mom'`.
+- `App` branches the whole view on `isParent`: `ParentDashboard` and
+  `ParentReports` instead of `Dashboard` and `Reports`, and the **Care tab drops
+  out of the nav** (milestones and immunisations are a child's). `view` falls
+  back to the dashboard when the active tab is not one a parent has, so landing
+  on Care and then switching does not leave an empty screen.
+- `snapshot()` fills `childEvents` **only when the active profile is a parent** —
+  their report is partly about the babies. A child's own view has no use for a
+  sibling's rows, and carrying them would churn its fingerprint on every poll.
+- `domain/family.ts` (was `children.ts`) — the id (`createProfileId` slugifies the name, because
+  `babyId` is a column a caregiver reads in the sheet), `createFamilyProfile`
+  (a new person starts from the defaults; only units and timezone carry over,
+  since those describe the household), and the **device-local** active-profile
+  choice — its storage key is still `babysteps.activeChild` so a device that
+  already stored one does not lose it.
+  Device-local on purpose: the sheet holds every child, but one parent switching
+  to the twin must not move everyone else's screen.
+  Siblings are stamped strictly after the children already there — the switcher
+  orders by `createdAt`, and on a fresh device the first child is seeded lazily,
+  so two can otherwise land in the same millisecond and swap places.
+- `Profile!A:K` is open-ended now, one row per child. A save finds the child's
+  row by id (`profileRowRange`), an add writes the next free row, and a remove
+  **blanks the row** rather than deleting it — row numbers stay put, a blank row
+  is skipped on read, and the child's entries are never touched. Removing a
+  child takes them out of the switcher; it is not a purge.
+- `store.snapshot(query)` returns `profiles` (all children, oldest first) plus
+  `profile`/`events` for `query.babyId` — the child named, or the first one. It
+  is still a single `values:batchGet`, however many children there are.
+- `App` keeps the active id in `activeChildRef` as well as in state: a poll that
+  started before a switch must not apply a read about the previous child, and
+  every write names the child (`babyId` on an event, `id` on a profile patch) so
+  it cannot land on whoever happens to be first.
+- Timers (`domain/timers.ts`) are keyed by child — twins can each be nursing.
+  A device still holding the old flat map hands those timers to the child that
+  asks and stores them nested on the next write.
+- `sortProfiles` puts **children before parents**, each oldest first — this is a
+  baby tracker, so the switcher opens on the babies.
+- `ChildSwitcher` renders in the header only when there is more than one person,
+  so a single-baby tracker looks exactly as it did. Copy that used to say "Theo"
+  goes through `getFirstName(profile)`.
+- An export carries every child (`profiles`) and every child's entries; an
+  export taken before this existed carries one `profile`, and still imports.
 
 ### Adding a new event type (the common path)
 
@@ -120,6 +190,9 @@ data is ready:
 - `vaccination-schedule.csv` → `getVaccinationSchedule()`
 - `mood-scale.csv` → `getMoodScale()`
 - `stool-colors.csv` → `getStoolColors()`, `isStoolColorFlagged()`
+- `fetal-development-by-week.csv` → `getFetalWeeks()`
+- `what-to-expect-by-age.csv` → `getAgeStages()`
+- `what-to-expect-notes.csv` → `getExpectationNotes()`
 
 ## Staged roadmap — feasible features
 
@@ -154,6 +227,76 @@ Care view adds/deletes the corresponding event via `App.handleToggleRef`.
    rows tagged via `getAgeDays`, achieved date shown.
 5. **Vaccination schedule** — `getVaccinationSchedule()` anchored to `birthDate`
    (calendar-month due dates), overdue highlighting, and next-due in the header.
+
+### Parent tracking (sleep, cycle, and the baby events that touch them)
+
+- **What a parent logs is the event types that already existed** — `sleep`,
+  `mood`, `temperature`, `medication`, `appointment`, `note` — against their own
+  profile id. Only `menses` is new. Feeds, diapers and growth stay on the baby's
+  Home rather than being offered against the wrong person.
+- **`menses` is one *day* of a period, not a period.** People log bleeding as it
+  happens and miss the odd day, so `domain/cycle.ts` groups days back into
+  periods on read (a gap of up to two days stays the same period; three starts a
+  new one) rather than asking anyone to close a period out. One entry per day,
+  heaviest `flow` winning.
+- `domain/cycle.ts` — cycles are measured **start to start**. Averages run over
+  the last 6 cycles, and a span under 21 or over 60 days is dropped from them: a
+  two-month hole is missed logging, not a two-month cycle, and averaging one in
+  poisons every prediction after it. Dropped cycles are still listed and counted
+  (`droppedCycles`), the way the feed-order day trimming is surfaced.
+  - **Ovulation is counted back from the predicted next period, never forward
+    from the last one** — the luteal phase (~14 days) is the stable half of a
+    cycle whatever its length. The fertile window is ovulation −5/+1 days (sperm
+    last about five days, the egg about one).
+  - `predictCycle` returns null under two counted cycles — the line
+    `predictNextDiaper` draws. The window spans shortest-to-longest recent cycle
+    and never closes tighter than ±1 day around the average; confidence comes
+    from the spread.
+  - **Guardrail: this is arithmetic on logged dates.** Every surface says so —
+    not contraception, not a fertility test, not a pregnancy test, and irregular
+    postpartum cycles make it rougher still. Do not add anything that reads as a
+    fertility or contraceptive recommendation.
+- `domain/parentReport.ts` — a parent's nights, keyed by the **evening** the
+  sleep started (before 10am belongs to the night before), so one night is one
+  row rather than splitting at midnight. Over 16h is a timer left running, not a
+  sleep, and is dropped the way a 4h+ feed is.
+  - `interruptions` is when a baby event landed *inside this parent's own logged
+    sleep*. It needs no attribution and asks a different question from the care
+    counts: not who got up, but whose sleep was broken into. Keep them separate.
+
+### Who logged it (`caregiverId`)
+
+- `caregiverId` on `BaseCareEvent` is **the profile id of a tracked parent**, and
+  it is optional. Every row written before the column existed carries none, and
+  an entry with no caregiver is "not recorded" — never a guess at whoever was
+  most likely on. `getCaregiverName` returns nothing for an id whose profile has
+  since been removed, so the entry reads as unattributed rather than showing a
+  dangling id.
+- The quick-add "Logged by" picker shows **only on a child's entry** (a parent
+  logging their own sleep is not doing it for someone else) and defaults to this
+  device's last choice, stored device-locally under `babysteps.caregiver`. That
+  default is what makes the field get filled in at all; picking "Not recorded"
+  clears it rather than pinning the previous person.
+- `getParentReport(parentEvents, childEvents, caregiverId)` returns the load
+  three ways: `care` (everything the household logged), `care.mine` (this
+  parent's recorded share) and `care.unattributed` (entries naming nobody).
+  **Show all three.** A report that showed only the attributed share would read
+  as "you did less" on a log where people simply did not fill the field in.
+
+### The guardians are the parent profiles
+
+`careInfo.guardians` was a pair of name/phone boxes on the Key Info card, which
+said the same thing as a parent profile and drifted from it. A parent carries a
+`phone` now, and `KeyInfo` builds its guardian cards from the parent profiles
+(`getCaregivers`), showing "Name · Role" and a tappable number.
+
+- `careInfo.guardians` is **deprecated, still read, and still written back
+  untouched**. A household that has not added parents yet sees the old list
+  exactly as before, and saving the rest of the Key Info card carries it through
+  rather than quietly dropping a phone number. Do not delete the field.
+- The Key Info editor no longer has guardian boxes; it points at Settings →
+  Family instead, so one record covers the guardian list, the switcher, and the
+  "Logged by" picker.
 
 ### Live sync (outside the staged plan)
 
@@ -296,6 +439,57 @@ without a tap.
     it belongs to no date, so it formats off a fixed UTC instant (a DST
     transition must not shift it) while still following the reader's 12/24-hour
     locale.
+- **What to expect** (`domain/whatToExpect.ts` + `components/WhatToExpect.tsx`) —
+  the Home orientation card, under the alerts and the newborn check: what is
+  happening today comes first, what to expect of this week comes after it. No new
+  event type — it reads the profile and three CSVs.
+  - Two phases share the card. Before the birth it reads the pregnancy by
+    gestational week, counted back from `dueDate` (which is 40w0d by definition,
+    so no new profile field is needed). After it, the day / week / month window
+    the baby is in. Weeks past the last written row clamp to it — a pregnancy at
+    42 weeks still has week 41 to say — but a due date early enough to sit before
+    week 4 returns null and the card is absent rather than inventing a row.
+  - `what-to-expect-by-age.csv` tiles **0–730 days with no gap and no overlap**,
+    on the same ladder `formatAgeSummary` uses: days, then weeks, then months.
+    `whatToExpect.test.ts` asserts the tiling, so a new row has to be spliced in
+    by adjusting its neighbours' bounds rather than dropped on top of them.
+  - **Which age the stage is read at** (`getStageAgeDays`) is the whole preterm
+    story, in one line: `max(min(ageDays, 28), ageDays - correctionDays)`. The
+    newborn window runs on the calendar — milk coming in, the cord stump,
+    meconium and regaining birth weight all happen a fixed number of days after
+    the birth however early it was — so inside 28 days the stage is chronological.
+    Past it, skills lead and the stage follows corrected age. The `min` is what
+    stops a 34-weeker jumping *backwards* to "Day 1" on day 29: the card holds at
+    the end of the newborn window until corrected age catches up, and can never
+    move backwards as the days pass (asserted). For a term birth the two ages are
+    equal and the formula is just the age.
+  - The card says which age it is reading, and says it three ways, because
+    "corrected" alone would be wrong in the middle case: reading at the actual
+    age, at the corrected age, or **held at the newborn window while corrected
+    age catches up**. `basis` is only `'corrected'` while the correction is
+    actually moving the answer.
+  - **Personal notes** (`what-to-expect-notes.csv`) are matched on
+    **chronological** age, not the corrected age the stage uses — a car seat
+    screen, a cord stump and an RSV season arrive on the calendar. A profile can
+    match several audiences at once (`preterm` *and* `late-preterm` *and* `boy`);
+    `AUDIENCE_ORDER` sorts preterm above sex-specific ones and the card keeps the
+    first `MAX_NOTES` (3), since a preterm note changes what you do today.
+  - **Copy tokens**: `{name}`, `{their}`, `{them}`, filled by `personalize()`.
+    `{name}` is deliberately the only *subject* available — it is singular
+    whatever the pronouns are, so a verb written in the CSV agrees for every
+    profile. A `{they}` token would need "he is" and "they are" to be two rows.
+    A test fails the build on any token in the shipped copy that is not on the
+    list, so a `{they}` cannot reach the Home screen as literal braces.
+  - **Ages 2–18 are outlined, not written.** `FUTURE_STAGE_OUTLINE` names seven
+    bands (toddler through late adolescence) and the themes each has to cover.
+    It is exported so the shape is reviewable and the coverage is testable, and
+    **deliberately rendered nowhere** — the Learn page lists only what ships, and
+    a roadmap on the Home screen would be advertising an unbuilt feature. Past
+    two years the card says the guidance stops there and points at Care and the
+    pediatrician. A preterm baby stays inside the copy past 730 chronological
+    days, because the stage is read at corrected age.
+  - Informational only — see Guardrails. The footnote points at the pediatrician
+    and the copy suggests nothing beyond ordinary caregiving.
 - **Cadence nudges** (`domain/cadence.ts`) — `getCadenceReminders()` flags a feed
   past 3h (`FEED_CADENCE_HOURS` 2–3, day and night) and a bath past 3 calendar
   days (`BATH_CADENCE_DAYS` 2–3). Rendered as `.status-row.gentle` rows on the
@@ -438,7 +632,8 @@ store and would write sample rows straight into the shared Google Sheet.
 ## Guardrails
 
 - This app is **not a medical device.** Never add diagnosis, vitals monitoring,
-  or dosing advice — see the Learn page "will never support" list. Reference
-  ranges are informational and must point users back to their pediatrician.
+  dosing advice, or contraceptive/fertility guidance — see the Learn page "will
+  never support" list. Reference ranges and cycle estimates are informational and
+  must point users back to their pediatrician, doctor, or midwife.
 - Keep it offline-first: bundle data (no runtime fetches for core features),
   and make sure new state flows through the hybrid store so it syncs.

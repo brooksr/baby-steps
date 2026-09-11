@@ -1,6 +1,7 @@
+import { createFamilyProfile, isChild, isParent, sortProfiles, type NewProfileInput } from '../domain/family';
 import { createDefaultBabyProfile } from '../domain/dates';
 import { migrateStoredEvent, migrateStoredEvents, type StoredCareEventType } from '../domain/legacyEvents';
-import { DEFAULT_PROFILE_ID, type BabyGender, type BabyProfile, type BottleContents, type CareInfo, type CareEvent, type CreateCareEventInput, type FeedMethod, type NursingSide, type PreferredUnits, type TrackerExport, type TrackerSnapshot } from '../domain/types';
+import { DEFAULT_PROFILE_ID, type BabyGender, type BabyProfile, type BottleContents, type CareInfo, type CareEvent, type CreateCareEventInput, type FeedMethod, type MensesFlow, type NursingSide, type ParentRole, type PreferredUnits, type TrackerExport, type TrackerSnapshot } from '../domain/types';
 import { requestGoogleSheetsAccessToken } from './googleSheetsAuth';
 import type { BabyTrackerStore, EventQuery, ImportOptions } from './store';
 
@@ -8,12 +9,15 @@ export const GOOGLE_SHEET_ID = '1VG9px1j-KF29i2J6AG_PP57hOM8V-wLPgP-9VTdURUc';
 export const GOOGLE_SHEET_URL = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/edit`;
 
 // Widen these together with `profileHeaders` — a new profile field is a new
-// column, and the range has to reach it.
-const PROFILE_RANGE = 'Profile!A1:K2';
-const PROFILE_ROW_RANGE = 'Profile!A2:K2';
-const EVENTS_RANGE = 'Events!A:AF';
-const EVENTS_BODY_RANGE = 'Events!A2:AF1000';
-const EVENTS_APPEND_RANGE = 'Events!A:AF';
+// column, and the range has to reach it. The range is open-ended down the
+// sheet because one row is one child, and there can be any number of them.
+const PROFILE_RANGE = 'Profile!A:N';
+const PROFILE_HEADER_RANGE = 'Profile!A1:N1';
+/** Row 2 is the first child; `profileRowRange` addresses the rest. */
+const FIRST_PROFILE_ROW = 2;
+const EVENTS_RANGE = 'Events!A:AH';
+const EVENTS_BODY_RANGE = 'Events!A2:AH1000';
+const EVENTS_APPEND_RANGE = 'Events!A:AH';
 const EVENTS_SHEET_ID = 0;
 
 /**
@@ -28,6 +32,21 @@ const VALUE_INPUT_OPTION = 'RAW';
 /** Sheets counts days from 1899-12-30, so serial 0 is that date. */
 const SHEETS_EPOCH_MS = Date.UTC(1899, 11, 30);
 const MS_PER_DAY = 86_400_000;
+
+/** A1-notation column letter for a zero-based index (0 → A, 26 → AA). */
+function columnLetter(index: number) {
+  let letter = '';
+
+  for (let remaining = index; remaining >= 0; remaining = Math.floor(remaining / 26) - 1) {
+    letter = String.fromCharCode(65 + (remaining % 26)) + letter;
+  }
+
+  return letter;
+}
+
+function profileRowRange(rowNumber: number) {
+  return `Profile!A${rowNumber}:N${rowNumber}`;
+}
 
 const eventHeaders = [
   'id',
@@ -62,13 +81,34 @@ const eventHeaders = [
   'refId',
   // New columns append here so existing sheet rows keep their positions.
   'method',
-  'poopSize'
+  'poopSize',
+  'flow',
+  'caregiverId'
 ] as const;
 
 type EventColumn = (typeof eventHeaders)[number];
+type EventColumnIndex = Map<EventColumn, number>;
 
 // New columns append here so existing sheet rows keep their positions.
-const profileHeaders = ['id', 'name', 'dueDate', 'birthDate', 'timezone', 'createdAt', 'updatedAt', 'syncState', 'careInfo', 'gender', 'preferredUnits'] as const;
+const profileHeaders = [
+  'id',
+  'name',
+  'dueDate',
+  'birthDate',
+  'timezone',
+  'createdAt',
+  'updatedAt',
+  'syncState',
+  'careInfo',
+  'gender',
+  'preferredUnits',
+  // New columns append here so existing sheet rows keep their positions.
+  'kind',
+  'parentRole',
+  'phone'
+] as const;
+
+type ProfileColumnIndex = Map<(typeof profileHeaders)[number], number>;
 
 function createId(prefix: string) {
   if (globalThis.crypto?.randomUUID) {
@@ -119,22 +159,46 @@ function optionalNumber(value: unknown) {
   return Number.isFinite(numeric) ? numeric : undefined;
 }
 
-function rowRecord<T extends readonly string[]>(headers: T, row: unknown[]) {
+/**
+ * Where each column we know about actually sits in this sheet.
+ *
+ * The header row is the authority, not our array order. A column inserted by
+ * hand, or a stray header duplicated past the end, would otherwise shift every
+ * field after it by one and quietly misread the whole row. **First occurrence
+ * wins**, so a duplicated header never displaces the real column.
+ *
+ * A header the sheet does not name falls back to its position in our list —
+ * which is what a sheet written by an older build looks like, and is exactly
+ * how those rows were laid out.
+ */
+function columnIndex<T extends readonly string[]>(headers: T, headerRow: unknown[] | undefined): Map<T[number], number> {
+  const index = new Map<T[number], number>();
+  const sheetHeaders = (headerRow ?? []).map((cell) => (typeof cell === 'string' ? cell.trim() : ''));
+
+  headers.forEach((header, position) => {
+    const found = sheetHeaders.indexOf(header);
+    index.set(header as T[number], found === -1 ? position : found);
+  });
+
+  return index;
+}
+
+function rowRecord<T extends readonly string[]>(headers: T, row: unknown[], index?: Map<T[number], number>) {
   const record = {} as Record<T[number], unknown>;
 
-  headers.forEach((header, index) => {
-    record[header as T[number]] = row[index];
+  headers.forEach((header, position) => {
+    record[header as T[number]] = row[index?.get(header as T[number]) ?? position];
   });
 
   return record;
 }
 
-function profileFromRow(row: unknown[] | undefined): BabyProfile {
+function profileFromRow(row: unknown[] | undefined, index?: ProfileColumnIndex): BabyProfile {
   if (!row || row.length === 0) {
     return createDefaultBabyProfile();
   }
 
-  const record = rowRecord(profileHeaders, row);
+  const record = rowRecord(profileHeaders, row, index);
   const fallback = createDefaultBabyProfile();
 
   let careInfo: CareInfo | undefined;
@@ -153,10 +217,17 @@ function profileFromRow(row: unknown[] | undefined): BabyProfile {
     birthDate: optionalDateString(record.birthDate),
     careInfo,
     createdAt: optionalDateString(record.createdAt) ?? fallback.createdAt,
-    dueDate: optionalDateString(record.dueDate) ?? fallback.dueDate,
+    // No fallback: a parent row carries no due date, and inventing Theo's here
+    // would make every parent read as a pregnancy.
+    dueDate: optionalDateString(record.dueDate),
     gender: optionalString(record.gender) as BabyGender | undefined,
     id: optionalString(record.id) ?? DEFAULT_PROFILE_ID,
+    // A row written before parents existed has no kind, and every one of those
+    // is a child.
+    kind: optionalString(record.kind) === 'parent' ? 'parent' : 'child',
     name: optionalString(record.name) ?? fallback.name,
+    parentRole: optionalString(record.parentRole) as ParentRole | undefined,
+    phone: optionalString(record.phone),
     preferredUnits: preferredUnits ?? fallback.preferredUnits,
     syncState: 'synced',
     timezone: optionalString(record.timezone) ?? fallback.timezone,
@@ -164,8 +235,8 @@ function profileFromRow(row: unknown[] | undefined): BabyProfile {
   };
 }
 
-function eventFromRow(row: unknown[]): CareEvent | null {
-  const record = rowRecord(eventHeaders, row);
+function eventFromRow(row: unknown[], index?: EventColumnIndex): CareEvent | null {
+  const record = rowRecord(eventHeaders, row, index);
   const type = optionalString(record.type) as StoredCareEventType | undefined;
   const id = optionalString(record.id);
   const startedAt = optionalDateString(record.startedAt);
@@ -176,6 +247,7 @@ function eventFromRow(row: unknown[]): CareEvent | null {
 
   const base = {
     babyId: optionalString(record.babyId) ?? DEFAULT_PROFILE_ID,
+    caregiverId: optionalString(record.caregiverId),
     createdAt: optionalDateString(record.createdAt) ?? startedAt,
     endedAt: optionalDateString(record.endedAt),
     id,
@@ -296,6 +368,12 @@ function eventFromRow(row: unknown[]): CareEvent | null {
         level: optionalNumber(record.moodLevel) ?? 3,
         type
       };
+    case 'menses':
+      return {
+        ...base,
+        flow: (optionalString(record.flow) ?? 'medium') as MensesFlow,
+        type
+      };
     case 'milestone':
       return {
         ...base,
@@ -315,6 +393,7 @@ function eventToRow(event: CareEvent) {
   const values: Record<EventColumn, unknown> = {
     amountOz: '',
     babyId: event.babyId,
+    caregiverId: event.caregiverId ?? '',
     celsius: '',
     color: '',
     contents: '',
@@ -322,6 +401,7 @@ function eventToRow(event: CareEvent) {
     dose: '',
     durationMinutes: '',
     endedAt: event.endedAt ?? '',
+    flow: '',
     givenAt: '',
     headCircumferenceIn: '',
     id: event.id,
@@ -397,6 +477,9 @@ function eventToRow(event: CareEvent) {
       break;
     case 'mood':
       values.moodLevel = event.level;
+      break;
+    case 'menses':
+      values.flow = event.flow;
       break;
     case 'milestone':
       values.refId = event.refId;
@@ -521,14 +604,46 @@ export class GoogleSheetsApi {
 }
 
 function rowsFromValues(values: unknown[][]) {
-  const [, ...rows] = values;
+  const [headerRow, ...rows] = values;
+  const columns = columnIndex(eventHeaders, headerRow);
 
   return rows
     .map((row, index) => ({
-      event: eventFromRow(row),
+      event: eventFromRow(row, columns),
       rowNumber: index + 2
     }))
     .filter((row): row is { event: CareEvent; rowNumber: number } => Boolean(row.event));
+}
+
+/**
+ * One row per child, paired with the row it sits on so a save can go back to
+ * exactly that row. A row without an id is a gap left by a removed child, and
+ * is skipped rather than read as a nameless baby.
+ */
+function profileRowsFromValues(values: unknown[][]) {
+  const [headerRow, ...rows] = values;
+  const columns = columnIndex(profileHeaders, headerRow);
+  const idColumn = columns.get('id') ?? 0;
+
+  return rows
+    .map((row, index) => ({ row: row ?? [], rowNumber: index + FIRST_PROFILE_ROW }))
+    .filter(({ row }) => Boolean(optionalString(row[idColumn])))
+    .map(({ row, rowNumber }) => ({ profile: profileFromRow(row, columns), rowNumber }));
+}
+
+/** The children in switcher order, and where each one's row is. */
+function readProfiles(values: unknown[][]) {
+  const rows = profileRowsFromValues(values);
+  const rowNumbers = new Map(rows.map(({ profile, rowNumber }) => [profile.id, rowNumber]));
+  const profiles = sortProfiles(rows.map(({ profile }) => profile));
+  const nextRow = rows.reduce((highest, { rowNumber }) => Math.max(highest, rowNumber + 1), FIRST_PROFILE_ROW);
+
+  return { nextRow, profiles, rowNumbers };
+}
+
+/** The child a read is about: the one it named, or the first one. */
+function pickProfile(profiles: BabyProfile[], babyId?: string) {
+  return profiles.find((profile) => profile.id === babyId) ?? profiles[0] ?? createDefaultBabyProfile();
 }
 
 function selectEvents(events: CareEvent[], babyId: string, query: EventQuery) {
@@ -550,60 +665,133 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
     return rowsFromValues(await api.getValues(EVENTS_RANGE));
   }
 
+  async function listProfiles() {
+    const { profiles } = readProfiles(await api.getValues(PROFILE_RANGE));
+    return profiles;
+  }
+
   async function getProfile() {
-    const values = await api.getValues(PROFILE_RANGE);
-    return profileFromRow(values[1]);
+    return (await listProfiles())[0];
+  }
+
+  /** Header rows, written once a session rather than on every write. */
+  async function ensureHeaders() {
+    if (headersWritten) {
+      return;
+    }
+
+    await api.updateValues('Events!A1:AH1', [[...eventHeaders]]);
+    await api.updateValues(PROFILE_HEADER_RANGE, [[...profileHeaders]]);
+    headersWritten = true;
+  }
+
+  /**
+   * A header cell past our last column that repeats one of our own header names
+   * is a leftover from an earlier write, and only ever confusing to read in the
+   * sheet. Blanked on the once-a-session header pass. A header we do not
+   * recognise is somebody's own column and is left exactly alone.
+   */
+  async function clearStrayHeaders(headerRow: unknown[] | undefined) {
+    const extras = (headerRow ?? []).slice(profileHeaders.length);
+    const stray = extras.some((cell) => typeof cell === 'string' && (profileHeaders as readonly string[]).includes(cell.trim()));
+
+    if (!stray) {
+      return;
+    }
+
+    const firstExtra = columnLetter(profileHeaders.length);
+    const lastExtra = columnLetter(profileHeaders.length + extras.length - 1);
+    await api.clearValues(`Profile!${firstExtra}1:${lastExtra}1`);
   }
 
   async function initialize() {
     const values = await api.getValues(PROFILE_RANGE);
-    const row = values[1];
-    const profile = profileFromRow(row);
+    const { profiles } = readProfiles(values);
+    const profile = profiles[0] ?? createDefaultBabyProfile();
 
-    // Seed the row only when the sheet has none. Writing it back on every read
-    // would clobber a profile edit another device made since we read it — and
-    // reads happen on every poll now.
-    if (!row || row.length === 0) {
-      await api.updateValues(PROFILE_ROW_RANGE, [profileToRow(profile)]);
+    // Seed the first child only when the sheet has none. Writing it back on
+    // every read would clobber a profile edit another device made since we read
+    // it — and reads happen on every poll now.
+    if (profiles.length === 0) {
+      await api.updateValues(profileRowRange(FIRST_PROFILE_ROW), [profileToRow(profile)]);
     }
 
-    if (!headersWritten) {
-      await api.updateValues('Events!A1:AF1', [[...eventHeaders]]);
-      await api.updateValues('Profile!A1:K1', [[...profileHeaders]]);
-      headersWritten = true;
-    }
-
+    await ensureHeaders();
+    await clearStrayHeaders(values[0]);
     return profile;
   }
 
   /**
-   * Profile + events in a single request, so a background poll costs one round
-   * trip and can't read the two halves from different versions of the sheet.
+   * Every child, plus the active one's events, in a single request — so a
+   * background poll costs one round trip and can't read the two halves from
+   * different versions of the sheet.
    */
   async function snapshot(query: EventQuery = {}): Promise<TrackerSnapshot> {
     const [profileValues, eventValues] = await api.batchGetValues([PROFILE_RANGE, EVENTS_RANGE]);
-    const profile = profileFromRow(profileValues[1]);
+    const { profiles } = readProfiles(profileValues);
+    const profile = pickProfile(profiles, query.babyId);
+    const all = rowsFromValues(eventValues).map((row) => row.event);
+    // A parent's report is partly about the babies, so their rows come along.
+    // The read already returned them; this only decides what to hand back.
+    const childIds = new Set(profiles.filter(isChild).map((person) => person.id));
 
     return {
-      events: selectEvents(rowsFromValues(eventValues).map((row) => row.event), query.babyId ?? profile.id, query),
-      profile
+      childEvents: isParent(profile) ? all.filter((event) => childIds.has(event.babyId)) : undefined,
+      events: selectEvents(all, profile.id, query),
+      profile,
+      profiles: profiles.length > 0 ? profiles : [profile]
     };
   }
 
+  /**
+   * Writes one child's row, found by id. A patch for a child this sheet has
+   * never seen appends rather than overwriting whoever is on the first row.
+   */
   async function saveProfile(profilePatch: Partial<BabyProfile>) {
-    const existing = await initialize();
+    // One read, not `initialize()`'s read plus this one: an empty sheet needs no
+    // seeding here, since the row this write lands on is the row it would seed.
+    await ensureHeaders();
+    const { nextRow, profiles, rowNumbers } = readProfiles(await api.getValues(PROFILE_RANGE));
+    const existing = pickProfile(profiles, profilePatch.id);
+    const targetId = profilePatch.id ?? existing.id;
+    const base = existing.id === targetId ? existing : { ...createDefaultBabyProfile(), id: targetId };
     const timestamp = new Date().toISOString();
     const profile: BabyProfile = {
-      ...existing,
+      ...base,
       ...profilePatch,
-      id: profilePatch.id ?? existing.id,
-      createdAt: profilePatch.createdAt ?? existing.createdAt,
+      id: targetId,
+      createdAt: profilePatch.createdAt ?? base.createdAt,
       syncState: 'synced',
       updatedAt: timestamp
     };
 
-    await api.updateValues(PROFILE_ROW_RANGE, [profileToRow(profile)]);
+    await api.updateValues(profileRowRange(rowNumbers.get(targetId) ?? nextRow), [profileToRow(profile)]);
     return profile;
+  }
+
+  async function addProfile(input: NewProfileInput) {
+    await ensureHeaders();
+    const { nextRow, profiles } = readProfiles(await api.getValues(PROFILE_RANGE));
+    const profile = createFamilyProfile(input, profiles);
+
+    // Written to the next free row rather than appended, so a gap left by a
+    // removed child is filled instead of drifting down the sheet forever.
+    await api.updateValues(profileRowRange(nextRow), [profileToRow({ ...profile, syncState: 'synced' })]);
+    return { ...profile, syncState: 'synced' as const };
+  }
+
+  /**
+   * Blanks the child's row. Its entries stay in the Events sheet — we migrate
+   * and leave history alone rather than deleting rows someone else may still be
+   * reading — and the blank row is skipped on the way back in.
+   */
+  async function deleteProfile(id: string) {
+    const { rowNumbers } = readProfiles(await api.getValues(PROFILE_RANGE));
+    const rowNumber = rowNumbers.get(id);
+
+    if (rowNumber) {
+      await api.clearValues(profileRowRange(rowNumber));
+    }
   }
 
   async function addEvent(input: CreateCareEventInput) {
@@ -636,7 +824,7 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
       updatedAt: new Date().toISOString()
     };
 
-    await api.updateValues(`Events!A${match.rowNumber}:AF${match.rowNumber}`, [eventToRow(updated)]);
+    await api.updateValues(`Events!A${match.rowNumber}:AH${match.rowNumber}`, [eventToRow(updated)]);
     return updated;
   }
 
@@ -654,20 +842,30 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
     return events;
   }
 
+  /** Every child and every child's entries — an export is the whole tracker. */
   async function exportData(): Promise<TrackerExport> {
-    const { events, profile } = await snapshot({ sort: 'asc' });
+    const [profileValues, eventValues] = await api.batchGetValues([PROFILE_RANGE, EVENTS_RANGE]);
+    const { profiles } = readProfiles(profileValues);
+    const events = rowsFromValues(eventValues)
+      .map((row) => row.event)
+      .sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime());
 
     return {
       events,
       exportedAt: new Date().toISOString(),
-      profile,
+      profile: profiles[0] ?? createDefaultBabyProfile(),
+      profiles,
       version: 1
     };
   }
 
   async function importData(data: TrackerExport, options: ImportOptions = {}) {
     assertTrackerExport(data);
-    await saveProfile(data.profile);
+
+    // An export taken before this app tracked siblings carries one profile.
+    for (const profile of data.profiles?.length ? data.profiles : [data.profile]) {
+      await saveProfile(profile);
+    }
 
     // An export taken before the feeding merge still carries breastfeed/bottle.
     const incoming = migrateStoredEvents(data.events);
@@ -675,7 +873,7 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
     if (options.mode === 'replace') {
       await api.clearValues(EVENTS_BODY_RANGE);
       if (incoming.length > 0) {
-        await api.updateValues('Events!A2:AF', incoming.map((event) => eventToRow({ ...event, syncState: 'synced' })));
+        await api.updateValues('Events!A2:AH', incoming.map((event) => eventToRow({ ...event, syncState: 'synced' })));
       }
       return;
     }
@@ -695,14 +893,17 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
 
   return {
     addEvent,
+    addProfile,
     clear,
     close: () => {},
     deleteEvent,
+    deleteProfile,
     exportData,
     getProfile,
     importData,
     initialize,
     listEvents,
+    listProfiles,
     saveProfile,
     snapshot,
     updateEvent

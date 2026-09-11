@@ -198,6 +198,12 @@ export function getDueDateStatus(profile: BabyProfile, now = new Date()) {
     return ageDays === 1 ? '1 day old' : `${ageDays} days old`;
   }
 
+  // No birth date and no due date is a parent, or a child added before either
+  // was known — there is no age to state, so say nothing rather than guess.
+  if (!profile.dueDate) {
+    return '';
+  }
+
   const dueAtNoon = new Date(`${profile.dueDate}T12:00:00`);
   const diffDays = Math.ceil((dueAtNoon.getTime() - now.getTime()) / DAY);
 
@@ -218,7 +224,7 @@ export function getDueDateStatus(profile: BabyProfile, now = new Date()) {
 }
 
 export function getDaysUntilDue(profile: BabyProfile, now = new Date()) {
-  if (profile.birthDate) {
+  if (profile.birthDate || !profile.dueDate) {
     return 0;
   }
 

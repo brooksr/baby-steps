@@ -15,20 +15,62 @@ export interface ActiveTimers {
 
 const STORAGE_KEY = 'babysteps-timers';
 
-export function loadActiveTimers(): ActiveTimers {
+/** Timers belong to a child, not to the device — twins can each be nursing. */
+type StoredTimers = Record<string, ActiveTimers>;
+
+function readStored(): Record<string, unknown> {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    const stored = raw ? (JSON.parse(raw) as Record<string, { startedAt: string }>) : {};
-    // Drop retired keys (breastfeed/bottle) so a timer left running before the
-    // feeding merge cannot stick around with nothing able to stop it.
-    return Object.fromEntries(Object.entries(stored).filter(([type]) => isTimerType(type)));
+    return raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
   } catch {
     return {};
   }
 }
 
-export function saveActiveTimers(timers: ActiveTimers): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(timers));
+function cleanTimers(value: unknown): ActiveTimers {
+  if (!value || typeof value !== 'object') {
+    return {};
+  }
+
+  // Drop retired keys (breastfeed/bottle) so a timer left running before the
+  // feeding merge cannot stick around with nothing able to stop it.
+  return Object.fromEntries(
+    Object.entries(value as Record<string, { startedAt?: unknown }>).filter(
+      ([type, timer]) => isTimerType(type) && typeof timer?.startedAt === 'string'
+    )
+  );
+}
+
+/**
+ * Timers used to be one flat map for the one baby this app tracked. A device
+ * still holding that shape hands those timers to the child asking for them —
+ * back then there was only one — and the next write stores them nested.
+ */
+function isLegacyShape(stored: Record<string, unknown>) {
+  return Object.keys(stored).some((key) => isTimerType(key));
+}
+
+export function loadActiveTimers(babyId: string): ActiveTimers {
+  const stored = readStored();
+
+  if (isLegacyShape(stored)) {
+    return cleanTimers(stored);
+  }
+
+  return cleanTimers(stored[babyId]);
+}
+
+export function saveActiveTimers(babyId: string, timers: ActiveTimers): void {
+  const stored = readStored();
+  const next: StoredTimers = isLegacyShape(stored) ? {} : (stored as StoredTimers);
+
+  if (Object.keys(timers).length > 0) {
+    next[babyId] = timers;
+  } else {
+    delete next[babyId];
+  }
+
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
 }
 
 export function getElapsedSeconds(startedAt: string): number {

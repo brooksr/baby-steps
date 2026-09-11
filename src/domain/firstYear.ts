@@ -51,7 +51,9 @@ export interface FirstYearAnalytics {
 }
 
 function getAnchorDate(profile: BabyProfile) {
-  return getLocalDateKey(profile.birthDate ?? profile.dueDate);
+  // Falls back to when the profile was created: a parent has neither date, and
+  // the first-year block is not about them anyway.
+  return getLocalDateKey(profile.birthDate ?? profile.dueDate ?? profile.createdAt);
 }
 
 function inFirstYear(anchorDate: string, event: CareEvent) {

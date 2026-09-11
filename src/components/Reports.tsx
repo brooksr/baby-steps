@@ -1,13 +1,15 @@
 import { useState } from 'react';
-import { formatDuration, formatShortDate, getLocalDateKey, isSameLocalDate, minutesBetween } from '../domain/dates';
+import { formatDuration, getLocalDateKey, isSameLocalDate, minutesBetween } from '../domain/dates';
 import { getCheckupSpan } from '../domain/checkup';
 import { filterEventsByRange, formatRangeLabel, getPresetRange, isDateKeyInRange, type DateRange } from '../domain/dateRange';
 import { getFeedToDiaperLags } from '../domain/diapers';
 import { getDayMetricStats, getFirstYearAnalytics, type FirstYearPoint, type MetricStats } from '../domain/firstYear';
 import { getDailySummary } from '../domain/summary';
-import type { BabyProfile, CareEvent, CareEventType, FeedEvent, MeasurementSystem } from '../domain/types';
+import type { BabyProfile, CareEvent, FeedEvent, MeasurementSystem } from '../domain/types';
 import { formatLength, formatVolume, formatWeight, getPreferredUnits, ouncesToKilograms, toUnitVolume } from '../domain/units';
 import { DateRangeFilter } from './DateRangeFilter';
+import { formatDayLabel, formatStat, type ChartPoint } from './chartFormat';
+import { MiniChart } from './MiniChart';
 import { FeedClock } from './FeedClock';
 import { FeedOrder } from './FeedOrder';
 import { GrowthStandards } from './GrowthStandards';
@@ -48,50 +50,8 @@ function periodScopeLabel(period: ReportPeriod) {
 interface ReportsProps {
   events: CareEvent[];
   profile: BabyProfile;
-}
-
-interface ChartPoint {
-  label: string;
-  value: number;
-  /** Optional breakdown of `value`, stacked bottom-up in the bar. */
-  parts?: number[];
-}
-
-interface MiniChartProps {
-  /** Which care event the chart is about — it colors the bars by family. */
-  event: CareEventType;
-  label: string;
-  stats: MetricStats;
-  suffix?: string;
-  /** Sum across the charted span, shown next to the average. */
-  total: number;
-  /** Names for the stacked `parts`, in the same order. Drives the legend. */
-  partLabels?: string[];
-  /** Per-day averages per part, shown in the legend beside the headline average. */
-  partAverages?: number[];
-  /** Totals per part across the charted span, shown in the legend. */
-  partTotals?: number[];
-  /** True when bars average several days together, so a bar is not one day's total. */
-  sampled?: boolean;
-  values: ChartPoint[];
-}
-
-function formatParts(point: ChartPoint, partLabels: string[] | undefined) {
-  if (!point.parts || !partLabels) {
-    return '';
-  }
-
-  return ` (${point.parts.map((part, index) => `${formatBarValue(part)} ${partLabels[index]}`).join(' · ')})`;
-}
-
-/** Above this many bars there is no room for a number over each one. */
-const BAR_LABEL_LIMIT = 7;
-
-function formatStat(value: number, suffix = '') {
-  // One decimal throughout: a second one is false precision on a count of
-  // diapers, and it made the same number read two ways across the page.
-  const rounded = Number(value.toFixed(1));
-  return `${rounded.toLocaleString()}${suffix}`;
+  /** Everyone tracked, so an entry can name the parent who logged it. */
+  profiles?: BabyProfile[];
 }
 
 function convertStats(stats: MetricStats, convert: (value: number) => number): MetricStats {
@@ -100,102 +60,6 @@ function convertStats(stats: MetricStats, convert: (value: number) => number): M
     max: convert(stats.max),
     min: convert(stats.min)
   };
-}
-
-function formatBarValue(value: number) {
-  return `${value >= 10 ? Math.round(value) : Math.round(value * 10) / 10}`;
-}
-
-// Date keys are local days; anchor at midday so they never slip a day in parsing.
-function formatDayLabel(dateKey: string) {
-  return formatShortDate(`${dateKey}T12:00:00`);
-}
-
-function MiniChart({ event, label, stats, suffix = '', partAverages, partLabels, partTotals, sampled = false, total, values }: MiniChartProps) {
-  const [activeIndex, setActiveIndex] = useState<number | null>(null);
-  const max = Math.max(1, ...values.map((point) => point.value));
-  const cols = Math.max(1, values.length);
-  const showBarLabels = values.length > 0 && values.length <= BAR_LABEL_LIMIT;
-  // Defaults to the most recent bar so a day total is always on screen.
-  const activePoint = values.length > 0 ? values[Math.min(activeIndex ?? values.length - 1, values.length - 1)] : null;
-  const dayWord = sampled ? 'avg/day from' : '';
-
-  return (
-    <article className="chart-card" data-event={event}>
-      <div className="chart-heading">
-        <h3>{label}</h3>
-        <strong>{formatStat(stats.average, suffix)} avg</strong>
-        <small>{formatStat(total, suffix)} total</small>
-      </div>
-      <div
-        className="chart-bars"
-        aria-label={`${label} chart`}
-        style={{ gridTemplateColumns: `repeat(${cols}, minmax(3px, 1fr))` }}
-      >
-        {values.length === 0 ? (
-          <p className="empty-state compact">No data</p>
-        ) : (
-          values.map((point, index) => {
-            const readout = `${dayWord ? `${dayWord} ` : ''}${formatDayLabel(point.label)}: ${formatStat(point.value, suffix)}${formatParts(point, partLabels)}`;
-            const barHeight = `${Math.max(8, (point.value / max) * 100)}%`;
-
-            return (
-              <button
-                type="button"
-                className={`chart-column${point === activePoint ? ' active' : ''}`}
-                key={`${label}-${point.label}`}
-                aria-label={readout}
-                title={readout}
-                onClick={() => setActiveIndex(index)}
-              >
-                {showBarLabels && <b className="chart-bar-value">{formatBarValue(point.value)}</b>}
-                <span className="chart-bar">
-                  {point.parts && point.value > 0 ? (
-                    <span className="chart-bar-stack" style={{ height: barHeight }}>
-                      {point.parts.map((part, partIndex) => (
-                        <i
-                          key={partLabels?.[partIndex] ?? partIndex}
-                          className={`chart-bar-part-${partIndex}`}
-                          style={{ height: `${(part / point.value) * 100}%` }}
-                        />
-                      ))}
-                    </span>
-                  ) : (
-                    <i style={{ height: barHeight }} />
-                  )}
-                </span>
-                {showBarLabels && <em className="chart-bar-day">{new Date(`${point.label}T12:00:00`).getDate()}</em>}
-              </button>
-            );
-          })
-        )}
-      </div>
-      {activePoint && (
-        <p className="chart-readout">
-          <span>{dayWord ? `${dayWord} ${formatDayLabel(activePoint.label)}` : formatDayLabel(activePoint.label)}</span>
-          <strong>
-            {formatStat(activePoint.value, suffix)}
-            {formatParts(activePoint, partLabels)}
-          </strong>
-        </p>
-      )}
-      {partLabels && partTotals && (
-        <div className="chart-legend">
-          {partLabels.map((partLabel, index) => (
-            <span className={`chart-legend-item chart-bar-part-${index}`} key={partLabel}>
-              {partLabel}{' '}
-              {partAverages ? `${formatStat(partAverages[index], suffix)} avg · ` : ''}
-              {formatStat(partTotals[index], suffix)} total
-            </span>
-          ))}
-        </div>
-      )}
-      <div className="chart-stats">
-        <span>Min {formatStat(stats.min, suffix)}</span>
-        <span>Max {formatStat(stats.max, suffix)}</span>
-      </div>
-    </article>
-  );
 }
 
 /**
@@ -362,7 +226,7 @@ function periodLabel(points: FirstYearPoint[]): string {
   return first === last ? formatDayLabel(first) : `${formatDayLabel(first)} – ${formatDayLabel(last)}`;
 }
 
-export function Reports({ events, profile }: ReportsProps) {
+export function Reports({ events, profile, profiles = [] }: ReportsProps) {
   const [period, setPeriod] = useState<ReportPeriod>('day');
   const [dateKey, setDateKey] = useState(() => getLocalDateKey(new Date()));
   const [range, setRange] = useState<DateRange>(() => getPresetRange('30d'));
@@ -692,7 +556,7 @@ export function Reports({ events, profile }: ReportsProps) {
               <h2>Entries</h2>
               <span>{selectedEvents.length}</span>
             </div>
-            <Timeline events={selectedEvents} emptyMessage="No entries on this date." profile={profile} />
+            <Timeline events={selectedEvents} emptyMessage="No entries on this date." profile={profile} profiles={profiles} />
           </section>
         </>
       ) : (

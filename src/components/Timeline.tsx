@@ -1,9 +1,10 @@
-import { Award, Bath, Bed, Calendar, Droplets, Dumbbell, FileText, Heart, Milk, Pencil, Pill, Ruler, Smile, Syringe, Thermometer, Trash2, Wind } from 'lucide-react';
+import { Award, Bath, Bed, Calendar, Droplets, Dumbbell, FileText, Heart, Milk, Pencil, Pill, Ruler, Smile, Syringe, Thermometer, Trash2, Waves, Wind } from 'lucide-react';
 import { formatClock, formatDuration, formatShortDate } from '../domain/dates';
+import { getCaregiverName } from '../domain/family';
 import { getMilestoneById, getMoodScale, getStoolColorById, getVaccinationById } from '../domain/reference';
 import { getEventDurationMinutes } from '../domain/summary';
 import { formatTemperature } from '../domain/temperature';
-import { careEventLabels, type BabyProfile, type CareEvent, type CareEventType } from '../domain/types';
+import { careEventLabels, mensesFlowLabels, type BabyProfile, type CareEvent, type CareEventType } from '../domain/types';
 import { formatLength, formatVolume, formatWeight, getPreferredUnits } from '../domain/units';
 
 interface TimelineProps {
@@ -12,6 +13,8 @@ interface TimelineProps {
   onDelete?: (id: string) => void;
   onEdit?: (event: CareEvent) => void;
   profile?: BabyProfile;
+  /** Everyone tracked, so an entry can name the parent who logged it. */
+  profiles?: BabyProfile[];
 }
 
 const icons = {
@@ -22,6 +25,7 @@ const icons = {
   feed: Milk,
   growth: Ruler,
   medication: Pill,
+  menses: Waves,
   milestone: Award,
   mood: Smile,
   note: FileText,
@@ -54,6 +58,8 @@ function eventDetail(event: CareEvent, profile?: BabyProfile) {
       ];
       return measures.filter(Boolean).join(' · ') || 'Birth logged';
     }
+    case 'menses':
+      return `${mensesFlowLabels[event.flow]} flow`;
     case 'pump':
       return `${formatVolume(event.amountOz, preferredUnits.system)} · ${event.side}`;
     case 'diaper':
@@ -95,7 +101,7 @@ function eventDetail(event: CareEvent, profile?: BabyProfile) {
   }
 }
 
-export function Timeline({ events, emptyMessage = 'No entries yet.', onDelete, onEdit, profile }: TimelineProps) {
+export function Timeline({ events, emptyMessage = 'No entries yet.', onDelete, onEdit, profile, profiles = [] }: TimelineProps) {
   if (events.length === 0) {
     return <p className="empty-state">{emptyMessage}</p>;
   }
@@ -104,6 +110,7 @@ export function Timeline({ events, emptyMessage = 'No entries yet.', onDelete, o
     <ol className="timeline">
       {events.map((event) => {
         const Icon = icons[event.type];
+        const caregiver = getCaregiverName(profiles, event.caregiverId);
 
         return (
           <li className="timeline-item" key={event.id}>
@@ -117,7 +124,10 @@ export function Timeline({ events, emptyMessage = 'No entries yet.', onDelete, o
                   {formatShortDate(event.startedAt)} · {formatClock(event.startedAt)}
                 </time>
               </div>
-              <p>{eventDetail(event, profile)}</p>
+              <p>
+                {eventDetail(event, profile)}
+                {caregiver && <em className="timeline-by"> · {caregiver}</em>}
+              </p>
               {event.notes && event.type !== 'note' && <small>{event.notes}</small>}
             </div>
             {(onEdit || onDelete) && (

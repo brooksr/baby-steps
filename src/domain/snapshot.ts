@@ -38,10 +38,14 @@ export function eventsSignature(events: CareEvent[]) {
 }
 
 /**
- * A fingerprint of everything the UI renders. Background polls compare it and
- * only swap state when the shared sheet actually moved, so a quiet sheet costs
- * no re-renders and never interrupts what someone is doing.
+ * A fingerprint of everything the UI renders — the active child, every child in
+ * the switcher, and the entries on screen. Background polls compare it and only
+ * swap state when the shared sheet actually moved, so a quiet sheet costs no
+ * re-renders and never interrupts what someone is doing.
  */
-export function snapshotSignature(profile: BabyProfile | null | undefined, events: CareEvent[]) {
-  return `${profile ? hash(stableStringify(profile)) : 'none'}~${eventsSignature(events)}`;
+export function snapshotSignature(profile: BabyProfile | null | undefined, events: CareEvent[], profiles?: BabyProfile[]) {
+  const children = profiles?.length ? profiles : profile ? [profile] : [];
+  const identity = children.length > 0 ? hash(stableStringify([profile?.id ?? null, children])) : 'none';
+
+  return `${identity}~${eventsSignature(events)}`;
 }

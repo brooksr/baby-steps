@@ -1,4 +1,5 @@
 import { Check, Hourglass, TriangleAlert } from 'lucide-react';
+import { getFirstName } from '../domain/family';
 import { assessNewbornDay, type NewbornMetricCheck } from '../domain/growth/assess';
 import type { BabyProfile, CareEvent } from '../domain/types';
 
@@ -26,6 +27,7 @@ function checkTarget(check: NewbornMetricCheck, dayComplete: boolean) {
 }
 
 export function NewbornStatus({ events, profile, dateKey, heading = 'Newborn check' }: NewbornStatusProps) {
+  const firstName = getFirstName(profile);
   const assessment = assessNewbornDay(profile, events, dateKey);
   if (!assessment) {
     return null;
@@ -74,8 +76,8 @@ export function NewbornStatus({ events, profile, dateKey, heading = 'Newborn che
       {behind && (
         <p className="newborn-guidance">
           {assessment.dayComplete
-            ? 'A quiet day or two can be normal — keep offering feeds and watch the next nappies. If the low days continue or Theo seems unwell, check in with your pediatrician.'
-            : 'Running behind the usual pace for this point in the day — offer a feed and watch the next nappy. If it stays low or Theo seems unwell, check in with your pediatrician.'}
+            ? `A quiet day or two can be normal — keep offering feeds and watch the next nappies. If the low days continue or ${firstName} seems unwell, check in with your pediatrician.`
+            : `Running behind the usual pace for this point in the day — offer a feed and watch the next nappy. If it stays low or ${firstName} seems unwell, check in with your pediatrician.`}
         </p>
       )}
     </section>

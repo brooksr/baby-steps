@@ -3,12 +3,15 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { addMinutes, fromDateTimeInputValue, getAgeDays, toDateTimeInputValue } from '../domain/dates';
 import { DEFAULT_STOOL_COLOR } from '../domain/diaperDetails';
 import { getMoodScale, getStoolColorById, getStoolColors, isStoolColorFlagged } from '../domain/reference';
+import { getCaregivers, getStoredCaregiverId, isParent, storeCaregiverId } from '../domain/family';
 import { type ActiveTimers, type TimerType, formatElapsed, getElapsedSeconds, isTimerType } from '../domain/timers';
-import { careEventLabels, type BabyProfile, type CareEvent, type CareEventType, type CreateCareEventInput, type DiaperKind, type DiaperPoopSize, type FeedMethod } from '../domain/types';
+import { careEventLabels, mensesFlowLabels, type BabyProfile, type CareEvent, type CareEventType, type CreateCareEventInput, type DiaperKind, type DiaperPoopSize, type FeedMethod, type MensesFlow } from '../domain/types';
 import { getPreferredUnits, toStoredLength, toStoredVolume, toStoredWeight, toUnitLength, toUnitVolume, toUnitWeight } from '../domain/units';
 
 const moodLevels = getMoodScale();
 const stoolColors = getStoolColors();
+/** Lightest to heaviest, so the selector reads as a scale. */
+const MENSES_FLOWS = ['spotting', 'light', 'medium', 'heavy'] as const;
 
 interface QuickAddDialogProps {
   activeTimers: ActiveTimers;
@@ -21,6 +24,8 @@ interface QuickAddDialogProps {
   onTimerStart: (type: TimerType) => void;
   onTimerStop: (type: TimerType) => void;
   profile?: BabyProfile;
+  /** Everyone tracked, so an entry can say which parent did it. */
+  profiles?: BabyProfile[];
 }
 
 function numberOrUndefined(value: string) {
@@ -39,7 +44,7 @@ function roundedInputValue(value: number, fractionDigits: number) {
   return String(Number(value.toFixed(fractionDigits)));
 }
 
-export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, onClose, onSave, onTimerStart, onTimerStop, profile }: QuickAddDialogProps) {
+export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, onClose, onSave, onTimerStart, onTimerStop, profile, profiles = [] }: QuickAddDialogProps) {
   const preferredUnits = getPreferredUnits(profile);
   const unitSystem = preferredUnits.system;
   const [startedAt, setStartedAt] = useState(() => toDateTimeInputValue(new Date().toISOString()));
@@ -67,6 +72,8 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
   const [temperature, setTemperature] = useState('98.6');
   const [temperatureUnit, setTemperatureUnit] = useState('f');
   const [moodLevel, setMoodLevel] = useState('2');
+  const [flow, setFlow] = useState<MensesFlow>('medium');
+  const [caregiverId, setCaregiverId] = useState('');
   const [saving, setSaving] = useState(false);
   const [timerElapsed, setTimerElapsed] = useState(0);
 
@@ -100,6 +107,9 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
     setStartedAt(toDateTimeInputValue(editEvent?.startedAt ?? timer?.startedAt ?? new Date().toISOString()));
     setEndedAt(editEvent?.endedAt ? toDateTimeInputValue(editEvent.endedAt) : '');
     setNotes(editEvent?.notes ?? '');
+    // An edit keeps whoever was recorded — including nobody. A new entry opens
+    // on this device's caregiver.
+    setCaregiverId(editEvent ? (editEvent.caregiverId ?? '') : (getStoredCaregiverId() ?? ''));
     setDurationMinutes(eventType === 'sleep' ? '60' : eventType === 'tummytime' ? '5' : '15');
     setSide('left');
     // A feed opens on nursing, where the amount is unknown until a bottle is picked.
@@ -183,10 +193,18 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
       case 'mood':
         setMoodLevel(String(editEvent.level));
         break;
+      case 'menses':
+        setFlow(editEvent.flow);
+        break;
       default:
         break;
     }
   }, [eventType, editEvent, preferredUnits.weightDisplay, unitSystem]);
+
+  const caregivers = useMemo(() => getCaregivers(profiles), [profiles]);
+  // Only a child's entry has a caregiver worth recording — a parent logging
+  // their own sleep is not doing it for someone else.
+  const showCaregiver = caregivers.length > 0 && Boolean(profile) && !isParent(profile as BabyProfile);
 
   const titleText = useMemo(() => {
     if (!eventType) {
@@ -404,6 +422,14 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
           startedAt: startedAtIso
         };
         break;
+      case 'menses':
+        payload = {
+          type: 'menses',
+          flow,
+          notes: trimmedNotes,
+          startedAt: startedAtIso
+        };
+        break;
       default:
         // milestone / vaccine are toggled from the Care view, so there is nothing
         // to add here — but an existing one can still be re-timed or annotated.
@@ -413,6 +439,13 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
 
         payload = { ...editEvent, notes: trimmedNotes, startedAt: startedAtIso } as CreateCareEventInput;
         break;
+    }
+
+    if (showCaregiver) {
+      payload = { ...payload, caregiverId: caregiverId || undefined } as CreateCareEventInput;
+      // Remember for next time: a phone belongs to one person, and re-picking
+      // on every entry is how a field like this stops being filled in.
+      storeCaregiverId(caregiverId);
     }
 
     setSaving(true);
@@ -695,6 +728,19 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
             </label>
           )}
 
+          {eventType === 'menses' && (
+            <label>
+              Flow
+              <select value={flow} onChange={(event) => setFlow(event.target.value as MensesFlow)}>
+                {MENSES_FLOWS.map((option) => (
+                  <option key={option} value={option}>
+                    {mensesFlowLabels[option]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
           {eventType === 'mood' && (
             <label>
               Mood
@@ -703,6 +749,18 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, on
                   <option key={level.level} value={level.level}>
                     {level.level} · {level.label}
                   </option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          {showCaregiver && (
+            <label>
+              Logged by
+              <select value={caregiverId} onChange={(event) => setCaregiverId(event.target.value)}>
+                <option value="">Not recorded</option>
+                {caregivers.map((person) => (
+                  <option key={person.id} value={person.id}>{person.name}</option>
                 ))}
               </select>
             </label>

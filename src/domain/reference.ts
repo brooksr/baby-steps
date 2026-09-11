@@ -166,3 +166,79 @@ export function getStoolColorById(id: string): StoolColor | undefined {
 export function isStoolColorFlagged(color: StoolColor, ageDays: number): boolean {
   return color.flagFromDay !== undefined && ageDays >= color.flagFromDay;
 }
+
+// ---------------------------------------------------------------------------
+// What to expect — the Home card's pregnancy and age-stage copy
+// ---------------------------------------------------------------------------
+
+export interface FetalWeek {
+  /** Completed weeks of gestation this row describes. */
+  week: number;
+  trimester: string;
+  /** Everyday size comparison. Crown-to-rump before week 20, head-to-heel after. */
+  size: string;
+  development: string;
+  headsUp: string;
+}
+
+export function getFetalWeeks(): FetalWeek[] {
+  return records('fetal-development')
+    .map((row) => ({
+      development: row.development,
+      headsUp: row.heads_up,
+      size: row.size,
+      trimester: row.trimester,
+      week: Number(row.week)
+    }))
+    .sort((a, b) => a.week - b.week);
+}
+
+/**
+ * One window of life after birth, from `fromDays` to `toDays` inclusive, both
+ * counted from the birth date (day of birth is 0). The copy carries `{name}`,
+ * `{their}` and `{them}` tokens — see `domain/whatToExpect.ts`.
+ */
+export interface AgeStage {
+  development: string;
+  feeding: string;
+  fromDays: number;
+  headsUp: string;
+  label: string;
+  sleep: string;
+  summary: string;
+  toDays: number;
+}
+
+export function getAgeStages(): AgeStage[] {
+  return records('what-to-expect')
+    .map((row) => ({
+      development: row.development,
+      feeding: row.feeding,
+      fromDays: Number(row.from_days),
+      headsUp: row.heads_up,
+      label: row.label,
+      sleep: row.sleep,
+      summary: row.summary,
+      toDays: Number(row.to_days)
+    }))
+    .sort((a, b) => a.fromDays - b.fromDays);
+}
+
+/** Who an extra note is written for. A profile can match several at once. */
+export type NoteAudience = 'boy' | 'early-preterm' | 'girl' | 'late-preterm' | 'preterm';
+
+export interface ExpectationNote {
+  audience: NoteAudience;
+  fromDays: number;
+  note: string;
+  toDays: number;
+}
+
+export function getExpectationNotes(): ExpectationNote[] {
+  return records('what-to-expect-notes').map((row) => ({
+    audience: row.audience as NoteAudience,
+    fromDays: Number(row.from_days),
+    note: row.note,
+    toDays: Number(row.to_days)
+  }));
+}

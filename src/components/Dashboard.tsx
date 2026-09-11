@@ -1,5 +1,6 @@
 import { Bath, Bed, Calendar, Droplets, Dumbbell, FileText, Heart, Milk, Navigation, Pill, Plus, Ruler, Smile, Thermometer, TriangleAlert, Wind } from 'lucide-react';
 import { getCadenceReminders } from '../domain/cadence';
+import { getFirstName } from '../domain/family';
 import { formatAgeSummary, formatAgo, formatClock, formatDaysAgo, formatDuration, formatShortDate, getAgeDays, getDaysUntilDue, getDueDateStatus, isSameLocalDate } from '../domain/dates';
 import { predictNextDiaper } from '../domain/diapers';
 import { classifyTemperatureC } from '../domain/reference';
@@ -11,12 +12,15 @@ import type { BabyProfile, CareEvent, CareEventType, TemperatureEvent } from '..
 import { formatVolume, getPreferredUnits } from '../domain/units';
 import { NewbornStatus } from './NewbornStatus';
 import { Timeline } from './Timeline';
+import { WhatToExpect } from './WhatToExpect';
 
 interface DashboardProps {
   activeTimers: ActiveTimers;
   events: CareEvent[];
   profile: BabyProfile;
   todayKey: string;
+  /** Everyone tracked, so an entry can name the parent who logged it. */
+  profiles?: BabyProfile[];
   onAdd: (type: CareEventType) => void;
 }
 
@@ -37,7 +41,9 @@ const actions = [
   { icon: FileText, label: 'Note', type: 'note' }
 ] satisfies Array<{ icon: typeof Plus; label: string; type: CareEventType }>;
 
-export function Dashboard({ activeTimers, events, profile, todayKey, onAdd }: DashboardProps) {
+export function Dashboard({ activeTimers, events, profile, profiles = [], todayKey, onAdd }: DashboardProps) {
+  // Whoever the switcher is on — an alert has to name the right baby.
+  const firstName = getFirstName(profile);
   const preferredUnits = getPreferredUnits(profile);
   const isBorn = Boolean(profile.birthDate);
   const daysUntilDue = getDaysUntilDue(profile);
@@ -162,9 +168,12 @@ export function Dashboard({ activeTimers, events, profile, todayKey, onAdd }: Da
           <article className="status-row urgent">
             <TriangleAlert aria-hidden="true" />
             <div>
-              <strong>Theo has a fever — {formatTemperature(lastTemperature.celsius, preferredUnits.system)}</strong>
+              <strong>{firstName} has a fever — {formatTemperature(lastTemperature.celsius, preferredUnits.system)}</strong>
               <span>
-                {ageDays < 90 ? 'Under 3 months, a fever is worth a call to your doctor now.' : 'Keep Theo comfortable and hydrated; call your doctor if it climbs or persists.'} · {formatClock(lastTemperature.startedAt)}
+                {ageDays < 90
+                  ? 'Under 3 months, a fever is worth a call to your doctor now.'
+                  : `Keep ${firstName} comfortable and hydrated; call your doctor if it climbs or persists.`}{' '}
+                · {formatClock(lastTemperature.startedAt)}
               </span>
             </div>
           </article>
@@ -207,6 +216,10 @@ export function Dashboard({ activeTimers, events, profile, todayKey, onAdd }: Da
 
       <NewbornStatus events={events} profile={profile} dateKey={todayKey} heading="Today's newborn check" />
 
+      {/* Sits below the alerts and the daily check — what is happening today
+          comes first, what to expect of this week comes after it. */}
+      <WhatToExpect profile={profile} />
+
       {(upcomingMeds.length > 0 || upcomingAppointments.length > 0) && (
         <section className="status-list" aria-label="Upcoming">
           {upcomingMeds.map((medication) => (
@@ -245,7 +258,7 @@ export function Dashboard({ activeTimers, events, profile, todayKey, onAdd }: Da
             <strong>{summary.dirtyDiapers}</strong>
           </article>
         </div>
-        <Timeline events={todayEvents.slice(0, 8)} emptyMessage="No entries for today." profile={profile} />
+        <Timeline events={todayEvents.slice(0, 8)} emptyMessage="No entries for today." profile={profile} profiles={profiles} />
       </section>
     </main>
   );

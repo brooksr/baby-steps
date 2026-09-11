@@ -105,6 +105,12 @@ h3,
   --event-tint: #7cc0f5;
 }
 
+:root[data-theme='dark'] [data-event='mood'],
+:root[data-theme='dark'] [data-event='menses'] {
+  --event-fill: #3a1f30;
+  --event-tint: #e79dc6;
+}
+
 :root[data-theme='dark'] [data-event='diaper'] {
   --event-fill: #372c17;
   --event-tint: #e2b360;
@@ -386,6 +392,42 @@ button {
   color: var(--blue-700);
 }
 
+/* Which baby the app is showing. In the header because with two in the house
+   it is read far more often than it is tapped — and it only renders at all when
+   there is more than one child, so a single-baby tracker looks untouched.
+   Scrolls sideways rather than wrapping: the wordmark must keep its row. */
+.child-switcher {
+  display: flex;
+  gap: 4px;
+  max-width: 62%;
+  padding: 3px;
+  overflow-x: auto;
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  scrollbar-width: none;
+}
+
+.child-switcher::-webkit-scrollbar {
+  display: none;
+}
+
+.child-switcher button {
+  flex: 0 0 auto;
+  padding: 6px 14px;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.child-switcher button.active {
+  color: var(--on-accent);
+  background: var(--accent);
+}
+
 .header-link {
   display: inline-flex;
   align-items: center;
@@ -650,7 +692,8 @@ button {
   --event-tint: #3d8046;
 }
 
-[data-event='mood'] {
+[data-event='mood'],
+[data-event='menses'] {
   --event-fill: #f7d5e8;
   --event-tint: #b0517f;
 }
@@ -1122,6 +1165,14 @@ button {
   margin: 3px 0 0;
 }
 
+/* Who logged the entry, trailing its detail line — quieter than the detail it
+   follows, because it answers a question you only sometimes have. */
+.timeline-by {
+  color: var(--muted);
+  font-style: normal;
+  font-weight: 800;
+}
+
 .empty-state {
   margin: 0;
   padding: 18px;
@@ -1586,6 +1637,164 @@ button {
 
 /* Reference guidance under a field. `.flagged` borrows the urgent card's warm
    edge — it says "worth a call", it never says what is wrong. */
+/* The cycle forecast: three plain-language cards rather than a calendar grid.
+   A calendar would imply day-level certainty the estimate does not have. */
+.cycle-forecast {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.cycle-forecast article {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  background: var(--panel-blue);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.cycle-forecast span {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.cycle-forecast strong {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+}
+
+.cycle-forecast small,
+.cycle-list small {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+/* Recent periods, newest first. */
+.cycle-list {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+
+.cycle-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.cycle-list li div {
+  display: grid;
+  gap: 2px;
+}
+
+.cycle-length {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+/* A gap the averages did not count — struck through so the list still shows it
+   without anyone reading it as a cycle length that counted. */
+.cycle-length.dropped {
+  text-decoration: line-through;
+}
+
+/* Two add buttons side by side under the family list. */
+.settings-actions.add-person {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 4px;
+}
+
+/* One row per child in Settings: tap the row to switch, the trash to remove.
+   The remove button arms on the first tap and acts on the second — removing the
+   wrong child by a stray thumb is not a mistake worth allowing. */
+.child-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.child-list li {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.child-pick {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  color: var(--ink);
+  text-align: left;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.child-list li.showing .child-pick {
+  background: var(--panel-blue);
+  border-color: var(--line-strong);
+}
+
+.child-pick svg {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  color: var(--blue-700);
+}
+
+.child-pick span {
+  display: grid;
+  gap: 2px;
+}
+
+.child-pick strong {
+  font-weight: 800;
+}
+
+.child-pick small {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.child-remove {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  color: var(--muted);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-weight: 800;
+}
+
+.child-remove.confirming {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.child-remove svg {
+  width: 18px;
+  height: 18px;
+}
+
 .field-note {
   margin: 0;
   padding: 8px 10px;
@@ -2098,6 +2307,95 @@ textarea {
   border: 1px solid var(--line);
   border-radius: 8px;
   font-size: 0.88rem;
+}
+
+/* What to expect — the Home orientation card. Lavender edge like the gentle
+   cadence nudges: this is context, not an alert. */
+.expect-card {
+  border-left: 3px solid var(--accent);
+}
+
+.expect-card .section-heading {
+  flex-wrap: wrap;
+}
+
+.expect-card .section-heading h2 {
+  font-size: 1.2rem;
+  white-space: nowrap;
+}
+
+.expect-summary {
+  margin: 0 0 12px;
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.expect-facets {
+  display: grid;
+  gap: 10px;
+}
+
+.expect-facet {
+  display: flex;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--panel-blue);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.expect-facet svg {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--accent-strong);
+}
+
+.expect-facet div {
+  display: grid;
+  gap: 2px;
+}
+
+.expect-facet strong {
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.expect-facet span {
+  font-size: 0.9rem;
+}
+
+/* Notes added for this baby in particular — a preterm birth, a recorded sex. */
+.expect-notes {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0 0 0 18px;
+  font-size: 0.88rem;
+}
+
+.expect-notes li::marker {
+  color: var(--accent-strong);
+}
+
+.expect-basis {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  color: var(--ink);
+  background: var(--blue-50);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 0.85rem;
+}
+
+.expect-footnote {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
 }
 
 /* Learn page */

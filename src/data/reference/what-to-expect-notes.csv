@@ -1,0 +1,19 @@
+audience,from_days,to_days,note
+early-preterm,0,365,"Born before 34 weeks, so expect a longer follow-up tail: hearing, eyes, and a developmental clinic. Keep those appointments in the log."
+early-preterm,0,120,Skin-to-skin holding is one of the few things shown to help a very early baby directly. Ask your team how long a session can run.
+late-preterm,0,27,"Late preterm babies look term but tire quickly, jaundice more easily, and feed sleepily — which is exactly why the early weight checks matter."
+preterm,0,90,"Feeding, weight gain and diapers run on {name}’s actual age; skills run on corrected age. Both are on this card."
+preterm,0,60,Shorter and more frequent feeds are usual — a preterm baby tires quickly at the breast or the bottle.
+preterm,0,180,Preterm babies often need waking to feed for longer than term babies do. Follow the plan your team gave you rather than a clock.
+preterm,0,365,Ask who is up to date on whooping cough before they hold {them}. Ask your pediatrician about RSV season protection.
+preterm,0,120,Car seat angle and time limits matter more for a preterm baby — many hospitals run a car seat tolerance screen before discharge.
+preterm,91,730,Corrected age is normally used until about age two. After that chronological age takes over and the gap has usually closed.
+preterm,180,730,"Reaching a skill later than the chart says is expected — measure from the corrected age, and raise anything that worries you at the next visit."
+boy,0,27,Changes come with a spray risk. Keep a cloth over {them} while you work.
+boy,0,27,"If {name} was circumcised, follow the aftercare you were given exactly, and call about bleeding, swelling or a fever."
+boy,0,60,Swollen scrotum and breast tissue from your hormones is common in the first weeks. Your pediatrician checks it at every visit.
+boy,28,730,"Boys average slightly heavier and longer than girls at the same age, which is why the growth charts in Reports use the WHO boys' curves."
+boy,365,730,"Boys reach language milestones a little later on average. The range is wide, and the 18-month screening is the place to raise it."
+girl,0,27,Wipe front to back at every change.
+girl,0,27,A little discharge or spotting in the first weeks comes from your hormones and settles on its own. Mention it at the next visit if it worries you.
+girl,0,730,"Only the WHO boys' curves are bundled today, so the growth charts compare {name} against the boys' reference. Your pediatrician's chart is the one to trust."

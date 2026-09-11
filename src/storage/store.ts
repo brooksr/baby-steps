@@ -1,7 +1,8 @@
 import Dexie, { type Table } from 'dexie';
+import { createFamilyProfile, isChild, isParent, sortProfiles, type NewProfileInput } from '../domain/family';
 import { createDefaultBabyProfile } from '../domain/dates';
 import { migrateStoredEvents, type StoredCareEvent } from '../domain/legacyEvents';
-import { DEFAULT_PROFILE_ID, type BabyProfile, type CareEvent, type CareEventType, type CreateCareEventInput, type TrackerExport, type TrackerSnapshot } from '../domain/types';
+import { type BabyProfile, type CareEvent, type CareEventType, type CreateCareEventInput, type TrackerExport, type TrackerSnapshot } from '../domain/types';
 
 const DEFAULT_DB_NAME = 'babysteps-theo';
 
@@ -29,6 +30,16 @@ export interface StoreStatus {
 export interface BabyTrackerStore {
   initialize(): Promise<BabyProfile>;
   getProfile(): Promise<BabyProfile | undefined>;
+  /** Every child on this tracker, oldest first. */
+  listProfiles(): Promise<BabyProfile[]>;
+  /** Adds a sibling. Its events are the rows carrying the returned id. */
+  addProfile(input: NewProfileInput): Promise<BabyProfile>;
+  /**
+   * Removes a child from the switcher. Its entries stay where they are —
+   * history is never rewritten, here or anywhere else.
+   */
+  deleteProfile(id: string): Promise<void>;
+  /** Patches the child named by `profile.id`, or the first one when unset. */
   saveProfile(profile: Partial<BabyProfile>): Promise<BabyProfile>;
   addEvent(input: CreateCareEventInput): Promise<CareEvent>;
   updateEvent(event: CareEvent): Promise<CareEvent>;
@@ -74,8 +85,13 @@ function assertTrackerExport(data: TrackerExport) {
 export function createLocalBabyTrackerStore(dbName = DEFAULT_DB_NAME): BabyTrackerStore {
   const db = new BabyStepsDatabase(dbName);
 
+  async function listProfiles() {
+    return sortProfiles(await db.profiles.toArray());
+  }
+
+  /** The first child — what every read falls back to when none is named. */
   async function getProfile() {
-    return (await db.profiles.get(DEFAULT_PROFILE_ID)) ?? (await db.profiles.toCollection().first());
+    return (await listProfiles())[0];
   }
 
   async function initialize() {
@@ -90,8 +106,35 @@ export function createLocalBabyTrackerStore(dbName = DEFAULT_DB_NAME): BabyTrack
     return profile;
   }
 
+  /** The child a query is about: the one it named, or the first one. */
+  async function resolveProfile(babyId?: string) {
+    const profiles = await listProfiles();
+
+    if (profiles.length === 0) {
+      return initialize();
+    }
+
+    return profiles.find((profile) => profile.id === babyId) ?? profiles[0];
+  }
+
+  async function addProfile(input: NewProfileInput) {
+    const profile = createFamilyProfile(input, await listProfiles());
+
+    await db.profiles.put(profile);
+    return profile;
+  }
+
+  /** The child's entries stay in the table — removing it is not a purge. */
+  async function deleteProfile(id: string) {
+    await db.profiles.delete(id);
+  }
+
   async function saveProfile(profilePatch: Partial<BabyProfile>) {
-    const existing = (await getProfile()) ?? createDefaultBabyProfile();
+    const target = await resolveProfile(profilePatch.id);
+    // A patch naming a child this device has never seen starts that child from
+    // the defaults, rather than overwriting whoever happens to be first.
+    const existing =
+      profilePatch.id && target.id !== profilePatch.id ? { ...createDefaultBabyProfile(), id: profilePatch.id } : target;
     const timestamp = new Date().toISOString();
     const profile: BabyProfile = {
       ...existing,
@@ -107,7 +150,7 @@ export function createLocalBabyTrackerStore(dbName = DEFAULT_DB_NAME): BabyTrack
   }
 
   async function addEvent(input: CreateCareEventInput) {
-    const profile = await initialize();
+    const profile = await resolveProfile(input.babyId);
     const timestamp = new Date().toISOString();
     const event = {
       ...input,
@@ -138,7 +181,7 @@ export function createLocalBabyTrackerStore(dbName = DEFAULT_DB_NAME): BabyTrack
   }
 
   async function listEvents(query: EventQuery = {}) {
-    const profile = await initialize();
+    const profile = await resolveProfile(query.babyId);
     const babyId = query.babyId ?? profile.id;
     const stored = (await db.events.where('babyId').equals(babyId).toArray()) as StoredCareEvent[];
     const events = migrateStoredEvents(stored);
@@ -154,19 +197,37 @@ export function createLocalBabyTrackerStore(dbName = DEFAULT_DB_NAME): BabyTrack
   }
 
   async function snapshot(query: EventQuery = {}): Promise<TrackerSnapshot> {
-    const profile = await initialize();
-    const events = await listEvents({ ...query, babyId: query.babyId ?? profile.id });
+    await initialize();
+    const profiles = await listProfiles();
+    const profile = profiles.find((person) => person.id === query.babyId) ?? profiles[0];
+    const events = await listEvents({ ...query, babyId: profile.id });
 
-    return { events, profile };
+    if (!isParent(profile)) {
+      return { events, profile, profiles };
+    }
+
+    // A parent's report is partly about the babies, so their rows come along.
+    const childIds = new Set(profiles.filter(isChild).map((person) => person.id));
+    const stored = (await db.events.toArray()) as StoredCareEvent[];
+    const childEvents = migrateStoredEvents(stored).filter((event) => childIds.has(event.babyId));
+
+    return { childEvents, events, profile, profiles };
   }
 
+  /** Every child and every child's entries — an export is the whole tracker. */
   async function exportData(): Promise<TrackerExport> {
-    const { events, profile } = await snapshot({ sort: 'asc' });
+    await initialize();
+    const profiles = await listProfiles();
+    const stored = (await db.events.toArray()) as StoredCareEvent[];
+    const events = migrateStoredEvents(stored).sort(
+      (a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime()
+    );
 
     return {
       version: 1,
       exportedAt: new Date().toISOString(),
-      profile,
+      profile: profiles[0],
+      profiles,
       events
     };
   }
@@ -174,17 +235,23 @@ export function createLocalBabyTrackerStore(dbName = DEFAULT_DB_NAME): BabyTrack
   async function importData(data: TrackerExport, options: ImportOptions = {}) {
     assertTrackerExport(data);
 
+    // An export taken before this app tracked siblings carries one profile.
+    const incomingProfiles = data.profiles?.length ? data.profiles : [data.profile];
+
     await db.transaction('rw', db.profiles, db.events, async () => {
       if (options.mode === 'replace') {
         await db.profiles.clear();
         await db.events.clear();
       }
 
-      await db.profiles.put({
-        ...data.profile,
-        syncState: 'local',
-        updatedAt: new Date().toISOString()
-      });
+      const timestamp = new Date().toISOString();
+      await db.profiles.bulkPut(
+        incomingProfiles.map((profile) => ({
+          ...profile,
+          syncState: 'local' as const,
+          updatedAt: timestamp
+        }))
+      );
 
       if (data.events.length > 0) {
         await db.events.bulkPut(
@@ -206,14 +273,17 @@ export function createLocalBabyTrackerStore(dbName = DEFAULT_DB_NAME): BabyTrack
 
   return {
     addEvent,
+    addProfile,
     clear,
     close: () => db.close(),
     deleteEvent,
+    deleteProfile,
     exportData,
     getProfile,
     importData,
     initialize,
     listEvents,
+    listProfiles,
     saveProfile,
     snapshot,
     updateEvent

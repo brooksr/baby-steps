@@ -2,6 +2,8 @@
 // Each CSV is imported as raw text (bundled at build time, so it works
 // offline) and surfaced on the Learn page as a table + download.
 
+import expectationNotes from './reference/what-to-expect-notes.csv?raw';
+import fetalDevelopment from './reference/fetal-development-by-week.csv?raw';
 import headForAge from './reference/head-circumference-for-age-boys.csv?raw';
 import lengthForAge from './reference/length-for-age-boys.csv?raw';
 import milestones from './reference/developmental-milestones.csv?raw';
@@ -12,8 +14,9 @@ import temperatureRanges from './reference/temperature-ranges.csv?raw';
 import tummyTime from './reference/tummy-time-by-age.csv?raw';
 import vaccinationSchedule from './reference/vaccination-schedule.csv?raw';
 import weightForAge from './reference/weight-for-age-boys.csv?raw';
+import whatToExpect from './reference/what-to-expect-by-age.csv?raw';
 
-export type SheetCategory = 'growth' | 'newborn' | 'feature';
+export type SheetCategory = 'growth' | 'newborn' | 'expect' | 'feature';
 
 export interface ReferenceSheet {
   id: string;
@@ -56,6 +59,31 @@ export const referenceSheets: ReferenceSheet[] = [
     id: 'newborn-expectations',
     text: newbornExpectations,
     title: 'Newborn daily expectations'
+  },
+  {
+    category: 'expect',
+    description: 'Week-by-week fetal development, weeks 4\u201341 — the Home card before the birth.',
+    filename: 'fetal-development-by-week.csv',
+    id: 'fetal-development',
+    text: fetalDevelopment,
+    title: 'Fetal development by week'
+  },
+  {
+    category: 'expect',
+    description:
+      'Day, week and month expectations from birth to age two. {name}, {their} and {them} are filled in from the profile.',
+    filename: 'what-to-expect-by-age.csv',
+    id: 'what-to-expect',
+    text: whatToExpect,
+    title: 'What to expect by age'
+  },
+  {
+    category: 'expect',
+    description: 'The extra notes added for a preterm birth or a baby\u2019s recorded sex.',
+    filename: 'what-to-expect-notes.csv',
+    id: 'what-to-expect-notes',
+    text: expectationNotes,
+    title: 'What to expect \u2014 personal notes'
   },
   {
     category: 'feature',

@@ -1,30 +1,47 @@
-import { BookOpen, Download, Moon, Sun, Upload } from 'lucide-react';
-import { ChangeEvent, FormEvent, useMemo, useState } from 'react';
-import { getTimezoneOptions } from '../domain/dates';
+import { BookOpen, Baby, Download, Moon, Plus, Sun, Trash2, Upload, UserRound } from 'lucide-react';
+import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react';
+import { getFirstName, isParent, type NewProfileInput } from '../domain/family';
+import { getDueDateStatus, getTimezoneOptions } from '../domain/dates';
 import type { Theme } from '../domain/theme';
-import { babyGenderLabels, type BabyGender, type BabyProfile, type CareEvent, type MeasurementSystem, type TrackerExport, type WeightDisplay } from '../domain/types';
+import { babyGenderLabels, parentRoleLabels, type BabyGender, type BabyProfile, type CareEvent, type MeasurementSystem, type ParentRole, type TrackerExport, type WeightDisplay } from '../domain/types';
 import { getPreferredUnits } from '../domain/units';
 import type { StoreStatus } from '../storage/store';
 
 interface SettingsPanelProps {
   events: CareEvent[];
+  /** The child being edited — the one the header switcher is on. */
   profile: BabyProfile;
+  profiles: BabyProfile[];
   storeStatus: StoreStatus | null;
   theme: Theme;
+  onAddChild: (input: NewProfileInput) => Promise<void>;
   onConnectSheet: () => Promise<void>;
   onExport: () => Promise<TrackerExport>;
   onImport: (data: TrackerExport) => Promise<void>;
   onOpenLearn: () => void;
+  onRemoveChild: (babyId: string) => Promise<void>;
   onSaveProfile: (profile: Partial<BabyProfile>) => Promise<void>;
+  onSelectChild: (babyId: string) => Promise<void>;
   onThemeChange: (theme: Theme) => void;
 }
 
 const GENDERS = Object.keys(babyGenderLabels) as BabyGender[];
+const PARENT_ROLES = Object.keys(parentRoleLabels) as ParentRole[];
 
 const THEMES: Array<{ icon: typeof Sun; id: Theme; label: string }> = [
   { icon: Sun, id: 'light', label: 'Light' },
   { icon: Moon, id: 'dark', label: 'Dark' }
 ];
+
+/** A filename that names the child, now that a download is one child's data. */
+function fileSlug(profile: BabyProfile) {
+  return (
+    profile.name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '') || 'tracker'
+  );
+}
 
 function escapeCsv(value: unknown) {
   const text = value === undefined || value === null ? '' : String(value);
@@ -33,7 +50,8 @@ function escapeCsv(value: unknown) {
 
 function eventDetails(event: CareEvent) {
   const details = { ...event } as Record<string, unknown>;
-  for (const key of ['id', 'babyId', 'createdAt', 'updatedAt', 'syncState', 'startedAt', 'endedAt', 'notes', 'type']) {
+  // `caregiverId` gets a column of its own, resolved to a name.
+  for (const key of ['id', 'babyId', 'caregiverId', 'createdAt', 'updatedAt', 'syncState', 'startedAt', 'endedAt', 'notes', 'type']) {
     delete details[key];
   }
 
@@ -50,14 +68,15 @@ function downloadFile(filename: string, contents: string, type: string) {
   URL.revokeObjectURL(url);
 }
 
-function eventsToCsv(events: CareEvent[]) {
-  const headers = ['id', 'type', 'startedAt', 'endedAt', 'notes', 'details'];
+function eventsToCsv(events: CareEvent[], profiles: BabyProfile[]) {
+  const headers = ['id', 'type', 'startedAt', 'endedAt', 'loggedBy', 'notes', 'details'];
   const rows = events.map((event) =>
     [
       escapeCsv(event.id),
       escapeCsv(event.type),
       escapeCsv(event.startedAt),
       escapeCsv(event.endedAt),
+      escapeCsv(profiles.find((person) => person.id === event.caregiverId)?.name),
       escapeCsv(event.notes),
       escapeCsv(eventDetails(event))
     ].join(',')
@@ -66,44 +85,169 @@ function eventsToCsv(events: CareEvent[]) {
   return [headers.join(','), ...rows].join('\n');
 }
 
-export function SettingsPanel({ events, profile, storeStatus, theme, onConnectSheet, onExport, onImport, onOpenLearn, onSaveProfile, onThemeChange }: SettingsPanelProps) {
+export function SettingsPanel({
+  events,
+  profile,
+  profiles,
+  storeStatus,
+  theme,
+  onAddChild,
+  onConnectSheet,
+  onExport,
+  onImport,
+  onOpenLearn,
+  onRemoveChild,
+  onSaveProfile,
+  onSelectChild,
+  onThemeChange
+}: SettingsPanelProps) {
   const savedUnits = getPreferredUnits(profile);
   const [name, setName] = useState(profile.name);
-  const [dueDate, setDueDate] = useState(profile.dueDate);
+  const [dueDate, setDueDate] = useState(profile.dueDate ?? '');
   const [birthDate, setBirthDate] = useState(profile.birthDate?.slice(0, 10) ?? '');
   const [gender, setGender] = useState<BabyGender | ''>(profile.gender ?? '');
+  const [role, setRole] = useState<ParentRole>(profile.parentRole ?? 'mom');
+  const [phone, setPhone] = useState(profile.phone ?? '');
   const [timezone, setTimezone] = useState(profile.timezone);
   const [unitSystem, setUnitSystem] = useState<MeasurementSystem>(savedUnits.system);
   const [weightDisplay, setWeightDisplay] = useState<WeightDisplay>(savedUnits.weightDisplay);
   const [status, setStatus] = useState('');
   const [connecting, setConnecting] = useState(false);
+  // Which add form is open, if either — a child and a parent ask for different
+  // things, so they are two forms rather than one with a kind switch on top.
+  const [adding, setAdding] = useState<'child' | 'parent' | null>(null);
+  const [childName, setChildName] = useState('');
+  const [childDueDate, setChildDueDate] = useState('');
+  const [childBirthDate, setChildBirthDate] = useState('');
+  const [childGender, setChildGender] = useState<BabyGender | ''>('');
+  const [parentName, setParentName] = useState('');
+  const [parentRole, setParentRole] = useState<ParentRole>('mom');
+  const [parentBirthDate, setParentBirthDate] = useState('');
+  const [parentPhone, setParentPhone] = useState('');
+  // Removal is one tap away from the wrong person, so it asks first.
+  const [confirmRemoveId, setConfirmRemoveId] = useState('');
+  const editingParent = isParent(profile);
 
   // Enumerating every zone is not free, and the saved one has to stay in the
   // list even when this browser wouldn't have offered it.
   const timezones = useMemo(() => getTimezoneOptions(profile.timezone), [profile.timezone]);
+  const parentCount = profiles.filter(isParent).length;
+  const childCount = profiles.length - parentCount;
+
+  // Switching child in the header has to move this form too, or it would go on
+  // showing the previous baby's details and save them over the new one. Keyed
+  // on the id alone on purpose: re-running it whenever a poll hands back a new
+  // profile object would wipe whatever someone was halfway through typing.
+  const editingId = profile.id;
+  useEffect(() => {
+    const units = getPreferredUnits(profile);
+    setName(profile.name);
+    setDueDate(profile.dueDate ?? '');
+    setBirthDate(profile.birthDate?.slice(0, 10) ?? '');
+    setGender(profile.gender ?? '');
+    setRole(profile.parentRole ?? 'mom');
+    setPhone(profile.phone ?? '');
+    setTimezone(profile.timezone);
+    setUnitSystem(units.system);
+    setWeightDisplay(units.weightDisplay);
+    setConfirmRemoveId('');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingId]);
 
   async function handleSaveProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await onSaveProfile({
-      birthDate: birthDate || undefined,
-      dueDate,
-      gender: gender || undefined,
-      name,
-      preferredUnits: { system: unitSystem, weightDisplay },
-      timezone
-    });
+    // A parent has no due date and no baby gender; a child has no role. Sending
+    // the fields that do not belong would write them into the sheet as blanks
+    // on every save.
+    await onSaveProfile(
+      editingParent
+        ? {
+            birthDate: birthDate || undefined,
+            name,
+            parentRole: role,
+            phone: phone.trim() || undefined,
+            preferredUnits: { system: unitSystem, weightDisplay },
+            timezone
+          }
+        : {
+            birthDate: birthDate || undefined,
+            dueDate,
+            gender: gender || undefined,
+            name,
+            preferredUnits: { system: unitSystem, weightDisplay },
+            timezone
+          }
+    );
     setStatus('Profile saved.');
   }
 
+  /** The JSON export is the whole tracker, so it is not named for one child. */
   async function handleJsonExport() {
     const data = await onExport();
-    downloadFile(`babysteps-theo-${data.exportedAt.slice(0, 10)}.json`, JSON.stringify(data, null, 2), 'application/json');
+    downloadFile(`babysteps-${data.exportedAt.slice(0, 10)}.json`, JSON.stringify(data, null, 2), 'application/json');
     setStatus('JSON exported.');
   }
 
+  // The CSV is what is on screen: this child's entries.
   function handleCsvExport() {
-    downloadFile(`babysteps-theo-events.csv`, eventsToCsv(events), 'text/csv');
+    downloadFile(`babysteps-${fileSlug(profile)}-events.csv`, eventsToCsv(events, profiles), 'text/csv');
     setStatus('CSV exported.');
+  }
+
+  function resetAddForms() {
+    setAdding(null);
+    setChildName('');
+    setChildDueDate('');
+    setChildBirthDate('');
+    setChildGender('');
+    setParentName('');
+    setParentRole('mom');
+    setParentBirthDate('');
+    setParentPhone('');
+  }
+
+  async function handleAddChild(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await onAddChild({
+      birthDate: childBirthDate || undefined,
+      // A child already born needs no due date, so their birth date stands in
+      // for it rather than making anyone recall a date from a year ago.
+      dueDate: childDueDate || childBirthDate,
+      gender: childGender || undefined,
+      name: childName,
+      // Units and timezone describe the household, not the baby.
+      preferredUnits: { system: unitSystem, weightDisplay },
+      timezone
+    });
+    resetAddForms();
+    setStatus(`${getFirstName({ name: childName })} added.`);
+  }
+
+  async function handleAddParent(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await onAddChild({
+      birthDate: parentBirthDate || undefined,
+      kind: 'parent',
+      name: parentName,
+      parentRole,
+      phone: parentPhone.trim() || undefined,
+      // Units and timezone describe the household, not the person.
+      preferredUnits: { system: unitSystem, weightDisplay },
+      timezone
+    });
+    resetAddForms();
+    setStatus(`${getFirstName({ name: parentName })} added.`);
+  }
+
+  async function handleRemovePerson(person: BabyProfile) {
+    if (confirmRemoveId !== person.id) {
+      setConfirmRemoveId(person.id);
+      return;
+    }
+
+    setConfirmRemoveId('');
+    await onRemoveChild(person.id);
+    setStatus(`${getFirstName(person)} removed. Their entries are still in the log.`);
   }
 
   async function handleImport(event: ChangeEvent<HTMLInputElement>) {
@@ -134,7 +278,10 @@ export function SettingsPanel({ events, profile, storeStatus, theme, onConnectSh
       <section className="section-block">
         <div className="section-heading">
           <h1>Settings</h1>
-          <span>{events.length} entries</span>
+          <span>
+            {profiles.length > 1 && `${getFirstName(profile)} · `}
+            {events.length} entries
+          </span>
         </div>
 
         <form className="form-grid" onSubmit={handleSaveProfile}>
@@ -142,23 +289,43 @@ export function SettingsPanel({ events, profile, storeStatus, theme, onConnectSh
             Name
             <input value={name} onChange={(event) => setName(event.target.value)} required />
           </label>
-          <label>
-            Due date
-            <input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} required />
-          </label>
+          {!editingParent && (
+            <label>
+              Due date
+              <input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} required />
+            </label>
+          )}
+          {editingParent && (
+            <label>
+              Role
+              <select value={role} onChange={(event) => setRole(event.target.value as ParentRole)}>
+                {PARENT_ROLES.map((option) => (
+                  <option key={option} value={option}>{parentRoleLabels[option]}</option>
+                ))}
+              </select>
+            </label>
+          )}
+          {editingParent && (
+            <label>
+              Phone
+              <input type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="(000) 000-0000" />
+            </label>
+          )}
           <label>
             Birth date
             <input type="date" value={birthDate} onChange={(event) => setBirthDate(event.target.value)} />
           </label>
-          <label>
-            Gender
-            <select value={gender} onChange={(event) => setGender(event.target.value as BabyGender | '')}>
-              <option value="">Not set</option>
-              {GENDERS.map((option) => (
-                <option key={option} value={option}>{babyGenderLabels[option]}</option>
-              ))}
-            </select>
-          </label>
+          {!editingParent && (
+            <label>
+              Gender
+              <select value={gender} onChange={(event) => setGender(event.target.value as BabyGender | '')}>
+                <option value="">Not set</option>
+                {GENDERS.map((option) => (
+                  <option key={option} value={option}>{babyGenderLabels[option]}</option>
+                ))}
+              </select>
+            </label>
+          )}
           <label className="form-grid-wide">
             Timezone
             <select value={timezone} onChange={(event) => setTimezone(event.target.value)} required>
@@ -189,6 +356,132 @@ export function SettingsPanel({ events, profile, storeStatus, theme, onConnectSh
             Save profile
           </button>
         </form>
+      </section>
+
+      <section className="section-block">
+        <div className="section-heading">
+          <h2>Family</h2>
+          <span>{childCount === 1 ? '1 child' : `${childCount} children`}{parentCount > 0 ? ` · ${parentCount} parent${parentCount === 1 ? '' : 's'}` : ''}</span>
+        </div>
+
+        <ul className="child-list">
+          {profiles.map((person) => {
+            const showing = person.id === profile.id;
+            const confirming = confirmRemoveId === person.id;
+            const parent = isParent(person);
+            const Icon = parent ? UserRound : Baby;
+            const caption = parent
+              ? [parentRoleLabels[person.parentRole ?? 'parent'], person.phone].filter(Boolean).join(' · ')
+              : getDueDateStatus(person);
+
+            return (
+              <li key={person.id} className={showing ? 'showing' : ''}>
+                <button
+                  type="button"
+                  className="child-pick"
+                  aria-pressed={showing}
+                  onClick={() => onSelectChild(person.id)}
+                >
+                  <Icon aria-hidden="true" />
+                  <span>
+                    <strong>{person.name}</strong>
+                    <small>{caption}{showing ? ' · showing now' : ''}</small>
+                  </span>
+                </button>
+                {profiles.length > 1 && (
+                  <button
+                    type="button"
+                    className={confirming ? 'child-remove confirming' : 'child-remove'}
+                    aria-label={confirming ? `Confirm removing ${person.name}` : `Remove ${person.name}`}
+                    onClick={() => handleRemovePerson(person)}
+                  >
+                    <Trash2 aria-hidden="true" />
+                    {confirming && <span>Remove?</span>}
+                  </button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+
+        {adding === 'child' && (
+          <form className="form-grid" onSubmit={handleAddChild}>
+            <label className="form-grid-wide">
+              Child's name
+              <input value={childName} onChange={(event) => setChildName(event.target.value)} required autoFocus />
+            </label>
+            <label>
+              Due date
+              <input type="date" value={childDueDate} onChange={(event) => setChildDueDate(event.target.value)} required={!childBirthDate} />
+            </label>
+            <label>
+              Birth date
+              <input type="date" value={childBirthDate} onChange={(event) => setChildBirthDate(event.target.value)} />
+            </label>
+            <label className="form-grid-wide">
+              Gender
+              <select value={childGender} onChange={(event) => setChildGender(event.target.value as BabyGender | '')}>
+                <option value="">Not set</option>
+                {GENDERS.map((option) => (
+                  <option key={option} value={option}>{babyGenderLabels[option]}</option>
+                ))}
+              </select>
+            </label>
+            <button className="primary-button" type="submit">Add child</button>
+            <button className="secondary-button" type="button" onClick={resetAddForms}>Cancel</button>
+          </form>
+        )}
+
+        {adding === 'parent' && (
+          <form className="form-grid" onSubmit={handleAddParent}>
+            <label className="form-grid-wide">
+              Parent's name
+              <input value={parentName} onChange={(event) => setParentName(event.target.value)} required autoFocus />
+            </label>
+            <label>
+              Role
+              <select value={parentRole} onChange={(event) => setParentRole(event.target.value as ParentRole)}>
+                {PARENT_ROLES.map((option) => (
+                  <option key={option} value={option}>{parentRoleLabels[option]}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Birth date
+              <input type="date" value={parentBirthDate} onChange={(event) => setParentBirthDate(event.target.value)} />
+            </label>
+            <label className="form-grid-wide">
+              Phone
+              <input
+                type="tel"
+                value={parentPhone}
+                onChange={(event) => setParentPhone(event.target.value)}
+                placeholder="(000) 000-0000"
+              />
+            </label>
+            <button className="primary-button" type="submit">Add parent</button>
+            <button className="secondary-button" type="button" onClick={resetAddForms}>Cancel</button>
+          </form>
+        )}
+
+        {adding === null && (
+          <div className="settings-actions add-person">
+            <button className="tool-button" type="button" onClick={() => setAdding('child')}>
+              <Plus aria-hidden="true" />
+              <span>Add a child</span>
+            </button>
+            <button className="tool-button" type="button" onClick={() => setAdding('parent')}>
+              <Plus aria-hidden="true" />
+              <span>Add a parent</span>
+            </button>
+          </div>
+        )}
+
+        <p className="field-note">
+          Everyone keeps their own entries and reports — a child's growth and milestones, a parent's sleep and, for a
+          mom, her cycle. Parents are also the guardian list on the Care page and the names an entry can be logged
+          under. Removing someone takes them out of the switcher; their entries stay in the log.
+        </p>
       </section>
 
       <section className="settings-actions" aria-label="Data tools">

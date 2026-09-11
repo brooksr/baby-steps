@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createFamilyProfile } from '../domain/family';
 import { createDefaultBabyProfile, getLocalDateKey } from '../domain/dates';
 import type { FeedEvent } from '../domain/types';
 import { QuickAddDialog } from './QuickAddDialog';
@@ -185,5 +186,95 @@ describe('QuickAddDialog', () => {
     await user.click(screen.getByRole('button', { name: /save/i }));
 
     expect(onSave.mock.calls[0][0].amountOz).toBeCloseTo(4.06, 2);
+  });
+
+  describe('who logged it', () => {
+    const baby = createDefaultBabyProfile();
+    const mom = createFamilyProfile({ kind: 'parent', name: 'Sara Roche', parentRole: 'mom' }, [baby]);
+    const dad = createFamilyProfile({ kind: 'parent', name: 'Brooks Roche', parentRole: 'dad' }, [baby, mom]);
+
+    beforeEach(() => {
+      localStorage.clear();
+    });
+
+    it('records the caregiver and remembers them for the next entry', async () => {
+      const user = userEvent.setup();
+      const onSave = vi.fn().mockResolvedValue(undefined);
+
+      const { unmount } = render(
+        <QuickAddDialog
+          activeTimers={{}}
+          eventType="diaper"
+          profile={baby}
+          profiles={[baby, mom, dad]}
+          onClose={vi.fn()}
+          onSave={onSave}
+          onTimerStart={vi.fn()}
+          onTimerStop={vi.fn()}
+        />
+      );
+
+      await user.selectOptions(screen.getByLabelText(/logged by/i), dad.id);
+      await user.click(screen.getByRole('button', { name: /save/i }));
+
+      expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ caregiverId: dad.id, type: 'diaper' }));
+      unmount();
+
+      // A phone belongs to one person: the next entry opens on the same one.
+      render(
+        <QuickAddDialog
+          activeTimers={{}}
+          eventType="diaper"
+          profile={baby}
+          profiles={[baby, mom, dad]}
+          onClose={vi.fn()}
+          onSave={vi.fn()}
+          onTimerStart={vi.fn()}
+          onTimerStop={vi.fn()}
+        />
+      );
+
+      expect(screen.getByLabelText(/logged by/i)).toHaveValue(dad.id);
+    });
+
+    it('saves no caregiver when none is picked', async () => {
+      const user = userEvent.setup();
+      const onSave = vi.fn().mockResolvedValue(undefined);
+
+      render(
+        <QuickAddDialog
+          activeTimers={{}}
+          eventType="diaper"
+          profile={baby}
+          profiles={[baby, mom]}
+          onClose={vi.fn()}
+          onSave={onSave}
+          onTimerStart={vi.fn()}
+          onTimerStop={vi.fn()}
+        />
+      );
+
+      await user.click(screen.getByRole('button', { name: /save/i }));
+
+      expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ caregiverId: undefined }));
+    });
+
+    // A parent logging their own sleep is not doing it for someone else.
+    it('does not ask on a parent\'s own entry', () => {
+      render(
+        <QuickAddDialog
+          activeTimers={{}}
+          eventType="sleep"
+          profile={mom}
+          profiles={[baby, mom, dad]}
+          onClose={vi.fn()}
+          onSave={vi.fn()}
+          onTimerStart={vi.fn()}
+          onTimerStop={vi.fn()}
+        />
+      );
+
+      expect(screen.queryByLabelText(/logged by/i)).toBeNull();
+    });
   });
 });

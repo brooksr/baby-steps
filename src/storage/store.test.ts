@@ -67,4 +67,80 @@ describe('local baby tracker store', () => {
       { amountOz: 3, contents: 'formula', method: 'bottle', type: 'feed' }
     ]);
   });
+
+  it('keeps each child\'s entries to themselves', async () => {
+    const store = makeStore();
+    const theo = await store.initialize();
+    const mila = await store.addProfile({ dueDate: '2028-03-04', name: 'Mila Roche' });
+
+    await store.addEvent({ kind: 'wet', startedAt: '2026-09-02T13:00:00.000Z', type: 'diaper' });
+    await store.addEvent({ babyId: mila.id, kind: 'dirty', startedAt: '2028-03-05T13:00:00.000Z', type: 'diaper' });
+
+    const theoSnapshot = await store.snapshot();
+    const milaSnapshot = await store.snapshot({ babyId: mila.id });
+
+    // No babyId means the first child, so an existing device is unaffected.
+    expect(theoSnapshot.profile.id).toBe(theo.id);
+    expect(theoSnapshot.events.map((event) => event.startedAt)).toEqual(['2026-09-02T13:00:00.000Z']);
+    expect(milaSnapshot.profile.id).toBe(mila.id);
+    expect(milaSnapshot.events.map((event) => event.startedAt)).toEqual(['2028-03-05T13:00:00.000Z']);
+    // Both snapshots carry the whole switcher, oldest first.
+    expect(theoSnapshot.profiles.map((child) => child.name)).toEqual(['Theo Roche', 'Mila Roche']);
+  });
+
+  it('patches the child a save names, not whoever is first', async () => {
+    const store = makeStore();
+    const theo = await store.initialize();
+    const mila = await store.addProfile({ dueDate: '2028-03-04', name: 'Mila Roche' });
+
+    await store.saveProfile({ birthDate: '2028-03-06', id: mila.id });
+
+    const profiles = await store.listProfiles();
+    expect(profiles.find((child) => child.id === mila.id)?.birthDate).toBe('2028-03-06');
+    expect(profiles.find((child) => child.id === theo.id)?.birthDate).toBeUndefined();
+  });
+
+  // Removing a child is not a purge: it leaves the switcher, its entries stay.
+  it('removes a child without touching their entries', async () => {
+    const store = makeStore();
+    const mila = await store.addProfile({ dueDate: '2028-03-04', name: 'Mila Roche' });
+    await store.addEvent({ babyId: mila.id, kind: 'wet', startedAt: '2028-03-05T13:00:00.000Z', type: 'diaper' });
+
+    await store.deleteProfile(mila.id);
+
+    expect((await store.listProfiles()).map((child) => child.id)).not.toContain(mila.id);
+    expect((await store.listEvents({ babyId: mila.id }))).toHaveLength(1);
+  });
+
+  it('exports and imports every child, not just the first', async () => {
+    const source = makeStore();
+    await source.initialize();
+    const mila = await source.addProfile({ dueDate: '2028-03-04', name: 'Mila Roche' });
+    await source.addEvent({ kind: 'wet', startedAt: '2026-09-02T13:00:00.000Z', type: 'diaper' });
+    await source.addEvent({ babyId: mila.id, kind: 'dirty', startedAt: '2028-03-05T13:00:00.000Z', type: 'diaper' });
+
+    const exported = await source.exportData();
+    expect(exported.profiles?.map((child) => child.name)).toEqual(['Theo Roche', 'Mila Roche']);
+    expect(exported.events).toHaveLength(2);
+
+    const target = makeStore();
+    await target.importData(exported, { mode: 'replace' });
+
+    expect((await target.listProfiles()).map((child) => child.name)).toEqual(['Theo Roche', 'Mila Roche']);
+    expect(await target.listEvents({ babyId: mila.id })).toHaveLength(1);
+  });
+
+  // An export taken before the app tracked siblings carries one profile only.
+  it('imports a single-child export', async () => {
+    const source = makeStore();
+    const profile = await source.initialize();
+    await source.addEvent({ kind: 'wet', startedAt: '2026-09-02T13:00:00.000Z', type: 'diaper' });
+    const { events } = await source.exportData();
+
+    const target = makeStore();
+    await target.importData({ events, exportedAt: new Date().toISOString(), profile, version: 1 }, { mode: 'replace' });
+
+    expect((await target.listProfiles()).map((child) => child.name)).toEqual(['Theo Roche']);
+    expect(await target.listEvents()).toHaveLength(1);
+  });
 });

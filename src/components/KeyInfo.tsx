@@ -1,12 +1,36 @@
 import { Bed, Milk, Navigation, Pencil, Phone, Pill, Stethoscope, Wind, X } from 'lucide-react';
 import { FormEvent, useState } from 'react';
+import { getCaregivers } from '../domain/family';
 import { EMERGENCY_LINES, HOSPITAL, OB } from '../domain/medicalInfo';
-import type { BabyProfile, CareContact, CareInfo, FeedingType, MeasurementSystem } from '../domain/types';
+import { parentRoleLabels, type BabyProfile, type CareContact, type CareInfo, type FeedingType, type MeasurementSystem } from '../domain/types';
 import { formatVolume, getPreferredUnits, toStoredVolume, toUnitVolume } from '../domain/units';
 
 interface KeyInfoProps {
   profile: BabyProfile;
+  /** Everyone tracked — the parents among them are the guardians. */
+  profiles?: BabyProfile[];
   onSave: (patch: Partial<BabyProfile>) => Promise<void>;
+}
+
+/**
+ * The guardians are the parent profiles, so the two records cannot drift apart.
+ * A household that has not added parents yet still sees whatever the old
+ * `careInfo.guardians` list holds — those rows are still in the sheet, and this
+ * card is the wrong place to lose a phone number from.
+ */
+function getGuardians(profiles: BabyProfile[], info: CareInfo): CareContact[] {
+  const parents = getCaregivers(profiles);
+
+  if (parents.length > 0) {
+    return parents.map((parent) => ({
+      // The role rides along in the name, which is the only line this card
+      // gives a contact — "Sara Roche · Mom" reads the way you would say it.
+      name: parent.parentRole ? `${parent.name} · ${parentRoleLabels[parent.parentRole]}` : parent.name,
+      phone: parent.phone
+    }));
+  }
+
+  return info.guardians ?? [];
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -110,11 +134,6 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 function makeDraft(info: CareInfo, unitSystem: MeasurementSystem) {
   return {
     homeAddress: info.homeAddress ?? '',
-    // guardians
-    g1Name: info.guardians?.[0]?.name ?? '',
-    g1Phone: info.guardians?.[0]?.phone ?? '',
-    g2Name: info.guardians?.[1]?.name ?? '',
-    g2Phone: info.guardians?.[1]?.phone ?? '',
     // care team
     hospitalName: info.hospital?.name ?? HOSPITAL.name,
     hospitalAddress: info.hospital?.address ?? HOSPITAL.address,
@@ -158,18 +177,16 @@ function makeDraft(info: CareInfo, unitSystem: MeasurementSystem) {
 
 type Draft = ReturnType<typeof makeDraft>;
 
-function draftToCareInfo(d: Draft, unitSystem: MeasurementSystem): CareInfo {
-  const guardians: CareContact[] = [];
-  if (d.g1Name) guardians.push({ name: d.g1Name, phone: d.g1Phone || undefined });
-  if (d.g2Name) guardians.push({ name: d.g2Name, phone: d.g2Phone || undefined });
-
+function draftToCareInfo(d: Draft, unitSystem: MeasurementSystem, existing: CareInfo): CareInfo {
   const ec: CareContact[] = [];
   if (d.ec1Name) ec.push({ name: d.ec1Name, phone: d.ec1Phone || undefined });
   if (d.ec2Name) ec.push({ name: d.ec2Name, phone: d.ec2Phone || undefined });
 
   return {
     homeAddress: d.homeAddress || undefined,
-    guardians: guardians.length ? guardians : undefined,
+    // Carried through untouched: the guardians are the parent profiles now, but
+    // an old list is still someone's stored data and this form no longer edits it.
+    guardians: existing.guardians,
     hospital: d.hospitalName ? { name: d.hospitalName, address: d.hospitalAddress || undefined } : undefined,
     ob: d.obName ? { name: d.obName, phone: d.obPhone || undefined, address: d.obAddress || undefined } : undefined,
     pediatrician: d.pedName ? { name: d.pedName, phone: d.pedPhone || undefined, address: d.pedAddress || undefined } : undefined,
@@ -193,7 +210,7 @@ function draftToCareInfo(d: Draft, unitSystem: MeasurementSystem): CareInfo {
 
 // ── main component ────────────────────────────────────────────────────────────
 
-export function KeyInfo({ profile, onSave }: KeyInfoProps) {
+export function KeyInfo({ profile, profiles = [], onSave }: KeyInfoProps) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -209,7 +226,7 @@ export function KeyInfo({ profile, onSave }: KeyInfoProps) {
     e.preventDefault();
     setSaving(true);
     try {
-      await onSave({ careInfo: draftToCareInfo(d, unitSystem) });
+      await onSave({ careInfo: draftToCareInfo(d, unitSystem, info) });
       setEditing(false);
     } finally {
       setSaving(false);
@@ -241,10 +258,10 @@ export function KeyInfo({ profile, onSave }: KeyInfoProps) {
           <div />
 
           <SectionLabel>Parents / guardians</SectionLabel>
-          <Field label="Guardian 1 name" name="g1Name" value={d.g1Name} onChange={set('g1Name')} />
-          <Field label="Phone" name="g1Phone" value={d.g1Phone} onChange={set('g1Phone')} placeholder="(000) 000-0000" />
-          <Field label="Guardian 2 name" name="g2Name" value={d.g2Name} onChange={set('g2Name')} />
-          <Field label="Phone" name="g2Phone" value={d.g2Phone} onChange={set('g2Phone')} placeholder="(000) 000-0000" />
+          <p className="field-note form-grid-wide">
+            Parents are people the tracker knows — add them under Settings → Family, with a phone number, and they show
+            here. That way one record covers the guardian list, the switcher, and the "Logged by" picker.
+          </p>
 
           <SectionLabel>ER / Hospital</SectionLabel>
           <Field label="Name" name="hospitalName" value={d.hospitalName} onChange={set('hospitalName')} />
@@ -335,7 +352,8 @@ export function KeyInfo({ profile, onSave }: KeyInfoProps) {
   const home = info.homeAddress;
   const hospital = info.hospital ?? { name: HOSPITAL.name, address: HOSPITAL.address };
   const ob = info.ob ?? { name: OB.name, address: OB.address };
-  const hasAnyData = Boolean(info.guardians?.length || info.pediatrician || info.feedingType ||
+  const guardians = getGuardians(profiles, info);
+  const hasAnyData = Boolean(guardians.length || info.pediatrician || info.feedingType ||
     info.safeSleep || info.currentMedications || info.skinNotes);
 
   return (
@@ -351,8 +369,8 @@ export function KeyInfo({ profile, onSave }: KeyInfoProps) {
       </div>
 
       <div className="status-list">
-        {info.guardians?.map((g, i) => (
-          <ContactCard key={i} contact={g} icon={<Phone aria-hidden="true" />} />
+        {guardians.map((guardian) => (
+          <ContactCard key={guardian.name} contact={guardian} icon={<Phone aria-hidden="true" />} />
         ))}
 
         <ContactCard contact={hospital} urgent homeAddress={home} />
