@@ -2,7 +2,7 @@ import type { NewProfileInput } from '../domain/family';
 import type { BabyProfile, CareEvent, CreateCareEventInput, TrackerExport, TrackerSnapshot } from '../domain/types';
 import { getGoogleSheetsAccessToken, GoogleAuthRequiredError, hasGoogleClientId, requestGoogleSheetsAccessToken } from './googleSheetsAuth';
 import { createGoogleSheetsBabyTrackerStore, GOOGLE_SHEET_ID, GOOGLE_SHEET_URL, GoogleSheetsApi } from './googleSheetsStore';
-import { createLocalBabyTrackerStore, type BabyTrackerStore, type EventQuery, type ImportOptions, type StoreStatus } from './store';
+import { createLocalBabyTrackerStore, type BabyTrackerStore, type CaregiverAssignment, type EventQuery, type ImportOptions, type StoreStatus } from './store';
 
 export function createHybridBabyTrackerStore(): BabyTrackerStore {
   const localStore = createLocalBabyTrackerStore();
@@ -79,6 +79,9 @@ export function createHybridBabyTrackerStore(): BabyTrackerStore {
     },
     addProfile(input: NewProfileInput) {
       return trySheet(() => currentStore().addProfile(input), () => localStore.addProfile(input));
+    },
+    assignCaregivers(assignments: CaregiverAssignment[]) {
+      return trySheet(() => currentStore().assignCaregivers(assignments), () => localStore.assignCaregivers(assignments));
     },
     async clear() {
       await currentStore().clear();

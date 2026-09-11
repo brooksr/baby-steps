@@ -15,6 +15,7 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof SettingsPane
     storeStatus: null,
     theme: 'light' as const,
     onAddChild: vi.fn().mockResolvedValue(undefined),
+    onApplyShifts: vi.fn().mockResolvedValue({ attributed: 0, skipped: 0, sleepsAdded: 0 }),
     onConnectSheet: vi.fn(),
     onExport: vi.fn(),
     onImport: vi.fn(),

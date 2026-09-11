@@ -260,9 +260,71 @@ Care view adds/deletes the corresponding event via `App.handleToggleRef`.
   sleep started (before 10am belongs to the night before), so one night is one
   row rather than splitting at midnight. Over 16h is a timer left running, not a
   sleep, and is dropped the way a 4h+ feed is.
-  - `interruptions` is when a baby event landed *inside this parent's own logged
-    sleep*. It needs no attribution and asks a different question from the care
-    counts: not who got up, but whose sleep was broken into. Keep them separate.
+  - **Time in bed is not time asleep.** `getRest()` takes the span someone went
+    down and got up, subtracts every wake-up, and returns what was left. A logged
+    sleep entry stays a plain record of the hours in bed; the subtraction is the
+    report's job, so the stored data never has to be recomputed.
+    - Baby entries within `wakeupClusterMinutes` (30) of each other are **one**
+      wake-up — a feed, a change and a re-settle at 2am is one broken night.
+    - Every wake-up also costs `fallbackAsleepMinutes` (15 by default,
+      configurable on the Rest control) for settling back down. Nobody logs the
+      settling, so it is a dial rather than a measurement — and it is clamped at
+      getting-up time.
+    - A stretch under `minRestMinutes` (30) between wake-ups **is not counted as
+      rest at all**. Twenty minutes with your eyes shut between feeds is not
+      sleep, and counting it is how a shattered night reads as seven hours.
+    - Which entries wake *you* is where `caregiverId` earns its place: **only an
+      entry recorded against you breaks your sleep.** One naming the other parent
+      cost them the night; one naming nobody is charged to no one. An earlier
+      version charged unattributed entries to whoever was asking, which billed a
+      broken night to the parent who slept through it — the opposite of what
+      recording a caregiver is for. `care.unattributed` is what to check when a
+      night looks suspiciously unbroken.
+    - A parent's Home counts an entry as **today** when it started today *or
+      ended* today, so the sleep you just got up from — which began last evening
+      — is on the screen you look at in the morning. Its hero card counts from
+      the sleep's **end** ("awake for"), since that is the question anyone has at
+      breakfast; a sleep with no end is still running and counts from its start.
+    - **Overlapping sleep entries are merged**, because nobody is in bed twice at
+      once. A backfilled night and the same night logged by hand otherwise added
+      up to a fourteen-hour night. Spans that merely touch — a night and the nap
+      after it — stay two sessions.
+    - A night's `sleepMinutes` sums the rest across *all* its sessions while
+      `longestStretchMinutes` is the longest single run, so the longest stretch
+      sits below the nightly total whenever a night was broken. The cards say
+      "unbroken, per night" so that reads as arithmetic rather than as a bug.
+
+### Night shift (Settings) — currently OFF
+
+**`SHOW_NIGHT_SHIFT` in `SettingsPanel.tsx` is `false`.** This was a one-time
+pass to fill in months of history; it has been run, and a button that rewrites
+the shared log across a date range is not worth leaving out. Everything behind it
+is intact and tested — flip the flag to bring the section back, and adjust the
+windows in `domain/nightShift.ts`.
+
+A household that splits the night says so once instead of picking a name on
+every entry. `domain/nightShift.ts` holds the windows (9:30pm–5am and 5am–9am by
+default) and two pure planners; Settings runs them over the whole log.
+
+- **Both parents get the same hours in bed** (`DEFAULT_SLEEP_WINDOW`). The shifts
+  say who *got up*, not who was asleep — that is the whole point, since the
+  off-duty parent then sleeps through the night entries in the report.
+- `planParentSleeps` derives each entry's id from the parent, the night **and the
+  window**, so a second run proposes the same entries and the merge finds them
+  already there — and a nap never collides with the night it follows. It stops
+  before a night that has not finished.
+- The night-shift parent can also be given a `DEFAULT_NAP_WINDOW` (6–8am) nap.
+  `getNightKey` keys anything before 10am to the night before, so the nap adds to
+  that night's rest rather than opening a row of its own — which is how it is
+  actually lived.
+- `planAttribution` **never overwrites an entry that already names someone** — a
+  caregiver recorded by hand is better evidence than a rule about the clock — and
+  leaves anything outside the windows alone.
+- `store.assignCaregivers()` writes the batch in **one** request, down the
+  caregiver column only. A row at a time would be hundreds of round trips, and
+  rewriting whole rows would clobber another caregiver's concurrent edit.
+- The Apply button arms on the first tap and acts on the second: it writes across
+  months of a shared log.
 
 ### Who logged it (`caregiverId`)
 

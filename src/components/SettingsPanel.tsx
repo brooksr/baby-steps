@@ -1,6 +1,8 @@
 import { BookOpen, Baby, Download, Moon, Plus, Sun, Trash2, Upload, UserRound } from 'lucide-react';
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react';
-import { getFirstName, isParent, type NewProfileInput } from '../domain/family';
+import { getCaregivers, getFirstName, isParent, type NewProfileInput } from '../domain/family';
+import { DEFAULT_MORNING_SHIFT, DEFAULT_NAP_WINDOW, DEFAULT_NIGHT_SHIFT, DEFAULT_SLEEP_WINDOW, formatShiftTime } from '../domain/nightShift';
+import type { ShiftPlan, ShiftResult } from '../domain/nightShift';
 import { getDueDateStatus, getTimezoneOptions } from '../domain/dates';
 import type { Theme } from '../domain/theme';
 import { babyGenderLabels, parentRoleLabels, type BabyGender, type BabyProfile, type CareEvent, type MeasurementSystem, type ParentRole, type TrackerExport, type WeightDisplay } from '../domain/types';
@@ -19,11 +21,24 @@ interface SettingsPanelProps {
   onExport: () => Promise<TrackerExport>;
   onImport: (data: TrackerExport) => Promise<void>;
   onOpenLearn: () => void;
+  /** Runs the night-shift backfill: parent sleeps, then attribution. */
+  onApplyShifts: (plan: ShiftPlan) => Promise<ShiftResult>;
   onRemoveChild: (babyId: string) => Promise<void>;
   onSaveProfile: (profile: Partial<BabyProfile>) => Promise<void>;
   onSelectChild: (babyId: string) => Promise<void>;
   onThemeChange: (theme: Theme) => void;
 }
+
+/**
+ * The night-shift backfill is **off**. It was a one-time pass to fill in months
+ * of history, that pass has been run, and leaving a button that rewrites the
+ * shared log across a date range is not something to keep lying around.
+ *
+ * Everything behind it is intact and tested (`domain/nightShift.ts`,
+ * `store.assignCaregivers`, `App.handleApplyShifts`) — flip this to `true` to
+ * bring the section back, and adjust the windows in `domain/nightShift.ts`.
+ */
+const SHOW_NIGHT_SHIFT = false;
 
 const GENDERS = Object.keys(babyGenderLabels) as BabyGender[];
 const PARENT_ROLES = Object.keys(parentRoleLabels) as ParentRole[];
@@ -95,6 +110,7 @@ export function SettingsPanel({
   onConnectSheet,
   onExport,
   onImport,
+  onApplyShifts,
   onOpenLearn,
   onRemoveChild,
   onSaveProfile,
@@ -127,6 +143,15 @@ export function SettingsPanel({
   // Removal is one tap away from the wrong person, so it asks first.
   const [confirmRemoveId, setConfirmRemoveId] = useState('');
   const editingParent = isParent(profile);
+  const parents = useMemo(() => getCaregivers(profiles), [profiles]);
+  const [nightId, setNightId] = useState('');
+  const [morningId, setMorningId] = useState('');
+  const [napId, setNapId] = useState('');
+  const [shiftFrom, setShiftFrom] = useState('');
+  const [applyingShifts, setApplyingShifts] = useState(false);
+  // Backfilling months of someone else's log is not a button to press twice by
+  // accident, so the first tap only arms it.
+  const [confirmShifts, setConfirmShifts] = useState(false);
 
   // Enumerating every zone is not free, and the saved one has to stay in the
   // list even when this browser wouldn't have offered it.
@@ -248,6 +273,32 @@ export function SettingsPanel({
     setConfirmRemoveId('');
     await onRemoveChild(person.id);
     setStatus(`${getFirstName(person)} removed. Their entries are still in the log.`);
+  }
+
+  async function handleApplyShifts(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!confirmShifts) {
+      setConfirmShifts(true);
+      return;
+    }
+
+    setConfirmShifts(false);
+    setApplyingShifts(true);
+    try {
+      const result = await onApplyShifts({
+        from: shiftFrom,
+        morning: morningId ? { ...DEFAULT_MORNING_SHIFT, caregiverId: morningId } : undefined,
+        nap: napId ? { ...DEFAULT_NAP_WINDOW, caregiverId: napId } : undefined,
+        night: nightId ? { ...DEFAULT_NIGHT_SHIFT, caregiverId: nightId } : undefined
+      });
+
+      setStatus(
+        `${result.sleepsAdded} night${result.sleepsAdded === 1 ? '' : 's'} of sleep added · ${result.attributed} entr${result.attributed === 1 ? 'y' : 'ies'} attributed${result.skipped > 0 ? ` · ${result.skipped} left as they were` : ''}.`
+      );
+    } finally {
+      setApplyingShifts(false);
+    }
   }
 
   async function handleImport(event: ChangeEvent<HTMLInputElement>) {
@@ -483,6 +534,71 @@ export function SettingsPanel({
           under. Removing someone takes them out of the switcher; their entries stay in the log.
         </p>
       </section>
+
+      {SHOW_NIGHT_SHIFT && parents.length > 0 && (
+        <section className="section-block">
+          <div className="section-heading">
+            <h2>Night shift</h2>
+            <span>in bed {formatShiftTime(DEFAULT_SLEEP_WINDOW.start)}–{formatShiftTime(DEFAULT_SLEEP_WINDOW.end)}</span>
+          </div>
+
+          <form className="form-grid" onSubmit={handleApplyShifts}>
+            <label>
+              {formatShiftTime(DEFAULT_NIGHT_SHIFT.start)} – {formatShiftTime(DEFAULT_NIGHT_SHIFT.end)}
+              <select value={nightId} onChange={(event) => { setNightId(event.target.value); setConfirmShifts(false); }}>
+                <option value="">Nobody</option>
+                {parents.map((person) => (
+                  <option key={person.id} value={person.id}>{person.name}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              {formatShiftTime(DEFAULT_MORNING_SHIFT.start)} – {formatShiftTime(DEFAULT_MORNING_SHIFT.end)}
+              <select value={morningId} onChange={(event) => { setMorningId(event.target.value); setConfirmShifts(false); }}>
+                <option value="">Nobody</option>
+                {parents.map((person) => (
+                  <option key={person.id} value={person.id}>{person.name}</option>
+                ))}
+              </select>
+            </label>
+            <label className="form-grid-wide">
+              Nap {formatShiftTime(DEFAULT_NAP_WINDOW.start)} – {formatShiftTime(DEFAULT_NAP_WINDOW.end)}
+              <select value={napId} onChange={(event) => { setNapId(event.target.value); setConfirmShifts(false); }}>
+                <option value="">Nobody</option>
+                {parents.map((person) => (
+                  <option key={person.id} value={person.id}>{person.name}</option>
+                ))}
+              </select>
+            </label>
+            <label className="form-grid-wide">
+              Back to
+              <input
+                type="date"
+                value={shiftFrom}
+                onChange={(event) => { setShiftFrom(event.target.value); setConfirmShifts(false); }}
+                required
+              />
+            </label>
+            <button
+              className={confirmShifts ? 'primary-button form-grid-wide confirming' : 'primary-button form-grid-wide'}
+              type="submit"
+              disabled={applyingShifts || (!nightId && !morningId && !napId)}
+            >
+              {applyingShifts ? 'Applying…' : confirmShifts ? 'Apply — tap again to confirm' : 'Apply to entries'}
+            </button>
+          </form>
+
+          <p className="field-note">
+            Both parents get a sleep entry for every night from {formatShiftTime(DEFAULT_SLEEP_WINDOW.start)} to{' '}
+            {formatShiftTime(DEFAULT_SLEEP_WINDOW.end)}; the shifts above say who <em>got up</em>, not who was asleep.
+            The babies' entries in each window are recorded against that parent, so whoever was off duty sleeps through
+            them in the report. An entry that already names someone is left exactly as it is, and so is anything
+            outside these hours. Whoever takes the night can also be given a{' '}
+            {formatShiftTime(DEFAULT_NAP_WINDOW.start)}–{formatShiftTime(DEFAULT_NAP_WINDOW.end)} nap, which counts
+            towards the same night's rest.
+          </p>
+        </section>
+      )}
 
       <section className="settings-actions" aria-label="Data tools">
         <button className="tool-button" type="button" onClick={handleJsonExport}>

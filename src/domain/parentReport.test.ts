@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getNightKey, getParentReport, isNightDuty } from './parentReport';
+import { getNightKey, getParentReport, getRest, isNightDuty } from './parentReport';
 import type { CareEvent } from './types';
 
 function sleep(startedAt: string, endedAt: string): CareEvent {
@@ -132,12 +132,159 @@ describe('a parent report', () => {
       expect(report.care.mine.total).toBe(0);
     });
 
-    // Whose sleep was broken is not the same question as who got up.
-    it('counts an interruption whoever is recorded as having handled it', () => {
+    // A wakeup the other parent got up for is still the household's work, but
+    // it did not break this parent's sleep.
+    it('keeps the other parent\'s wakeup in the load but out of this night', () => {
       const report = getParentReport([night], [feed('2026-03-05T01:00:00', 'bottle', 'dad-roche')], 'mom-roche');
 
-      expect(report.nights[0].interruptions).toBe(1);
+      expect(report.care.total).toBe(1);
       expect(report.care.mine.total).toBe(0);
+      expect(report.nights[0].interruptions).toBe(0);
+    });
+  });
+
+  describe('time in bed is not time asleep', () => {
+    // 21:30 to 05:00 is 7h30 in bed.
+    const night = ['2026-08-06T21:30:00', '2026-08-07T05:00:00'] as const;
+
+    it('counts the whole span when nothing woke them', () => {
+      const rest = getRest(...night);
+
+      expect(rest).toMatchObject({ awakeMinutes: 0, inBedMinutes: 450, longestRestMinutes: 450, restMinutes: 450 });
+      expect(rest.wakeups).toHaveLength(0);
+    });
+
+    // One feed at 01:00: asleep 21:30–01:00, settling until 01:15, then 01:15–05:00.
+    it('charges the wakeup and the settling after it', () => {
+      const rest = getRest(...night, [feed('2026-08-07T01:00:00')]);
+
+      expect(rest.wakeups).toHaveLength(1);
+      expect(rest.restMinutes).toBe(210 + 225);
+      expect(rest.awakeMinutes).toBe(15);
+      expect(rest.longestRestMinutes).toBe(225);
+    });
+
+    // A feed, a change and a re-settle inside half an hour is one broken night,
+    // not three.
+    it('reads entries within the cluster window as a single wakeup', () => {
+      const rest = getRest(...night, [
+        feed('2026-08-07T01:00:00'),
+        feed('2026-08-07T01:20:00'),
+        feed('2026-08-07T01:45:00')
+      ]);
+
+      expect(rest.wakeups).toHaveLength(1);
+      expect(rest.wakeups[0].events).toBe(3);
+      // Awake 01:00–01:45 plus 15 settling.
+      expect(rest.awakeMinutes).toBe(60);
+    });
+
+    it('splits entries further apart than the window into separate wakeups', () => {
+      const rest = getRest(...night, [feed('2026-08-07T01:00:00'), feed('2026-08-07T02:00:00')]);
+
+      expect(rest.wakeups).toHaveLength(2);
+    });
+
+    // Twenty minutes with your eyes shut between feeds is not sleep.
+    it('drops a stretch too short to be rest', () => {
+      const rest = getRest(...night, [feed('2026-08-07T01:00:00'), feed('2026-08-07T01:40:00')]);
+
+      // 21:30–01:00 counts; 01:15–01:40 is 25 minutes and does not; then 01:55–05:00.
+      expect(rest.restMinutes).toBe(210 + 185);
+      expect(rest.longestRestMinutes).toBe(210);
+    });
+
+    it('takes the thresholds as options', () => {
+      const rest = getRest(...night, [feed('2026-08-07T01:00:00')], { fallbackAsleepMinutes: 30 });
+
+      expect(rest.restMinutes).toBe(210 + 210);
+      expect(rest.awakeMinutes).toBe(30);
+    });
+
+    // Woken five minutes before getting up: the settling has nowhere to run, so
+    // it costs nothing beyond the minutes actually lost.
+    it('clamps settling at getting-up time', () => {
+      const rest = getRest(...night, [feed('2026-08-07T04:55:00')]);
+
+      expect(rest.restMinutes).toBe(445);
+      expect(rest.awakeMinutes).toBe(5);
+    });
+
+    // The whole point of recording a caregiver: a wakeup the other parent
+    // handled did not cost this one any sleep.
+    it('ignores a wakeup recorded against the other parent', () => {
+      const mine = getParentReport(
+        [sleep(...night)],
+        [feed('2026-08-07T01:00:00', 'nursing', 'brooks-roche')],
+        'jenni-roche'
+      );
+
+      expect(mine.nights[0].sleepMinutes).toBe(450);
+      expect(mine.nights[0].interruptions).toBe(0);
+    });
+
+    // Charging a broken night to the parent who slept through it is exactly
+    // what recording a caregiver is there to prevent.
+    it('charges an entry naming nobody to nobody', () => {
+      const report = getParentReport([sleep(...night)], [feed('2026-08-07T01:00:00')], 'jenni-roche');
+
+      expect(report.nights[0].interruptions).toBe(0);
+      expect(report.nights[0].sleepMinutes).toBe(450);
+      // It is still the household's work, and still counted as unattributed.
+      expect(report.care.total).toBe(1);
+      expect(report.care.unattributed).toBe(1);
+    });
+
+    it('counts a wakeup recorded against this parent', () => {
+      const report = getParentReport(
+        [sleep(...night)],
+        [feed('2026-08-07T01:00:00', 'nursing', 'jenni-roche')],
+        'jenni-roche'
+      );
+
+      expect(report.nights[0].interruptions).toBe(1);
+      expect(report.nights[0].sleepMinutes).toBe(435);
+      expect(report.nights[0].inBedMinutes).toBe(450);
+    });
+
+    // Asking about the household rather than a person still counts everything.
+    it('counts every entry when no parent is named', () => {
+      const report = getParentReport([sleep(...night)], [feed('2026-08-07T01:00:00')]);
+
+      expect(report.nights[0].interruptions).toBe(1);
+    });
+  });
+
+  // A backfilled night and the same night logged by hand cover the same hours;
+  // adding them together reported a fourteen-hour night.
+  describe('overlapping entries', () => {
+    it('merges two entries covering the same night', () => {
+      const report = getParentReport([
+        sleep('2026-08-06T21:30:00', '2026-08-07T05:00:00'),
+        sleep('2026-08-06T22:30:00', '2026-08-07T05:00:00')
+      ]);
+
+      expect(report.nights).toHaveLength(1);
+      expect(report.nights[0]).toMatchObject({ inBedMinutes: 450, sessions: 1, sleepMinutes: 450 });
+    });
+
+    it('extends the merged span to the later end', () => {
+      const report = getParentReport([
+        sleep('2026-08-06T21:30:00', '2026-08-07T04:00:00'),
+        sleep('2026-08-06T23:00:00', '2026-08-07T06:00:00')
+      ]);
+
+      expect(report.nights[0].inBedMinutes).toBe(510);
+    });
+
+    // A night and the nap after it are two separate stretches, not one.
+    it('keeps spans that only touch as two sessions', () => {
+      const report = getParentReport([
+        sleep('2026-08-06T21:30:00', '2026-08-07T05:00:00'),
+        sleep('2026-08-07T06:00:00', '2026-08-07T08:00:00')
+      ]);
+
+      expect(report.nights[0]).toMatchObject({ inBedMinutes: 570, sessions: 2 });
     });
   });
 });

@@ -1,6 +1,6 @@
 import { Bed, Calendar, CircleAlert, FileText, Moon, Pill, Smile, Thermometer, Waves } from 'lucide-react';
 import { cyclePhaseLabels, getCycleToday } from '../domain/cycle';
-import { formatAgo, formatClock, formatDuration, formatShortDate, getLocalDateKey } from '../domain/dates';
+import { formatClock, formatDuration, formatShortDate, getLocalDateKey, minutesBetween } from '../domain/dates';
 import { getFirstName, tracksCycle } from '../domain/family';
 import { getParentReport } from '../domain/parentReport';
 import { getLastEvent } from '../domain/summary';
@@ -63,10 +63,20 @@ export function ParentDashboard({ activeTimers, childEvents, events, profile, to
   // appears once tonight's sleep has been logged.
   const lastNightIsRecent = Boolean(lastNight && lastNight.dateKey >= getLocalDateKey(new Date(Date.now() - 86_400_000)));
   const lastSleep = getLastEvent(events, (event) => event.type === 'sleep');
+  // Time since the sleep *ended* — how long they have been up. Measuring from
+  // the start answered a question nobody asks. A sleep with no end is still
+  // running, so it counts from when they went down instead.
+  const sleepInProgress = Boolean(lastSleep && !lastSleep.endedAt);
   const lastTemperature = events
     .filter((event): event is TemperatureEvent => event.type === 'temperature')
     .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())[0];
-  const todayEvents = events.filter((event) => getLocalDateKey(event.startedAt) === todayKey);
+  // A night's sleep starts the evening before and ends this morning. It is the
+  // sleep you just got up from, so it belongs to today — keying it by the day it
+  // started left the morning showing nothing logged.
+  const todayEvents = events.filter(
+    (event) =>
+      getLocalDateKey(event.startedAt) === todayKey || (Boolean(event.endedAt) && getLocalDateKey(event.endedAt as string) === todayKey)
+  );
 
   return (
     <main className="view-stack">
@@ -77,15 +87,27 @@ export function ParentDashboard({ activeTimers, childEvents, events, profile, to
             <h1 className="age-headline">
               {lastNightIsRecent && lastNight ? formatDuration(lastNight.sleepMinutes) : '—'}
             </h1>
-            <p>{lastNightIsRecent && lastNight ? `slept last night · ${lastNight.interruptions} interruption${lastNight.interruptions === 1 ? '' : 's'}` : 'no sleep logged yet'}</p>
+            <p>
+              {lastNightIsRecent && lastNight
+                ? `slept last night · ${formatDuration(lastNight.inBedMinutes)} in bed · ${lastNight.interruptions} wake-up${lastNight.interruptions === 1 ? '' : 's'}`
+                : 'no sleep logged yet'}
+            </p>
           </div>
         </div>
 
         <div className="hero-metrics">
           <div className="hero-metric">
-            <span>Last sleep</span>
-            <strong>{lastSleep ? formatAgo(lastSleep.startedAt) : 'None'}</strong>
-            <small>{lastSleep ? formatClock(lastSleep.startedAt) : 'Nothing logged yet'}</small>
+            <span>{sleepInProgress ? 'Asleep for' : 'Awake for'}</span>
+            <strong>
+              {lastSleep
+                ? formatDuration(minutesBetween(lastSleep.endedAt ?? lastSleep.startedAt, new Date().toISOString()))
+                : 'None'}
+            </strong>
+            <small>
+              {lastSleep
+                ? `${formatClock(lastSleep.startedAt)}${lastSleep.endedAt ? ` – ${formatClock(lastSleep.endedAt)}` : ''}`
+                : 'Nothing logged yet'}
+            </small>
           </div>
           <div className="hero-metric">
             <span>{showsCycle ? 'Cycle day' : 'Nights logged'}</span>
@@ -168,12 +190,15 @@ export function ParentDashboard({ activeTimers, childEvents, events, profile, to
         <article className="metric-card">
           <span>Sleep/night</span>
           <strong>{report.averageSleepMinutes != null ? formatDuration(report.averageSleepMinutes) : '—'}</strong>
-          <small>{report.nights.length > 0 ? `over ${report.nights.length} night${report.nights.length === 1 ? '' : 's'}` : 'Nothing logged yet'}</small>
+          <small>{report.nights.length > 0 ? `rest, over ${report.nights.length} night${report.nights.length === 1 ? '' : 's'}` : 'Nothing logged yet'}</small>
         </article>
         <article className="metric-card">
           <span>Longest stretch</span>
           <strong>{report.averageLongestStretchMinutes != null ? formatDuration(report.averageLongestStretchMinutes) : '—'}</strong>
-          <small>average</small>
+          {/* Says "unbroken" because this sits under a larger nightly total and
+              looks wrong otherwise: a night split by a wake-up adds up to more
+              than any single run of it. */}
+          <small>unbroken, per night</small>
         </article>
         <article className="metric-card">
           <span>Wake-ups</span>

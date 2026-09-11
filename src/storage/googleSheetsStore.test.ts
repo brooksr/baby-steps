@@ -500,4 +500,48 @@ describe('Google Sheets API writes', () => {
     expect(saved.phone).toBe('8053009852');
     expect(api.updateValues).toHaveBeenCalledWith('Profile!A2:N2', [expect.arrayContaining(['8053009852'])]);
   });
+
+  // Attributing months of history a row at a time would be hundreds of round
+  // trips, and rewriting whole rows would clobber another caregiver's edit.
+  describe('bulk caregiver assignment', () => {
+    function makeEventsApi() {
+      const api = makeApi();
+      api.getValues.mockImplementation(async (range: string) => {
+        if (range.startsWith('Profile')) {
+          return [['id', 'name'], ['theo-roche', 'Theo Roche']];
+        }
+
+        return [
+          ['id', 'babyId', 'type', 'startedAt', ...Array(29).fill(''), 'caregiverId'],
+          ['event_1', 'theo-roche', 'feed', '2026-08-07T01:00:00.000Z', ...Array(29).fill(''), ''],
+          ['event_2', 'theo-roche', 'feed', '2026-08-07T06:30:00.000Z', ...Array(29).fill(''), ''],
+          ['event_3', 'theo-roche', 'feed', '2026-08-07T14:00:00.000Z', ...Array(29).fill(''), 'brooks-roche']
+        ];
+      });
+
+      return api;
+    }
+
+    it('writes the whole batch down the caregiver column in one request', async () => {
+      const api = makeEventsApi();
+
+      await createGoogleSheetsBabyTrackerStore(api).assignCaregivers([
+        { caregiverId: 'jenni-roche', id: 'event_1' },
+        { caregiverId: 'brooks-roche', id: 'event_2' }
+      ]);
+
+      expect(api.updateValues).toHaveBeenCalledTimes(1);
+      // Rows it was not asked about keep whatever they already said.
+      expect(api.updateValues).toHaveBeenCalledWith('Events!AH2:AH4', [['jenni-roche'], ['brooks-roche'], ['brooks-roche']]);
+    });
+
+    it('writes nothing at all for an empty batch', async () => {
+      const api = makeEventsApi();
+
+      await createGoogleSheetsBabyTrackerStore(api).assignCaregivers([]);
+
+      expect(api.updateValues).not.toHaveBeenCalled();
+      expect(api.getValues).not.toHaveBeenCalled();
+    });
+  });
 });

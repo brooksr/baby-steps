@@ -1637,6 +1637,22 @@ button {
 
 /* Reference guidance under a field. `.flagged` borrows the urgent card's warm
    edge — it says "worth a call", it never says what is wrong. */
+/* Four settle-back options beside the Rest heading. */
+.settle-control {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.settle-control button {
+  padding: 8px 6px;
+  font-size: 0.9rem;
+}
+
+/* Armed state for an action that writes across months of history. */
+.primary-button.confirming {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
 /* The cycle forecast: three plain-language cards rather than a calendar grid.
    A calendar would imply day-level certainty the estimate does not have. */
 .cycle-forecast {

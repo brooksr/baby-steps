@@ -18,6 +18,11 @@ export interface ImportOptions {
   mode?: 'merge' | 'replace';
 }
 
+export interface CaregiverAssignment {
+  id: string;
+  caregiverId: string;
+}
+
 export interface StoreStatus {
   backend: 'local' | 'google-sheets';
   configured: boolean;
@@ -43,6 +48,12 @@ export interface BabyTrackerStore {
   saveProfile(profile: Partial<BabyProfile>): Promise<BabyProfile>;
   addEvent(input: CreateCareEventInput): Promise<CareEvent>;
   updateEvent(event: CareEvent): Promise<CareEvent>;
+  /**
+   * Records who did a batch of entries, in one write. Only the caregiver is
+   * touched — a bulk pass over months of history must not rewrite whole rows
+   * that someone else may be editing.
+   */
+  assignCaregivers(assignments: CaregiverAssignment[]): Promise<void>;
   deleteEvent(id: string): Promise<void>;
   listEvents(query?: EventQuery): Promise<CareEvent[]>;
   /** Profile + events in one read, for cheap background polling. */
@@ -176,6 +187,20 @@ export function createLocalBabyTrackerStore(dbName = DEFAULT_DB_NAME): BabyTrack
     return updated;
   }
 
+  async function assignCaregivers(assignments: CaregiverAssignment[]) {
+    const timestamp = new Date().toISOString();
+
+    await db.transaction('rw', db.events, async () => {
+      for (const { caregiverId, id } of assignments) {
+        const existing = await db.events.get(id);
+
+        if (existing) {
+          await db.events.put({ ...existing, caregiverId, syncState: 'local', updatedAt: timestamp });
+        }
+      }
+    });
+  }
+
   async function deleteEvent(id: string) {
     await db.events.delete(id);
   }
@@ -274,6 +299,7 @@ export function createLocalBabyTrackerStore(dbName = DEFAULT_DB_NAME): BabyTrack
   return {
     addEvent,
     addProfile,
+    assignCaregivers,
     clear,
     close: () => db.close(),
     deleteEvent,

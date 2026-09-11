@@ -3,7 +3,7 @@ import { cyclePhaseLabels, getCycleToday, type PeriodRecord } from '../domain/cy
 import { filterEventsByRange, getPresetRange, type DateRange } from '../domain/dateRange';
 import { formatDuration, formatShortDate } from '../domain/dates';
 import { getFirstName, tracksCycle } from '../domain/family';
-import { getParentReport } from '../domain/parentReport';
+import { DEFAULT_REST_OPTIONS, getParentReport } from '../domain/parentReport';
 import { mensesFlowLabels, type BabyProfile, type CareEvent } from '../domain/types';
 import { formatDayLabel, type ChartPoint } from './chartFormat';
 import { DateRangeFilter } from './DateRangeFilter';
@@ -27,6 +27,9 @@ const PARENT_PERIODS: Array<{ id: ParentPeriod; label: string }> = [
   { id: 'custom', label: 'Custom' }
 ];
 
+/** How long it takes to settle back down — the part nobody logs. */
+const SETTLE_OPTIONS = [0, 10, 15, 30];
+
 /** Minutes to hours, since a night's sleep is read in hours, not in 420. */
 function toHours(minutes: number) {
   return Math.round((minutes / 60) * 10) / 10;
@@ -47,6 +50,9 @@ function periodSummary(record: PeriodRecord) {
  */
 export function ParentReports({ childEvents, events, profile }: ParentReportsProps) {
   const [period, setPeriod] = useState<ParentPeriod>('30d');
+  // How long it takes to settle back after a wake-up. Never logged, so it is a
+  // dial rather than a measurement — and it moves every number below it.
+  const [fallbackAsleepMinutes, setFallbackAsleepMinutes] = useState(DEFAULT_REST_OPTIONS.fallbackAsleepMinutes);
   const [customRange, setCustomRange] = useState<DateRange>(() => getPresetRange('30d'));
   const firstName = getFirstName(profile);
   const showsCycle = tracksCycle(profile);
@@ -57,8 +63,8 @@ export function ParentReports({ childEvents, events, profile }: ParentReportsPro
   const periodEvents = useMemo(() => filterEventsByRange(events, range), [events, range]);
   const periodChildEvents = useMemo(() => filterEventsByRange(childEvents, range), [childEvents, range]);
   const report = useMemo(
-    () => getParentReport(periodEvents, periodChildEvents, profile.id),
-    [periodEvents, periodChildEvents, profile.id]
+    () => getParentReport(periodEvents, periodChildEvents, profile.id, { fallbackAsleepMinutes }),
+    [fallbackAsleepMinutes, periodEvents, periodChildEvents, profile.id]
   );
   // The cycle reads the whole log, not the selected span — a 7-day window holds
   // no cycles at all, and the prediction would vanish whenever someone narrowed
@@ -134,52 +140,89 @@ export function ParentReports({ childEvents, events, profile }: ParentReportsPro
         <MiniChart event="note" label="Wake-ups/night" stats={wakeStats} total={wakeCounts.reduce((a, b) => a + b, 0)} values={wakeValues} />
       </section>
 
-      <section className="metric-grid status-grid" aria-label="Sleep summary">
-        <article className="metric-card">
-          <span>Longest stretch</span>
-          <strong>{report.averageLongestStretchMinutes != null ? formatDuration(report.averageLongestStretchMinutes) : '—'}</strong>
-          <small>average per night</small>
-        </article>
-        <article className="metric-card">
-          <span>Shortest night</span>
-          <strong>{report.shortestSleepMinutes != null ? formatDuration(report.shortestSleepMinutes) : '—'}</strong>
-          <small>{report.longestSleepMinutes != null ? `longest ${formatDuration(report.longestSleepMinutes)}` : 'Nothing logged yet'}</small>
-        </article>
-        <article className="metric-card">
-          <span>Nights logged</span>
-          <strong>{report.nights.length}</strong>
-          <small>{report.nights.length === 0 ? 'Log a sleep to start' : formatRangeCaption(report.nights[0].dateKey, report.nights[report.nights.length - 1].dateKey)}</small>
-        </article>
+      <section className="section-block">
+        <div className="section-heading wrap">
+          <h2>Rest</h2>
+          <div className="segmented-control settle-control" aria-label="Time to fall back asleep">
+            {SETTLE_OPTIONS.map((minutes) => (
+              <button
+                type="button"
+                key={minutes}
+                aria-pressed={fallbackAsleepMinutes === minutes}
+                className={fallbackAsleepMinutes === minutes ? 'active' : ''}
+                onClick={() => setFallbackAsleepMinutes(minutes)}
+              >
+                {minutes}m
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="metric-grid">
+          <article className="metric-card">
+            <span>In bed</span>
+            <strong>{report.averageInBedMinutes != null ? formatDuration(report.averageInBedMinutes) : '—'}</strong>
+            <small>
+              {report.averageSleepMinutes != null && report.averageInBedMinutes != null
+                ? `${formatDuration(report.averageInBedMinutes - report.averageSleepMinutes)} of it awake`
+                : 'Nothing logged yet'}
+            </small>
+          </article>
+          <article className="metric-card">
+            <span>Longest stretch</span>
+            <strong>{report.averageLongestStretchMinutes != null ? formatDuration(report.averageLongestStretchMinutes) : '—'}</strong>
+            <small>unbroken, per night</small>
+          </article>
+          <article className="metric-card">
+            <span>Nights logged</span>
+            <strong>{report.nights.length}</strong>
+            <small>{report.nights.length === 0 ? 'Log a sleep to start' : formatRangeCaption(report.nights[0].dateKey, report.nights[report.nights.length - 1].dateKey)}</small>
+          </article>
+        </div>
+
+        <p className="field-note">
+          Rest is the time in bed less every wake-up and the {fallbackAsleepMinutes} minutes it takes to settle after
+          one. Entries within half an hour of each other count as a single wake-up, and a stretch under half an hour
+          between them is not counted as sleep at all. A broken night adds up to more than any one run of it, which is
+          why the longest stretch sits below the nightly total.
+        </p>
       </section>
 
-      {/* Nobody signs an entry, so this is the household's load, not one
-          person's share of it — and it is labelled that way. */}
+      {/* Two numbers per card: what this parent is recorded as having done, over
+          what the household logged. An entry only names a caregiver when someone
+          recorded one, so the share is never the whole story. */}
       <section className="section-block">
         <div className="section-heading">
           <h2>Baby care this period</h2>
-          <span>{report.care.total} entr{report.care.total === 1 ? 'y' : 'ies'}</span>
+          <span>
+            {report.care.mine.total} of {report.care.total} entr{report.care.total === 1 ? 'y' : 'ies'}
+          </span>
         </div>
         <div className="metric-grid">
           <article className="metric-card">
             <span>Night duty</span>
-            <strong>{report.care.nightEvents}</strong>
-            <small>10pm–6am</small>
+            <strong>{report.care.mine.nightEvents}</strong>
+            <small>of {report.care.nightEvents} · 10pm–6am</small>
           </article>
           <article className="metric-card">
             <span>Feeds</span>
-            <strong>{report.care.feeds}</strong>
-            <small>{report.care.nursingFeeds} nursing</small>
+            <strong>{report.care.mine.feeds}</strong>
+            <small>of {report.care.feeds} · {report.care.mine.nursingFeeds} nursing</small>
           </article>
           <article className="metric-card">
             <span>Diapers</span>
-            <strong>{report.care.diapers}</strong>
-            <small>{report.care.pumps} pump{report.care.pumps === 1 ? '' : 's'}</small>
+            <strong>{report.care.mine.diapers}</strong>
+            <small>of {report.care.diapers} · {report.care.mine.pumps} of {report.care.pumps} pumps</small>
           </article>
         </div>
         <p className="field-note">
-          Logged for the babies across this period by whoever was on. Entries are not signed, so this is the household's
-          load rather than one person's share — the wake-ups above are the ones that landed inside {firstName}'s own
-          logged sleep.
+          The big number is what {firstName} is recorded as having done; the smaller one is everything the household
+          logged.{' '}
+          {report.care.unattributed > 0
+            ? `${report.care.unattributed} of those name nobody — "Logged by" is optional, so a low share can mean a quiet week or an unfilled field.`
+            : 'Every entry this period names who did it.'}{' '}
+          The wake-ups above are a different question: those are the ones that broke into {firstName}'s own logged
+          sleep.
         </p>
       </section>
 

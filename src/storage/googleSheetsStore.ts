@@ -3,7 +3,7 @@ import { createDefaultBabyProfile } from '../domain/dates';
 import { migrateStoredEvent, migrateStoredEvents, type StoredCareEventType } from '../domain/legacyEvents';
 import { DEFAULT_PROFILE_ID, type BabyGender, type BabyProfile, type BottleContents, type CareInfo, type CareEvent, type CreateCareEventInput, type FeedMethod, type MensesFlow, type NursingSide, type ParentRole, type PreferredUnits, type TrackerExport, type TrackerSnapshot } from '../domain/types';
 import { requestGoogleSheetsAccessToken } from './googleSheetsAuth';
-import type { BabyTrackerStore, EventQuery, ImportOptions } from './store';
+import type { BabyTrackerStore, CaregiverAssignment, EventQuery, ImportOptions } from './store';
 
 export const GOOGLE_SHEET_ID = '1VG9px1j-KF29i2J6AG_PP57hOM8V-wLPgP-9VTdURUc';
 export const GOOGLE_SHEET_URL = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/edit`;
@@ -828,6 +828,39 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
     return updated;
   }
 
+  /**
+   * One write for the whole batch, and only down the caregiver column. Attributing
+   * months of history a row at a time would be hundreds of round trips, and
+   * rewriting whole rows would clobber whatever another caregiver edited in the
+   * meantime — this touches one cell per row and nothing else.
+   */
+  async function assignCaregivers(assignments: CaregiverAssignment[]) {
+    if (assignments.length === 0) {
+      return;
+    }
+
+    const values = await api.getValues(EVENTS_RANGE);
+    const [headerRow, ...rows] = values;
+
+    if (rows.length === 0) {
+      return;
+    }
+
+    const columns = columnIndex(eventHeaders, headerRow);
+    const idColumn = columns.get('id') ?? 0;
+    const caregiverColumn = columns.get('caregiverId') ?? eventHeaders.indexOf('caregiverId');
+    const wanted = new Map(assignments.map((assignment) => [assignment.id, assignment.caregiverId]));
+
+    const column = rows.map((row) => {
+      const id = optionalString(row?.[idColumn]);
+      const next = id ? wanted.get(id) : undefined;
+      return [next ?? normalizeCell(row?.[caregiverColumn])];
+    });
+
+    const letter = columnLetter(caregiverColumn);
+    await api.updateValues(`Events!${letter}2:${letter}${column.length + 1}`, column);
+  }
+
   async function deleteEvent(id: string) {
     const rows = await listRows();
     const match = rows.find((row) => row.event.id === id);
@@ -894,6 +927,7 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
   return {
     addEvent,
     addProfile,
+    assignCaregivers,
     clear,
     close: () => {},
     deleteEvent,

@@ -14,6 +14,7 @@ import { ChildSwitcher } from './components/ChildSwitcher';
 import { ParentDashboard } from './components/ParentDashboard';
 import { ParentReports } from './components/ParentReports';
 import { isParent, getStoredActiveProfileId, storeActiveProfileId, type NewProfileInput } from './domain/family';
+import { DEFAULT_SLEEP_WINDOW, planAttribution, planParentSleeps, type Shift, type ShiftPlan, type ShiftResult } from './domain/nightShift';
 import { getLocalDateKey } from './domain/dates';
 import { getFirstYearEvents } from './domain/firstYear';
 import { snapshotSignature } from './domain/snapshot';
@@ -425,6 +426,65 @@ function App() {
     await refresh();
   }
 
+  /**
+   * Backfills a household that splits the night: one sleep entry per night for
+   * whoever is on each shift, then the babies' entries in those hours recorded
+   * against them. Reads the whole log rather than the active person's, since it
+   * is about everyone at once.
+   */
+  async function handleApplyShifts(plan: ShiftPlan): Promise<ShiftResult> {
+    mutationRef.current += 1;
+
+    const shifts = [plan.night, plan.morning].filter((shift): shift is Shift => Boolean(shift?.caregiverId));
+    const everything = await trackerStore.exportData();
+    const childIds = new Set(everything.profiles?.filter((person) => !isParent(person)).map((person) => person.id) ?? []);
+    const result: ShiftResult = { attributed: 0, skipped: 0, sleepsAdded: 0 };
+
+    // Sleeps first: their ids are derived from the night, so a second run
+    // proposes the same entries and the merge simply finds them already there.
+    // **Every parent named gets the same hours in bed** — the shifts say who
+    // gets up, not who is asleep.
+    const window = plan.sleep ?? DEFAULT_SLEEP_WINDOW;
+    const sleepers = [...new Set(shifts.map((shift) => shift.caregiverId))];
+    const today = getLocalDateKey(new Date());
+    const napper = plan.nap?.caregiverId
+      ? everything.profiles?.find((person) => person.id === plan.nap?.caregiverId)
+      : undefined;
+    const sleeps = [
+      ...sleepers.flatMap((id) => {
+        const parent = everything.profiles?.find((person) => person.id === id);
+        return parent ? planParentSleeps(parent, window, plan.from, today) : [];
+      }),
+      // The night-shift parent's morning nap, while the other one is on.
+      ...(napper && plan.nap ? planParentSleeps(napper, plan.nap, plan.from, today) : [])
+    ];
+    const known = new Set(everything.events.map((event) => event.id));
+    const missing = sleeps.filter((sleep) => !known.has(sleep.id as string));
+
+    if (missing.length > 0) {
+      await trackerStore.importData(
+        { events: missing as CareEvent[], exportedAt: new Date().toISOString(), profile: everything.profile, profiles: everything.profiles, version: 1 },
+        { mode: 'merge' }
+      );
+      result.sleepsAdded = missing.length;
+    }
+
+    const babyEvents = everything.events.filter((event) => childIds.has(event.babyId));
+    const attribution = planAttribution(babyEvents, shifts, plan.from);
+    result.attributed = attribution.assignments.length;
+    result.skipped = attribution.alreadyAttributed + attribution.uncovered;
+
+    if (attribution.assignments.length > 0) {
+      await trackerStore.assignCaregivers(
+        attribution.assignments.map(({ caregiverId, event }) => ({ caregiverId, id: event.id }))
+      );
+    }
+
+    signatureRef.current = '';
+    await refresh();
+    return result;
+  }
+
   async function handleExport() {
     return trackerStore.exportData();
   }
@@ -553,6 +613,7 @@ function App() {
           storeStatus={storeStatus}
           theme={theme}
           onAddChild={handleAddChild}
+          onApplyShifts={handleApplyShifts}
           onConnectSheet={handleConnectSheet}
           onRemoveChild={handleRemoveChild}
           onSelectChild={selectChild}
