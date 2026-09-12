@@ -94,6 +94,21 @@ describe('Google Sheets tracker store', () => {
     });
   });
 
+  it('updates an event across every column in the current event schema', async () => {
+    const api = makeApi();
+    const store = createGoogleSheetsBabyTrackerStore(api);
+    const [event] = await store.listEvents();
+
+    await store.updateEvent({ ...event, notes: 'Finished the bottle' });
+
+    expect(api.updateValues).toHaveBeenCalledWith(
+      'Events!A2:AN2',
+      [expect.arrayContaining(['seed_bottle_1', 'Finished the bottle'])]
+    );
+    const lastCall = api.updateValues.mock.calls[api.updateValues.mock.calls.length - 1];
+    expect(lastCall[1][0]).toHaveLength(40);
+  });
+
   // Polling reads run on a timer, so they must cost one request and must never
   // write — a profile row rewritten on every read would clobber whatever
   // another device saved between our read and our write.

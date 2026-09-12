@@ -114,6 +114,11 @@ const eventHeaders = [
   'bristol'
 ] as const;
 
+/** Keep row writes as wide as the canonical event schema as columns are added. */
+function eventRowRange(rowNumber: number) {
+  return `Events!A${rowNumber}:${columnLetter(eventHeaders.length - 1)}${rowNumber}`;
+}
+
 type EventColumn = (typeof eventHeaders)[number];
 type EventColumnIndex = Map<EventColumn, number>;
 
@@ -1254,7 +1259,7 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
       updatedAt: new Date().toISOString()
     };
 
-    await api.updateValues(`Events!A${match.rowNumber}:AH${match.rowNumber}`, [eventToRow(updated)]);
+    await api.updateValues(eventRowRange(match.rowNumber), [eventToRow(updated)]);
     return updated;
   }
 
