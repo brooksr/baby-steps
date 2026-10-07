@@ -66,7 +66,7 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, fo
   const [notes, setNotes] = useState('');
   const [durationMinutes, setDurationMinutes] = useState('15');
   const [side, setSide] = useState('left');
-  const [amountOz, setAmountOz] = useState('2');
+  const [amountOz, setAmountOz] = useState('');
   const [contents, setContents] = useState('breastmilk');
   const [feedMethod, setFeedMethod] = useState<FeedMethod>('nursing');
   const [diaperKind, setDiaperKind] = useState('wet');
@@ -135,8 +135,14 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, fo
     setCaregiverId(editEvent ? (editEvent.caregiverId ?? '') : (getStoredCaregiverId() ?? ''));
     setDurationMinutes(eventType === 'sleep' ? '60' : eventType === 'tummytime' ? '5' : '15');
     setSide('left');
-    // A feed opens on nursing, where the amount is unknown until a bottle is picked.
-    setAmountOz(eventType === 'pump' ? roundedInputValue(toUnitVolume(3, unitSystem), 0) : eventType === 'feed' ? '' : roundedInputValue(toUnitVolume(2, unitSystem), 0));
+    // A feed opens on nursing, but keeps the household's stated bottle amount
+    // ready for the moment Bottle is selected.
+    const bottleAmountOz = profile?.careInfo?.bottleAmountOz;
+    setAmountOz(eventType === 'pump'
+      ? roundedInputValue(toUnitVolume(3, unitSystem), 0)
+      : eventType === 'feed' && bottleAmountOz != null
+        ? roundedInputValue(toUnitVolume(bottleAmountOz, unitSystem), unitSystem === 'metric' ? 0 : 2)
+        : '');
     setContents('breastmilk');
     setFeedMethod('nursing');
     setDiaperKind('wet');
@@ -247,7 +253,7 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, fo
       default:
         break;
     }
-  }, [eventType, editEvent, preferredUnits.weightDisplay, presetKind, unitSystem]);
+  }, [eventType, editEvent, preferredUnits.weightDisplay, presetKind, profile?.careInfo?.bottleAmountOz, unitSystem]);
 
   const caregivers = useMemo(() => getCaregivers(profiles), [profiles]);
   // Only a child's entry has a caregiver worth recording — a parent logging
@@ -360,7 +366,7 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, fo
         const nursing = feedMethod === 'nursing';
         payload = {
           type: 'feed',
-          amountOz: numberOrUndefined(amountOz) == null ? undefined : toStoredVolume(Number(amountOz), unitSystem),
+          amountOz: nursing || numberOrUndefined(amountOz) == null ? undefined : toStoredVolume(Number(amountOz), unitSystem),
           contents: nursing ? undefined : (contents as 'breastmilk' | 'formula' | 'mixed' | 'other'),
           durationMinutes: duration,
           endedAt: duration != null ? addMinutes(startedAtIso, duration) : endedAt ? fromDateTimeInputValue(endedAt) : undefined,

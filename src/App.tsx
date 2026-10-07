@@ -88,8 +88,9 @@ const tabs = [
   { icon: Settings, id: 'settings', label: 'Settings' }
 ] satisfies Array<{ icon: typeof Home; id: View; label: string }>;
 
-/** Milestones and immunisations are a child's, so a parent has no Care tab. */
+/** Household lists belong to the parent views; Care belongs to a child. */
 const PARENT_TABS = new Set<View>(['dashboard', 'log', 'reports', 'shopping', 'todos', 'settings']);
+const CHILD_TABS = new Set<View>(['dashboard', 'log', 'reports', 'care', 'settings']);
 
 function App() {
   const [profile, setProfile] = useState<BabyProfile | null>(null);
@@ -600,10 +601,11 @@ function App() {
 
   const firstYearEvents = getFirstYearEvents(profile, events);
   const parentMode = isParent(profile);
-  const visibleTabs = parentMode ? tabs.filter((tab) => PARENT_TABS.has(tab.id)) : tabs;
-  // The Care tab is a child's. Landing on it and then switching to a parent
-  // must not leave an empty view up.
-  const view = parentMode && !PARENT_TABS.has(activeView) ? 'dashboard' : activeView;
+  const allowedTabs = parentMode ? PARENT_TABS : CHILD_TABS;
+  const visibleTabs = tabs.filter((tab) => allowedTabs.has(tab.id));
+  // A profile switch can make the current tab inapplicable. Land somewhere
+  // useful instead of leaving a hidden household/child view on screen.
+  const view = allowedTabs.has(activeView) ? activeView : 'dashboard';
 
   return (
     <div className="app-shell">
@@ -655,7 +657,7 @@ function App() {
           <Reports events={events} profile={profile} profiles={profiles} />
         ))}
 
-      {view === 'care' && <Care events={events} profile={profile} profiles={profiles} onSaveProfile={handleSaveProfile} onToggle={handleToggleRef} />}
+      {view === 'care' && <Care events={events} profile={profile} profiles={profiles} onEdit={setEditEvent} onSaveProfile={handleSaveProfile} onToggle={handleToggleRef} />}
 
       {view === 'shopping' && (
         <ShoppingList

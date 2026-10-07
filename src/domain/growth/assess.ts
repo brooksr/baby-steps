@@ -69,9 +69,28 @@ export interface GrowthAssessment {
   /** The child's measurement converted into the standard's unit. */
   value: number;
   band: GrowthBand;
+  /** Approximate percentile inferred from the bundled WHO -2 SD/median/+2 SD curves. */
+  percentile: number;
   standard: InterpolatedStandard;
   /** Human-readable verdict, e.g. "On track — near the median". */
   summary: string;
+}
+
+/** Normal cumulative distribution, using a compact Abramowitz-Stegun approximation. */
+function normalCdf(z: number) {
+  const sign = z < 0 ? -1 : 1;
+  const x = Math.abs(z) / Math.sqrt(2);
+  const t = 1 / (1 + 0.3275911 * x);
+  const erf = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
+  return (1 + sign * erf) / 2;
+}
+
+function estimatePercentile(value: number, standard: InterpolatedStandard) {
+  const halfSpan = value < standard.median
+    ? standard.median - standard.p2
+    : standard.p98 - standard.median;
+  const z = halfSpan === 0 ? 0 : (value - standard.median) / halfSpan * 2;
+  return Math.max(1, Math.min(99, Math.round(normalCdf(z) * 100)));
 }
 
 export interface GrowthMeasurement {
@@ -156,6 +175,7 @@ export function classifyMeasurement(metric: GrowthMetric, ageMonths: number, val
     band,
     label: standard.label,
     metric,
+    percentile: estimatePercentile(value, bounds),
     standard: bounds,
     summary: describeBand(band, value, bounds),
     unit: standard.unit,

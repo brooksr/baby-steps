@@ -26,6 +26,7 @@ describe('GrowthStandards units', () => {
     expect(screen.queryByText('cm')).not.toBeInTheDocument();
     expect(screen.getByText(/7 lb 4 oz/)).toBeInTheDocument();
     expect(screen.getByText('lb')).toBeInTheDocument();
+    expect(screen.getAllByText(/Estimated P\d+ actual age/)).toHaveLength(3);
   });
 
   it('labels the weight chart in ounces when the profile reads weights that way', () => {

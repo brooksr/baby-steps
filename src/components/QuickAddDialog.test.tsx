@@ -119,6 +119,20 @@ describe('QuickAddDialog', () => {
     );
   });
 
+  it('prefills a bottle from the amount saved in Care', async () => {
+    const user = userEvent.setup();
+    const profile = {
+      ...createDefaultBabyProfile(),
+      careInfo: { bottleAmountOz: 4 }
+    };
+
+    render(<QuickAddDialog activeTimers={{}} eventType="feed" onClose={vi.fn()} onSave={vi.fn()} onTimerStart={vi.fn()} onTimerStop={vi.fn()} profile={profile} />);
+
+    await user.click(screen.getByRole('radio', { name: /bottle/i }));
+
+    expect(screen.getByLabelText(/ounces/i)).toHaveValue(4);
+  });
+
   it('leaves the amount off a nursing feeding', async () => {
     const user = userEvent.setup();
     const onSave = vi.fn().mockResolvedValue(undefined);

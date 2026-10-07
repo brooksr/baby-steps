@@ -251,7 +251,8 @@ function getAgeMonths(birthDate: string, now: Date) {
 
 /**
  * Age in the unit people actually say out loud: days for the first fortnight,
- * then weeks, then months, then years. 14 days reads "2 weeks", not "14 days".
+ * weeks through the second month, then months and years. The exact weeks/days
+ * still sit below the Dashboard headline once it changes to months.
  */
 export function formatAgeSummary(profile: BabyProfile, now = new Date()) {
   if (!profile.birthDate) {
@@ -270,11 +271,13 @@ export function formatAgeSummary(profile: BabyProfile, now = new Date()) {
 
   const weeks = Math.floor(days / 7);
 
-  if (weeks < 13) {
+  if (weeks < 8) {
     return `${weeks} weeks`;
   }
 
-  const months = getAgeMonths(profile.birthDate, now);
+  // At eight weeks, "2 months" is the useful headline even when the matching
+  // calendar day is a few days away. Keep calendar months after that boundary.
+  const months = Math.max(2, getAgeMonths(profile.birthDate, now));
 
   if (months < 24) {
     return `${months} months`;

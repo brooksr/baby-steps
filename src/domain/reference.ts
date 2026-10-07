@@ -109,17 +109,34 @@ function parseAgeMonths(age: string): number {
 }
 
 export function getVaccinationSchedule(): Vaccination[] {
-  return records('vaccinations').map((row) => ({
-    age: row.age,
-    ageMonths: parseAgeMonths(row.age),
-    id: `vax-${slug(row.age)}`,
-    note: row.note,
-    vaccines: row.vaccines
+  return records('vaccinations').flatMap((row) => row.vaccines.split(',').map((vaccine) => {
+    const vaccines = vaccine.trim();
+    return {
+      age: row.age,
+      ageMonths: parseAgeMonths(row.age),
+      id: `vax-${slug(row.age)}-${slug(vaccines)}`,
+      note: row.note,
+      vaccines
+    };
   }));
 }
 
 export function getVaccinationById(id: string): Vaccination | undefined {
-  return getVaccinationSchedule().find((vaccination) => vaccination.id === id);
+  const vaccination = getVaccinationSchedule().find((item) => item.id === id);
+  if (vaccination) {
+    return vaccination;
+  }
+
+  // Events written before vaccines became individually actionable used one id
+  // for the whole age row. Keep those readable in the timeline and log.
+  const legacy = records('vaccinations').find((row) => `vax-${slug(row.age)}` === id);
+  return legacy ? {
+    age: legacy.age,
+    ageMonths: parseAgeMonths(legacy.age),
+    id,
+    note: legacy.note,
+    vaccines: legacy.vaccines
+  } : undefined;
 }
 
 export interface MoodLevel {

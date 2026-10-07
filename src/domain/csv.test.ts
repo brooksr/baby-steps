@@ -51,5 +51,8 @@ describe('reference data', () => {
     expect(schedule.find((vaccination) => /birth/i.test(vaccination.age))?.ageMonths).toBe(0);
     expect(schedule.find((vaccination) => vaccination.age === '2 months')?.ageMonths).toBe(2);
     expect(getVaccinationById(schedule[0].id)?.age).toBe(schedule[0].age);
+    expect(schedule.filter((vaccination) => vaccination.age === '2 months')).toHaveLength(6);
+    expect(new Set(schedule.map((vaccination) => vaccination.id)).size).toBe(schedule.length);
+    expect(getVaccinationById('vax-2-months')?.vaccines).toContain('Hib');
   });
 });

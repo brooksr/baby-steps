@@ -68,7 +68,9 @@ export function Dashboard({ activeTimers, events, profile, profiles = [], todayK
   // would only say the same thing twice.
   const ageDetail = isBorn
     ? ageDays >= 14
-      ? getDueDateStatus(profile)
+      ? ageDays >= 56
+        ? `${Math.floor(ageDays / 7)} weeks · ${getDueDateStatus(profile)}`
+        : getDueDateStatus(profile)
       : ''
     : daysUntilDue === 1
       ? 'day until due date'

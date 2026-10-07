@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { getAgeDays } from '../domain/dates';
 import { getFirstName } from '../domain/family';
 import { assessLatestGrowth, getGestationInfo, getGrowthMeasurements, getMetricPlots, type AgeBasis, type GrowthBand, type MetricPlot } from '../domain/growth/assess';
 import { boyGrowthStandards, type GrowthMetric, type GrowthStandard } from '../domain/growth/whoBoyStandards';
@@ -12,6 +13,7 @@ interface GrowthStandardsProps {
 }
 
 const METRIC_ORDER: GrowthMetric[] = ['weight', 'length', 'head'];
+const AVG_DAYS_PER_MONTH = 365.25 / 12;
 
 const bandLabel: Record<GrowthBand, string> = {
   above: 'Above range',
@@ -94,6 +96,10 @@ export function GrowthStandards({ events, profile }: GrowthStandardsProps) {
   const showCorrected = Boolean(gestation?.preterm && gestation.correctionDays > 0);
   const activeBasis: AgeBasis = showCorrected ? basis : 'actual';
   const assessments = assessLatestGrowth(profile, events, activeBasis);
+  const actualAssessments = new Map(assessLatestGrowth(profile, events, 'actual').map((assessment) => [assessment.metric, assessment]));
+  const correctedAssessments = new Map(assessLatestGrowth(profile, events, 'corrected').map((assessment) => [assessment.metric, assessment]));
+  const latestAgeMonths = measurements[measurements.length - 1]?.ageMonths ?? 0;
+  const chartMaxAgeMonths = Math.max(1, getAgeDays(profile) / AVG_DAYS_PER_MONTH, latestAgeMonths);
 
   return (
     <>
@@ -164,6 +170,10 @@ export function GrowthStandards({ events, profile }: GrowthStandardsProps) {
                   {displayGrowthValue(assessment.metric, assessment.standard.p2, preferredUnits)}–
                   {displayGrowthValue(assessment.metric, assessment.standard.p98, preferredUnits)})
                 </p>
+                <small>
+                  Estimated P{actualAssessments.get(assessment.metric)?.percentile} actual age
+                  {showCorrected ? ` · P${correctedAssessments.get(assessment.metric)?.percentile} corrected age` : ''}
+                </small>
                 <small>{assessment.summary}</small>
               </article>
             ))}
@@ -182,7 +192,7 @@ export function GrowthStandards({ events, profile }: GrowthStandardsProps) {
                 <h3>{standard.label}</h3>
                 <strong>{standard.unit}</strong>
               </div>
-              <GrowthChart standard={standard} plots={plots} showCorrected={showCorrected} />
+              <GrowthChart maxAgeMonths={chartMaxAgeMonths} standard={standard} plots={plots} showCorrected={showCorrected} />
               {showCorrected && (
                 <div className="chart-legend">
                   <span className="chart-legend-item growth-legend-actual">Actual age</span>

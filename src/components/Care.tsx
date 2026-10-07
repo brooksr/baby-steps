@@ -1,4 +1,4 @@
-import { Check, Syringe } from 'lucide-react';
+import { Check, Pencil, Syringe } from 'lucide-react';
 import { getAgeDays, getLocalDateKey } from '../domain/dates';
 import { getMilestones, getVaccinationSchedule } from '../domain/reference';
 import type { BabyProfile, CareEvent } from '../domain/types';
@@ -9,6 +9,7 @@ interface CareProps {
   profile: BabyProfile;
   /** Everyone tracked — the parents among them are the guardians. */
   profiles?: BabyProfile[];
+  onEdit: (event: CareEvent) => void;
   onSaveProfile: (patch: Partial<BabyProfile>) => Promise<void>;
   onToggle: (type: 'milestone' | 'vaccine', refId: string, on: boolean) => Promise<void>;
 }
@@ -25,7 +26,7 @@ function addMonths(birthDate: string, months: number) {
   return date;
 }
 
-export function Care({ events, profile, profiles = [], onSaveProfile, onToggle }: CareProps) {
+export function Care({ events, profile, profiles = [], onEdit, onSaveProfile, onToggle }: CareProps) {
   const ageMonths = profile.birthDate ? getAgeDays(profile) / AVG_DAYS_PER_MONTH : null;
 
   const achieved = new Map<string, CareEvent>();
@@ -115,28 +116,33 @@ export function Care({ events, profile, profiles = [], onSaveProfile, onToggle }
 
         <div className="care-group">
           {vaccinations.map((vaccination) => {
-            const done = Boolean(vaccination.given);
+            const given = vaccination.given;
+            const done = Boolean(given);
             return (
-              <button
-                type="button"
+              <div
                 key={vaccination.id}
                 className={`check-row ${done ? 'done' : ''} ${vaccination.overdue ? 'overdue' : ''}`}
-                onClick={() => onToggle('vaccine', vaccination.id, !done)}
-                aria-pressed={done}
               >
-                <span className="check-box">{done ? <Check aria-hidden="true" /> : <Syringe aria-hidden="true" />}</span>
-                <span className="check-text">
-                  <strong>{vaccination.age}</strong>
-                  <small>{vaccination.vaccines}</small>
-                  <small>
-                    {vaccination.given
-                      ? `Given ${formatDate(new Date(vaccination.given.startedAt))}`
-                      : vaccination.due
-                        ? `${vaccination.overdue ? 'Was due' : 'Due'} ${formatDate(vaccination.due)}`
-                        : 'Log birth to schedule'}
-                  </small>
-                </span>
-              </button>
+                <button type="button" className="check-row-main" onClick={() => onToggle('vaccine', vaccination.id, !done)} aria-pressed={done}>
+                  <span className="check-box">{done ? <Check aria-hidden="true" /> : <Syringe aria-hidden="true" />}</span>
+                  <span className="check-text">
+                    <strong>{vaccination.age}</strong>
+                    <small>{vaccination.vaccines}</small>
+                    <small>
+                      {given
+                        ? `Given ${formatDate(new Date(given.startedAt))}`
+                        : vaccination.due
+                          ? `${vaccination.overdue ? 'Was due' : 'Due'} ${formatDate(vaccination.due)}`
+                          : 'Log birth to schedule'}
+                    </small>
+                  </span>
+                </button>
+                {given && (
+                  <button type="button" className="icon-button subtle" onClick={() => onEdit(given)} aria-label={`Edit ${vaccination.vaccines}`}>
+                    <Pencil aria-hidden="true" />
+                  </button>
+                )}
+              </div>
             );
           })}
         </div>

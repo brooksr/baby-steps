@@ -69,7 +69,13 @@ describe('classifyMeasurement', () => {
   it('treats a near-median value as on track', () => {
     const result = classifyMeasurement('length', 0, 49.9);
     expect(result.band).toBe('within');
+    expect(result.percentile).toBe(50);
     expect(result.summary).toMatch(/median/i);
+  });
+
+  it('estimates a percentile from the WHO band', () => {
+    expect(classifyMeasurement('length', 0, 46.1).percentile).toBeCloseTo(2, 0);
+    expect(classifyMeasurement('length', 0, 53.7).percentile).toBeCloseTo(98, 0);
   });
 });
 

@@ -33,10 +33,11 @@ describe('formatAgeSummary', () => {
 
   it('switches to weeks at a fortnight', () => {
     expect(formatAgeSummary(profile, new Date('2026-09-16T13:00:00'))).toBe('2 weeks');
-    expect(formatAgeSummary(profile, new Date('2026-11-30T13:00:00'))).toBe('12 weeks');
+    expect(formatAgeSummary(profile, new Date('2026-10-21T13:00:00'))).toBe('7 weeks');
   });
 
-  it('switches to whole calendar months at three months', () => {
+  it('rounds to two months at eight weeks, then uses whole calendar months', () => {
+    expect(formatAgeSummary(profile, new Date('2026-10-28T13:00:00'))).toBe('2 months');
     expect(formatAgeSummary(profile, new Date('2026-12-02T13:00:00'))).toBe('3 months');
     expect(formatAgeSummary(profile, new Date('2027-08-02T13:00:00'))).toBe('11 months');
   });
