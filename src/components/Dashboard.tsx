@@ -115,10 +115,14 @@ export function Dashboard({ activeTimers, events, profile, profiles = [], todayK
           <button aria-label="View feed log" className={`hero-metric hero-metric-link${feedReminder ? ' past-due' : ''}`} type="button" onClick={() => onOpenLog('feed')}>
             <span>Last feed</span>
             <strong>{lastFeed ? formatAgo(lastFeed.startedAt).replace(/ ago$/, '') : 'None'}</strong>
-            <small>{lastFeed ? `${formatClock(lastFeed.startedAt)}${nextSide ? ` · next: ${nextSide}` : ''}` : 'Nothing logged yet'}</small>
+            <small>{lastFeed ? formatClock(lastFeed.startedAt) : 'Nothing logged yet'}</small>
             {nextFeed && (
               <small className="hero-metric-detail">
-                {nextFeed.minutesAway > 0 ? `Next feed ~${formatClock(nextFeed.expectedAt)}` : 'Next feed due'}
+                {nextFeed.minutesAway > 0
+                  ? `Next feed${nextSide ? `: ${nextSide}` : ''} ~${formatClock(nextFeed.expectedAt)}`
+                  : nextSide
+                    ? `Next feed: ${nextSide} · due`
+                    : 'Next feed due'}
               </small>
             )}
           </button>
@@ -136,7 +140,7 @@ export function Dashboard({ activeTimers, events, profile, profiles = [], todayK
             <span>Last bath</span>
             <strong>{lastBath ? formatDaysAgo(lastBath.startedAt).replace(/ ago$/, '') : 'None'}</strong>
             <small>{lastBath ? `${formatShortDate(lastBath.startedAt)} · ${formatClock(lastBath.startedAt)}` : 'Nothing logged yet'}</small>
-            {bathReminder && <small className="hero-metric-detail">Bath due · ~2–3 days</small>}
+            {bathReminder && <small className="hero-metric-detail">Bath due ~2–3 days</small>}
           </button>
         </div>
       </section>

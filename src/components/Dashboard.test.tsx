@@ -196,12 +196,12 @@ describe('Dashboard', () => {
     const bathButton = screen.getByRole('button', { name: 'View bath log' });
     const bath = within(bathButton);
     expect(bath.getByText('5 days')).toBeInTheDocument();
-    expect(bath.getByText('Bath due · ~2–3 days')).toBeInTheDocument();
+    expect(bath.getByText('Bath due ~2–3 days')).toBeInTheDocument();
     expect(bathButton).toHaveClass('past-due');
 
     const feed = screen.getByRole('button', { name: 'View feed log' });
     expect(feed).toHaveClass('past-due');
-    expect(within(feed).getByText('Next feed due')).toBeInTheDocument();
+    expect(within(feed).getByText('Next feed: either · due')).toBeInTheDocument();
 
     vi.useRealTimers();
   });
@@ -214,6 +214,7 @@ describe('Dashboard', () => {
       createdAt: '2026-09-10T11:00:00.000Z',
       id: 'feed-1',
       method: 'nursing' as const,
+      side: 'both' as const,
       startedAt: '2026-09-10T11:00:00.000Z',
       syncState: 'local' as const,
       type: 'feed' as const,
@@ -223,7 +224,8 @@ describe('Dashboard', () => {
     render(<Dashboard activeTimers={{}} events={events} profile={createDefaultBabyProfile(new Date('2026-06-19T12:00:00.000Z'))} todayKey="2026-09-10" onAdd={vi.fn()} onOpenLog={vi.fn()} />);
 
     const feed = within(screen.getByRole('button', { name: 'View feed log' }));
-    expect(feed.getByText('Next feed ~6:30 AM')).toBeInTheDocument();
+    expect(feed.getByText('Next feed: either ~6:30 AM')).toBeInTheDocument();
+    expect(feed.queryByText(/· next:/i)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'View feed log' })).not.toHaveClass('past-due');
 
     vi.useRealTimers();
