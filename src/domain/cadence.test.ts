@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getCadenceReminders } from './cadence';
+import { getCadenceReminders, predictNextFeed } from './cadence';
 import type { CareEvent } from './types';
 
 const NOW = new Date('2026-09-10T12:00:00.000Z');
@@ -70,5 +70,22 @@ describe('cadence reminders', () => {
   it('says nothing about care that was never logged', () => {
     // An empty log means unknown, not overdue — no nagging a fresh install.
     expect(getCadenceReminders([], { now: NOW })).toEqual([]);
+  });
+});
+
+describe('next feed prediction', () => {
+  it('centers the usual feed window two and a half hours after the last feed', () => {
+    const prediction = predictNextFeed([feedHoursAgo(1)], NOW);
+
+    expect(prediction).toMatchObject({
+      expectedAt: '2026-09-10T13:30:00.000Z',
+      minutesAway: 90,
+      windowEndAt: '2026-09-10T14:00:00.000Z',
+      windowStartAt: '2026-09-10T13:00:00.000Z'
+    });
+  });
+
+  it('returns nothing without a logged feed', () => {
+    expect(predictNextFeed([], NOW)).toBeNull();
   });
 });

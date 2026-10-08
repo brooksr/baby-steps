@@ -1,5 +1,5 @@
 import { Bath, Bed, Calendar, Droplets, Dumbbell, FileText, Heart, Milk, Navigation, Pill, Plus, Ruler, Smile, Thermometer, TriangleAlert, Wind } from 'lucide-react';
-import { getCadenceReminders } from '../domain/cadence';
+import { getCadenceReminders, predictNextFeed } from '../domain/cadence';
 import { getFirstName } from '../domain/family';
 import { formatAgeSummary, formatAgo, formatClock, formatDaysAgo, formatDuration, formatShortDate, getAgeDays, getDaysUntilDue, getDueDateStatus, isSameLocalDate } from '../domain/dates';
 import { predictNextDiaper } from '../domain/diapers';
@@ -22,6 +22,7 @@ interface DashboardProps {
   /** Everyone tracked, so an entry can name the parent who logged it. */
   profiles?: BabyProfile[];
   onAdd: (type: CareEventType) => void;
+  onOpenLog: (type: CareEventType) => void;
 }
 
 // Ordered by how often a caregiver reaches for it, three to a row: the awake
@@ -41,7 +42,7 @@ const actions = [
   { icon: FileText, label: 'Note', type: 'note' }
 ] satisfies Array<{ icon: typeof Plus; label: string; type: CareEventType }>;
 
-export function Dashboard({ activeTimers, events, profile, profiles = [], todayKey, onAdd }: DashboardProps) {
+export function Dashboard({ activeTimers, events, profile, profiles = [], todayKey, onAdd, onOpenLog }: DashboardProps) {
   // Whoever the switcher is on — an alert has to name the right baby.
   const firstName = getFirstName(profile);
   const preferredUnits = getPreferredUnits(profile);
@@ -51,6 +52,7 @@ export function Dashboard({ activeTimers, events, profile, profiles = [], todayK
   const todayEvents = events.filter((event) => isSameLocalDate(event.startedAt, todayKey));
   const summary = getDailySummary(todayEvents);
   const lastFeed = getLastEvent(events, (event) => event.type === 'feed');
+  const nextFeed = activeTimers.feed ? null : predictNextFeed(events);
   const lastNursing = getLastEvent(events, (event) => event.type === 'feed' && event.method === 'nursing');
   const nextSide =
     lastNursing && lastNursing.type === 'feed'
@@ -64,6 +66,9 @@ export function Dashboard({ activeTimers, events, profile, profiles = [], todayK
   const nextDiaper = predictNextDiaper(events);
   const lastBath = getLastEvent(events, (event) => event.type === 'bath');
   const cadenceReminders = getCadenceReminders(events, { feedInProgress: Boolean(activeTimers.feed) });
+  const bathReminder = cadenceReminders.find((reminder) => reminder.kind === 'bath');
+  const feedReminder = cadenceReminders.find((reminder) => reminder.kind === 'feed');
+  const otherCadenceReminders = cadenceReminders.filter((reminder) => reminder.kind !== 'bath');
   // Under a fortnight the headline is already in days, so the exact age below it
   // would only say the same thing twice.
   const ageDetail = isBorn
@@ -104,16 +109,32 @@ export function Dashboard({ activeTimers, events, profile, profiles = [], todayK
         </div>
 
         <div className="hero-metrics">
-          <div className="hero-metric">
+          <button aria-label="View feed log" className={`hero-metric hero-metric-link${feedReminder ? ' past-due' : ''}`} type="button" onClick={() => onOpenLog('feed')}>
             <span>Last feed</span>
             <strong>{lastFeed ? formatAgo(lastFeed.startedAt) : 'None'}</strong>
             <small>{lastFeed ? `${formatClock(lastFeed.startedAt)}${nextSide ? ` · next: ${nextSide}` : ''}` : 'Nothing logged yet'}</small>
-          </div>
-          <div className="hero-metric">
+            {nextFeed && (
+              <small className="hero-metric-detail">
+                {nextFeed.minutesAway > 0 ? `Next feed ~${formatClock(nextFeed.expectedAt)}` : 'Next feed due'}
+              </small>
+            )}
+          </button>
+          <button aria-label="View diaper log" className={`hero-metric hero-metric-link${nextDiaper && nextDiaper.minutesAway <= 0 ? ' past-due' : ''}`} type="button" onClick={() => onOpenLog('diaper')}>
             <span>Last diaper</span>
             <strong>{lastDiaper ? formatAgo(lastDiaper.startedAt) : 'None'}</strong>
             <small>{lastDiaper ? formatClock(lastDiaper.startedAt) : 'Nothing logged yet'}</small>
-          </div>
+            {nextDiaper && (
+              <small className="hero-metric-detail">
+                {nextDiaper.minutesAway > 0 ? `Next ~${formatClock(nextDiaper.expectedAt)}` : 'Likely now'} · {nextDiaper.likelyKind}
+              </small>
+            )}
+          </button>
+          <button aria-label="View bath log" className={`hero-metric hero-metric-link${bathReminder ? ' past-due' : ''}`} type="button" onClick={() => onOpenLog('bath')}>
+            <span>Last bath</span>
+            <strong>{lastBath ? formatDaysAgo(lastBath.startedAt) : 'None'}</strong>
+            <small>{lastBath ? `${formatShortDate(lastBath.startedAt)} · ${formatClock(lastBath.startedAt)}` : 'Nothing logged yet'}</small>
+            {bathReminder && <small className="hero-metric-detail">Bath due · usually every 2–3 days</small>}
+          </button>
         </div>
       </section>
 
@@ -149,22 +170,6 @@ export function Dashboard({ activeTimers, events, profile, profiles = [], todayK
         </a>
       )}
 
-      <section className="metric-grid status-grid" aria-label="Current status">
-        <article className="metric-card">
-          <span>Sleep</span>
-          <strong>{activeSleep ? formatDuration(getEventDurationMinutes({ ...activeSleep, endedAt: new Date().toISOString() })) : `${formatDuration(summary.sleepMinutes)} today`}</strong>
-        </article>
-        <article className="metric-card">
-          <span>Milk out</span>
-          <strong>{formatVolume(summary.pumpOunces, preferredUnits.system)}</strong>
-        </article>
-        <article className="metric-card">
-          <span>Last bath</span>
-          <strong>{lastBath ? formatDaysAgo(lastBath.startedAt) : 'None'}</strong>
-          <small>{lastBath ? `${formatShortDate(lastBath.startedAt)} · ${formatClock(lastBath.startedAt)}` : 'Nothing logged yet'}</small>
-        </article>
-      </section>
-
       {feverActive && lastTemperature && (
         <section className="status-list" aria-label="Temperature alert">
           <article className="status-row urgent">
@@ -182,9 +187,9 @@ export function Dashboard({ activeTimers, events, profile, profiles = [], todayK
         </section>
       )}
 
-      {cadenceReminders.length > 0 && (
+      {otherCadenceReminders.length > 0 && (
         <section className="status-list" aria-label="Gentle reminders">
-          {cadenceReminders.map((reminder) => {
+          {otherCadenceReminders.map((reminder) => {
             const Icon = reminder.kind === 'feed' ? Milk : Bath;
 
             return (
@@ -200,27 +205,11 @@ export function Dashboard({ activeTimers, events, profile, profiles = [], todayK
         </section>
       )}
 
-      {nextDiaper && (
-        <section className="status-list" aria-label="Next diaper">
-          <article className="status-row">
-            <Wind aria-hidden="true" />
-            <div>
-              <strong>
-                Next diaper {nextDiaper.minutesAway > 0 ? `in ${formatDuration(nextDiaper.minutesAway)}` : 'due now'} · likely {nextDiaper.likelyKind}
-              </strong>
-              <span>
-                {formatClock(nextDiaper.windowStartAt)}–{formatClock(nextDiaper.windowEndAt)} · {nextDiaper.basis} · {nextDiaper.confidence} confidence
-              </span>
-            </div>
-          </article>
-        </section>
-      )}
-
       <NewbornStatus events={events} profile={profile} dateKey={todayKey} heading="Today's newborn check" />
 
       {/* Sits below the alerts and the daily check — what is happening today
           comes first, what to expect of this week comes after it. */}
-      <WhatToExpect profile={profile} />
+      <WhatToExpect key={profile.id} events={events} profile={profile} />
 
       {(upcomingMeds.length > 0 || upcomingAppointments.length > 0) && (
         <section className="status-list" aria-label="Upcoming">
@@ -250,7 +239,15 @@ export function Dashboard({ activeTimers, events, profile, profiles = [], todayK
           <h2>Today</h2>
           <span>{summary.feedCount} feeds · {summary.wetDiapers + summary.dirtyDiapers} diapers</span>
         </div>
-        <div className="today-totals" aria-label="Diapers today">
+        <div className="today-totals" aria-label="Today summary">
+          <article>
+            <span>Sleep</span>
+            <strong>{activeSleep ? formatDuration(getEventDurationMinutes({ ...activeSleep, endedAt: new Date().toISOString() })) : formatDuration(summary.sleepMinutes)}</strong>
+          </article>
+          <article>
+            <span>Milk out</span>
+            <strong>{formatVolume(summary.pumpOunces, preferredUnits.system)}</strong>
+          </article>
           <article>
             <span>Wet</span>
             <strong>{summary.wetDiapers}</strong>

@@ -1,9 +1,12 @@
-import { Baby, Lightbulb, Milk, Moon, Ruler, Sparkles } from 'lucide-react';
+import { useState } from 'react';
+import { Baby, ChevronDown, ChevronLeft, ChevronRight, Lightbulb, Milk, Moon, Ruler, Sparkles } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import type { BabyProfile } from '../domain/types';
-import { getBabyFirstName, getWhatToExpect, type ChildOutlook, type PregnancyOutlook } from '../domain/whatToExpect';
+import { getFetalWeeks } from '../domain/reference';
+import type { BabyProfile, CareEvent } from '../domain/types';
+import { COVERAGE_END_DAYS, getBabyFirstName, getWhatToExpect, type ChildOutlook, type Outlook, type PregnancyOutlook } from '../domain/whatToExpect';
 
 interface WhatToExpectProps {
+  events?: CareEvent[];
   profile: BabyProfile;
   /** Overridable so a test can stand at a fixed point in the two years. */
   now?: Date;
@@ -61,7 +64,7 @@ function Pregnancy({ outlook }: { outlook: PregnancyOutlook }) {
 
   return (
     <>
-      <div className="section-heading">
+      <div className="expect-stage-heading">
         <div>
           <strong className="expect-title">Week {outlook.gestationWeeks}</strong>
           <span>
@@ -91,7 +94,7 @@ function Child({ outlook, name }: { outlook: ChildOutlook; name: string }) {
     // worse than saying so. The Care tab still tracks milestones and vaccines.
     return (
       <>
-        <div className="section-heading">
+        <div className="expect-stage-heading">
           <div>
             <strong className="expect-title">Past two years</strong>
           </div>
@@ -106,7 +109,7 @@ function Child({ outlook, name }: { outlook: ChildOutlook; name: string }) {
 
   return (
     <>
-      <div className="section-heading">
+      <div className="expect-stage-heading">
         <div>
           <strong className="expect-title">{stage.label}</strong>
           <span>{basis === 'corrected' ? 'At corrected age' : `${name} right now`}</span>
@@ -165,23 +168,106 @@ function Child({ outlook, name }: { outlook: ChildOutlook; name: string }) {
  * Informational only — the footnote points back at the pediatrician, like every
  * other reference range in the app.
  */
-export function WhatToExpect({ profile, now }: WhatToExpectProps) {
-  const outlook = getWhatToExpect(profile, now);
+export function WhatToExpect({ events = [], profile, now }: WhatToExpectProps) {
+  const [collapsed, setCollapsed] = useState(false);
+  const [navigationDate, setNavigationDate] = useState<Date | null>(null);
+
+  const currentDate = navigationDate ?? now ?? new Date();
+  const outlook = getWhatToExpect(profile, currentDate, events);
 
   if (!outlook) {
     return null;
   }
 
   const name = getBabyFirstName(profile);
+  const previousDate = getAdjacentDate(events, profile, outlook, currentDate, -1);
+  const nextDate = getAdjacentDate(events, profile, outlook, currentDate, 1);
 
   return (
     <section className="section-block expect-card" aria-label="What to expect">
-      {outlook.phase === 'pregnancy' ? <Pregnancy outlook={outlook} /> : <Child outlook={outlook} name={name} />}
+      <div className="section-heading expect-card-heading">
+        <h2>What to expect</h2>
+        <div className="expect-card-actions">
+          {!collapsed && (
+            <div className="expect-navigation" aria-label="Browse advice">
+              <button className="secondary-button compact" type="button" disabled={!previousDate} onClick={() => previousDate && setNavigationDate(previousDate)}>
+                <ChevronLeft aria-hidden="true" />
+                Previous
+              </button>
+              {navigationDate && (
+                <button className="secondary-button compact" type="button" onClick={() => setNavigationDate(null)}>
+                  Today
+                </button>
+              )}
+              <button className="secondary-button compact" type="button" disabled={!nextDate} onClick={() => nextDate && setNavigationDate(nextDate)}>
+                Next
+                <ChevronRight aria-hidden="true" />
+              </button>
+            </div>
+          )}
+          <button
+            className="icon-button expect-collapse"
+            type="button"
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? 'Expand what to expect' : 'Collapse what to expect'}
+            onClick={() => setCollapsed((value) => !value)}
+          >
+            <ChevronDown aria-hidden="true" />
+          </button>
+        </div>
+      </div>
 
-      <p className="expect-footnote">
-        General guidance, not a schedule to hit — every baby runs to their own clock. Bring anything that worries you to
-        your pediatrician.
-      </p>
+      {!collapsed && (
+        <div className="expect-content">
+          {outlook.phase === 'pregnancy' ? <Pregnancy outlook={outlook} /> : <Child outlook={outlook} name={name} />}
+
+          <p className="expect-footnote">
+            General guidance, not a schedule to hit — every baby runs to their own clock. Bring anything that worries you to
+            your pediatrician.
+          </p>
+        </div>
+      )}
     </section>
   );
+}
+
+function addDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+/** Lands on the adjacent written band rather than making someone tap day by day. */
+function getAdjacentDate(events: CareEvent[], profile: BabyProfile, outlook: Outlook, date: Date, direction: -1 | 1): Date | null {
+  if (outlook.phase === 'pregnancy') {
+    const weeks = getFetalWeeks();
+    const boundary = direction === -1 ? weeks[0]?.week : weeks[weeks.length - 1]?.week;
+    return boundary == null || (direction === -1 ? outlook.week.week <= boundary : outlook.week.week >= boundary)
+      ? null
+      : addDays(date, direction * 7);
+  }
+
+  if (!outlook.stage) {
+    return direction === -1 ? addDays(date, COVERAGE_END_DAYS - outlook.stageAgeDays) : null;
+  }
+
+  const targetAge = direction === -1 ? outlook.stage.fromDays - 1 : outlook.stage.toDays + 1;
+  if (targetAge < 0) {
+    return null;
+  }
+
+  let candidate = addDays(date, targetAge - outlook.stageAgeDays);
+
+  // During a preterm baby's handoff from chronological to corrected age, the
+  // stage can be held at the newborn boundary for several weeks. Keep walking
+  // until Previous/Next really does reach a different written band.
+  for (let attempt = 0; attempt <= COVERAGE_END_DAYS; attempt += 1) {
+    const adjacent = getWhatToExpect(profile, candidate, events);
+    if (adjacent?.phase === 'child' && adjacent.stage?.label !== outlook.stage.label) {
+      return candidate;
+    }
+    candidate = addDays(candidate, direction);
+  }
+
+  return null;
 }

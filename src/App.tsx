@@ -102,6 +102,7 @@ function App() {
   const [shopping, setShopping] = useState<ShoppingItem[]>([]);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [activeView, setActiveView] = useState<View>(viewFromHash);
+  const [logTypeFilter, setLogTypeFilter] = useState<CareEventType | null>(null);
   const [dialogType, setDialogType] = useState<CareEventType | null>(null);
   const [editEvent, setEditEvent] = useState<CareEvent | null>(null);
   const [loading, setLoading] = useState(false);
@@ -208,6 +209,11 @@ function App() {
     setActiveView(view);
     history.pushState(null, '', `#${view}`);
   }, []);
+
+  const openFilteredLog = useCallback((type: CareEventType) => {
+    setLogTypeFilter(type);
+    navigate('log');
+  }, [navigate]);
 
   useEffect(() => {
     const onPopState = () => setActiveView(viewFromHash());
@@ -635,6 +641,7 @@ function App() {
             profiles={profiles}
             todayKey={todayKey}
             onAdd={setDialogType}
+            onOpenLog={openFilteredLog}
           />
         ))}
 
@@ -642,6 +649,7 @@ function App() {
         <Log
           events={events}
           firstYearEvents={firstYearEvents}
+          initialType={logTypeFilter}
           profile={profile}
           profiles={profiles}
           onAdd={setDialogType}
@@ -718,7 +726,10 @@ function App() {
               aria-pressed={selected}
               className={selected ? 'active' : ''}
               data-nav={tab.id}
-              onClick={() => navigate(tab.id)}
+              onClick={() => {
+                if (tab.id === 'log') setLogTypeFilter(null);
+                navigate(tab.id);
+              }}
             >
               <Icon aria-hidden="true" />
               <span>{tab.label}</span>

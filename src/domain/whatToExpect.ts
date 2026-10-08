@@ -20,7 +20,7 @@ import {
   type FetalWeek,
   type NoteAudience
 } from './reference';
-import type { BabyGender, BabyProfile } from './types';
+import type { BabyGender, BabyProfile, CareEvent } from './types';
 
 const DAY_MS = 24 * 60 * 60_000;
 
@@ -139,12 +139,36 @@ export function getNoteAudiences(profile: BabyProfile, gestation: GestationInfo 
  * Notes match on **chronological** age, not on the corrected age the stage uses:
  * a car seat screen, a cord stump and an RSV season all arrive on the calendar.
  */
-function selectNotes(profile: BabyProfile, gestation: GestationInfo | null, ageDays: number): string[] {
+const WAKE_TO_FEED_NOTE = 'Preterm babies often need waking to feed';
+
+function hasPassedBirthWeight(events: CareEvent[], now: Date): boolean {
+  const birth = events
+    .filter((event): event is Extract<CareEvent, { type: 'birth' }> => event.type === 'birth' && event.weightOz != null)
+    .sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime())[0];
+
+  if (birth?.weightOz == null) {
+    return false;
+  }
+
+  const birthWeight = birth.weightOz;
+
+  return events.some((event) =>
+    event.type === 'growth'
+    && event.weightOz != null
+    && event.weightOz > birthWeight
+    && new Date(event.startedAt).getTime() > new Date(birth.startedAt).getTime()
+    && new Date(event.startedAt).getTime() <= now.getTime()
+  );
+}
+
+function selectNotes(profile: BabyProfile, gestation: GestationInfo | null, ageDays: number, events: CareEvent[], now: Date): string[] {
   const audiences = getNoteAudiences(profile, gestation);
   const rank = (note: ExpectationNote) => audiences.indexOf(note.audience);
+  const passedBirthWeight = hasPassedBirthWeight(events, now);
 
   return getExpectationNotes()
     .filter((note) => rank(note) >= 0 && ageDays >= note.fromDays && ageDays <= note.toDays)
+    .filter((note) => !passedBirthWeight || !note.note.startsWith(WAKE_TO_FEED_NOTE))
     .sort((a, b) => rank(a) - rank(b))
     .slice(0, MAX_NOTES)
     .map((note) => personalize(note.note, profile));
@@ -195,7 +219,7 @@ function getPregnancyOutlook(profile: BabyProfile, now: Date): PregnancyOutlook 
   return { daysUntilDue, gestationDays, gestationWeeks, phase: 'pregnancy', week };
 }
 
-function getChildOutlook(profile: BabyProfile, birthDate: string, now: Date): ChildOutlook {
+function getChildOutlook(profile: BabyProfile, birthDate: string, now: Date, events: CareEvent[]): ChildOutlook {
   const birthAtNoon = new Date(`${getLocalDateKey(birthDate)}T12:00:00`).getTime();
   const ageDays = Math.max(0, Math.floor((now.getTime() - birthAtNoon) / DAY_MS));
   const gestation = getGestationInfo(profile);
@@ -207,7 +231,7 @@ function getChildOutlook(profile: BabyProfile, birthDate: string, now: Date): Ch
     correctedAgeDays: ageDays - (gestation?.correctionDays ?? 0),
     beyondCoverage: stageAgeDays > COVERAGE_END_DAYS,
     gestation,
-    notes: selectNotes(profile, gestation, ageDays),
+    notes: selectNotes(profile, gestation, ageDays, events, now),
     phase: 'child',
     stage: findStage(profile, stageAgeDays),
     stageAgeDays
@@ -215,9 +239,9 @@ function getChildOutlook(profile: BabyProfile, birthDate: string, now: Date): Ch
 }
 
 /** What to expect for this profile right now, or null when there is nothing to say. */
-export function getWhatToExpect(profile: BabyProfile, now: Date = new Date()): Outlook | null {
+export function getWhatToExpect(profile: BabyProfile, now: Date = new Date(), events: CareEvent[] = []): Outlook | null {
   return profile.birthDate
-    ? getChildOutlook(profile, profile.birthDate, now)
+    ? getChildOutlook(profile, profile.birthDate, now, events)
     : getPregnancyOutlook(profile, now);
 }
 

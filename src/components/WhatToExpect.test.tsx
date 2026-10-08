@@ -1,4 +1,5 @@
 import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import type { BabyProfile } from '../domain/types';
 import { WhatToExpect } from './WhatToExpect';
@@ -90,5 +91,31 @@ describe('WhatToExpect', () => {
   it('always points back at the pediatrician', () => {
     render(<WhatToExpect profile={profileOf({ birthDate: '2026-09-01' })} now={new Date('2026-09-03T12:00:00')} />);
     expect(within(card()).getByText(/pediatrician/i)).toBeInTheDocument();
+  });
+
+  it('can collapse and expand the information', async () => {
+    const user = userEvent.setup();
+    render(<WhatToExpect profile={profileOf({ birthDate: '2026-09-01' })} now={new Date('2026-09-03T12:00:00')} />);
+
+    await user.click(screen.getByRole('button', { name: 'Collapse what to expect' }));
+    expect(within(card()).queryByText('Day 3')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Expand what to expect' }));
+    expect(within(card()).getByText('Day 3')).toBeInTheDocument();
+  });
+
+  it('browses to adjacent advice and returns to today', async () => {
+    const user = userEvent.setup();
+    render(<WhatToExpect profile={profileOf({ birthDate: '2026-09-01' })} now={new Date('2026-09-03T12:00:00')} />);
+
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    expect(within(card()).getByText('Day 4')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Previous' }));
+    expect(within(card()).getByText('Day 3')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Today' }));
+    expect(within(card()).getByText('Day 3')).toBeInTheDocument();
+    expect(card().querySelector('.expect-card-heading .expect-navigation')).toBeInTheDocument();
   });
 });

@@ -8,6 +8,7 @@ import { Timeline } from './Timeline';
 const PAGE_SIZE = 20;
 
 type FilterGroup = 'all' | 'feeds' | 'diapers' | 'sleep' | 'health' | 'growth' | 'io' | 'other';
+type FilterSelection = FilterGroup | `type:${CareEventType}`;
 
 const FILTER_OPTIONS: Array<{ id: FilterGroup; label: string; types: CareEventType[] | null }> = [
   { id: 'all', label: 'All types', types: null },
@@ -76,14 +77,16 @@ interface LogProps {
   profile: BabyProfile;
   /** Everyone tracked, so an entry can name the parent who logged it. */
   profiles?: BabyProfile[];
+  /** Opens the Log on exactly one event type when linked from a Home status. */
+  initialType?: CareEventType | null;
   onAdd: (type: CareEventType) => void;
   onDelete: (id: string) => void;
   onEdit: (event: CareEvent) => void;
 }
 
-export function Log({ events, firstYearEvents, profile, profiles = [], onAdd, onDelete, onEdit }: LogProps) {
+export function Log({ events, firstYearEvents, profile, profiles = [], initialType = null, onAdd, onDelete, onEdit }: LogProps) {
   const [scope, setScope] = useState<'all' | 'first-year'>('all');
-  const [filter, setFilter] = useState<FilterGroup>('all');
+  const [filter, setFilter] = useState<FilterSelection>(initialType ? `type:${initialType}` : 'all');
   const [range, setRange] = useState<DateRange>(ALL_TIME);
   const [search, setSearch] = useState('');
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
@@ -93,8 +96,11 @@ export function Log({ events, firstYearEvents, profile, profiles = [], onAdd, on
   const filtered = useMemo(() => {
     let result = filterEventsByRange(scopedEvents, range);
 
-    const filterOption = FILTER_OPTIONS.find((o) => o.id === filter);
-    if (filterOption?.types) {
+    const exactType = filter.startsWith('type:') ? filter.slice(5) as CareEventType : null;
+    const filterOption = exactType ? undefined : FILTER_OPTIONS.find((o) => o.id === filter);
+    if (exactType) {
+      result = result.filter((event) => event.type === exactType);
+    } else if (filterOption?.types) {
       const allowed = new Set(filterOption.types);
       result = result.filter((e) => allowed.has(e.type));
     }
@@ -114,7 +120,7 @@ export function Log({ events, firstYearEvents, profile, profiles = [], onAdd, on
     setVisibleCount(PAGE_SIZE);
   }
 
-  function handleFilter(value: FilterGroup) {
+  function handleFilter(value: FilterSelection) {
     setFilter(value);
     setVisibleCount(PAGE_SIZE);
   }
@@ -160,12 +166,19 @@ export function Log({ events, firstYearEvents, profile, profiles = [], onAdd, on
           <select
             className="log-filter"
             value={filter}
-            onChange={(e) => handleFilter(e.target.value as FilterGroup)}
+            onChange={(e) => handleFilter(e.target.value as FilterSelection)}
             aria-label="Filter by type"
           >
-            {FILTER_OPTIONS.map((o) => (
-              <option key={o.id} value={o.id}>{o.label}</option>
-            ))}
+            <optgroup label="Groups">
+              {FILTER_OPTIONS.map((o) => (
+                <option key={o.id} value={o.id}>{o.label}</option>
+              ))}
+            </optgroup>
+            <optgroup label="One type">
+              {Object.entries(careEventLabels).map(([type, label]) => (
+                <option key={type} value={`type:${type}`}>{label}</option>
+              ))}
+            </optgroup>
           </select>
         </div>
 

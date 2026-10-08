@@ -81,3 +81,33 @@ describe('Log date range', () => {
     expect(screen.getByText('Old note')).toBeInTheDocument();
   });
 });
+
+describe('Log type links', () => {
+  it('opens on exactly the requested event type', () => {
+    const bath: CareEvent = {
+      babyId: 'theo-roche',
+      createdAt: '2026-09-11T09:00:00',
+      id: 'bath-1',
+      startedAt: '2026-09-11T09:00:00',
+      syncState: 'synced',
+      type: 'bath',
+      updatedAt: '2026-09-11T09:00:00'
+    };
+
+    render(
+      <Log
+        events={[...events, bath]}
+        firstYearEvents={[...events, bath]}
+        initialType="bath"
+        profile={createDefaultBabyProfile(new Date('2026-06-19T12:00:00.000Z'))}
+        onAdd={vi.fn()}
+        onDelete={vi.fn()}
+        onEdit={vi.fn()}
+      />
+    );
+
+    expect(screen.getByLabelText('Filter by type')).toHaveValue('type:bath');
+    expect(screen.getByText('1 of 3')).toBeInTheDocument();
+    expect(screen.queryByText('Recent note')).not.toBeInTheDocument();
+  });
+});

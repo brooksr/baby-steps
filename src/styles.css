@@ -522,20 +522,47 @@ button {
   gap: 16px;
 }
 
-/* Last feed / last diaper — the two things you check first, so they ride in
-   the hero card rather than down in the status grid. */
+/* Last feed / diaper / bath — the things you check first, so they ride in the
+   hero card and open the matching slice of the Log. */
 .hero-metrics {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
 }
 
 .hero-metric {
   display: grid;
+  align-content: start;
   gap: 2px;
   padding: 10px 12px;
+  color: inherit;
   background: rgba(255, 255, 255, 0.16);
+  border: 0;
   border-radius: 8px;
+  text-align: left;
+}
+
+.hero-metric-link {
+  cursor: pointer;
+}
+
+.hero-metric-link:hover,
+.hero-metric-link:focus-visible {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.hero-metric.past-due {
+  color: #49340a;
+  background: #f4c95d;
+}
+
+.hero-metric.past-due:hover,
+.hero-metric.past-due:focus-visible {
+  background: #f7d577;
+}
+
+.hero-metric.past-due .hero-metric-detail {
+  border-top-color: rgba(73, 52, 10, 0.24);
 }
 
 .hero-metric span {
@@ -555,6 +582,14 @@ button {
   font-size: 0.76rem;
   font-weight: 700;
   opacity: 0.82;
+}
+
+.hero-metric .hero-metric-detail {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.24);
+  line-height: 1.35;
+  opacity: 1;
 }
 
 .profile-band h1,
@@ -825,12 +860,6 @@ button {
   color: var(--muted);
   font-size: 0.8rem;
   font-weight: 700;
-}
-
-/* Last bath is the odd card out on the two-up mobile grid, so it runs full
-   width rather than leaving a hole beside it. */
-.status-grid .metric-card:nth-child(3) {
-  grid-column: 1 / -1;
 }
 
 .status-list {
@@ -2164,15 +2193,6 @@ textarea {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
-  /* Sleep, milk out, and last bath — last feed/diaper live in the hero card. */
-  .status-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .status-grid .metric-card:nth-child(3) {
-    grid-column: auto;
-  }
-
   .report-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
@@ -2439,6 +2459,72 @@ textarea {
 .expect-card .section-heading h2 {
   font-size: 1.2rem;
   white-space: nowrap;
+}
+
+.expect-card-heading {
+  margin-bottom: 0;
+}
+
+.expect-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.expect-collapse {
+  min-width: 40px;
+  min-height: 40px;
+}
+
+.expect-collapse svg {
+  transition: transform 160ms ease;
+}
+
+.expect-collapse[aria-expanded='false'] svg {
+  transform: rotate(-90deg);
+}
+
+.expect-content {
+  margin-top: 14px;
+}
+
+.expect-stage-heading {
+  margin-bottom: 12px;
+}
+
+.expect-stage-heading > div {
+  display: grid;
+  gap: 2px;
+}
+
+.expect-stage-heading span {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.expect-navigation {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.expect-navigation button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.expect-navigation button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.expect-navigation svg {
+  width: 16px;
+  height: 16px;
 }
 
 .expect-summary {

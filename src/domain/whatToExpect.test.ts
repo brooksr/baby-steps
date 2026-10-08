@@ -229,6 +229,31 @@ describe('personal notes', () => {
     const notes = outlook?.phase === 'child' ? outlook.notes : [];
     expect(notes.some((note) => note.includes('whooping cough'))).toBe(true);
   });
+
+  it('stops the waking-to-feed note after a baby passes their birth weight', () => {
+    const birth = {
+      babyId: 'theo-roche',
+      createdAt: '2026-07-23T12:00:00.000Z',
+      id: 'birth',
+      startedAt: '2026-07-23T12:00:00.000Z',
+      syncState: 'synced' as const,
+      type: 'birth' as const,
+      updatedAt: '2026-07-23T12:00:00.000Z',
+      weightOz: 100
+    };
+    const growth = {
+      ...birth,
+      id: 'growth',
+      startedAt: '2026-08-20T12:00:00.000Z',
+      type: 'growth' as const,
+      weightOz: 101
+    };
+    const before = getWhatToExpect(pretermBoy, daysAfter('2026-07-23', 30), [birth]);
+    const after = getWhatToExpect(pretermBoy, daysAfter('2026-07-23', 30), [birth, growth]);
+
+    expect(before?.phase === 'child' && before.notes.some((note) => note.includes('need waking to feed'))).toBe(true);
+    expect(after?.phase === 'child' && after.notes.some((note) => note.includes('need waking to feed'))).toBe(false);
+  });
 });
 
 describe('FUTURE_STAGE_OUTLINE', () => {

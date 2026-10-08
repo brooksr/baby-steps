@@ -34,13 +34,16 @@ describe('Dashboard', () => {
       }
     ];
 
-    render(<Dashboard activeTimers={{}} events={events} profile={createDefaultBabyProfile(new Date('2026-06-19T12:00:00.000Z'))} todayKey="2026-09-02" onAdd={onAdd} />);
+    render(<Dashboard activeTimers={{}} events={events} profile={createDefaultBabyProfile(new Date('2026-06-19T12:00:00.000Z'))} todayKey="2026-09-02" onAdd={onAdd} onOpenLog={vi.fn()} />);
 
     expect(screen.getByText(/Theo Roche/i)).toBeInTheDocument();
     expect(screen.getByText(/days until due date/i)).toBeInTheDocument();
     expect(screen.getByText(/1 feeds · 1 diapers/i)).toBeInTheDocument();
+    const today = within(screen.getByLabelText('Today summary'));
+    expect(today.getByText('Sleep')).toBeInTheDocument();
+    expect(today.getByText('Milk out')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /diaper/i }));
+    await user.click(screen.getByRole('button', { name: 'Diaper' }));
     expect(onAdd).toHaveBeenCalledWith('diaper');
   });
 
@@ -59,24 +62,41 @@ describe('Dashboard', () => {
       }
     ];
 
-    render(<Dashboard activeTimers={{}} events={events} profile={createDefaultBabyProfile(new Date('2026-06-19T12:00:00.000Z'))} todayKey="2026-09-02" onAdd={onAdd} />);
+    const onOpenLog = vi.fn();
+    render(<Dashboard activeTimers={{}} events={events} profile={createDefaultBabyProfile(new Date('2026-06-19T12:00:00.000Z'))} todayKey="2026-09-02" onAdd={onAdd} onOpenLog={onOpenLog} />);
 
     // The relative wording ("Yesterday", "3 days ago") is pinned to a fixed
     // clock in dates.test.ts; here it just has to stop saying nothing is logged.
-    const status = within(screen.getByLabelText('Current status'));
-    expect(status.getByText(/Last bath/i)).toBeInTheDocument();
-    expect(status.queryByText(/Nothing logged yet/i)).not.toBeInTheDocument();
+    const bath = within(screen.getByRole('button', { name: 'View bath log' }));
+    expect(bath.getByText(/Last bath/i)).toBeInTheDocument();
+    expect(bath.queryByText(/Nothing logged yet/i)).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /bath/i }));
+    await user.click(screen.getByRole('button', { name: 'View bath log' }));
+    expect(onOpenLog).toHaveBeenCalledWith('bath');
+
+    await user.click(screen.getByRole('button', { name: 'Bath' }));
     expect(onAdd).toHaveBeenCalledWith('bath');
   });
 
   it('reports no bath when none is logged', () => {
-    render(<Dashboard activeTimers={{}} events={[]} profile={createDefaultBabyProfile(new Date('2026-06-19T12:00:00.000Z'))} todayKey="2026-09-02" onAdd={vi.fn()} />);
+    render(<Dashboard activeTimers={{}} events={[]} profile={createDefaultBabyProfile(new Date('2026-06-19T12:00:00.000Z'))} todayKey="2026-09-02" onAdd={vi.fn()} onOpenLog={vi.fn()} />);
 
-    const status = within(screen.getByLabelText('Current status'));
-    expect(status.getByText('None')).toBeInTheDocument();
-    expect(status.getByText(/Nothing logged yet/i)).toBeInTheDocument();
+    const bath = within(screen.getByRole('button', { name: 'View bath log' }));
+    expect(bath.getByText('None')).toBeInTheDocument();
+    expect(bath.getByText(/Nothing logged yet/i)).toBeInTheDocument();
+  });
+
+  it('opens the exact log type from each recent-event tile', async () => {
+    const user = userEvent.setup();
+    const onOpenLog = vi.fn();
+
+    render(<Dashboard activeTimers={{}} events={[]} profile={createDefaultBabyProfile(new Date('2026-06-19T12:00:00.000Z'))} todayKey="2026-09-02" onAdd={vi.fn()} onOpenLog={onOpenLog} />);
+
+    await user.click(screen.getByRole('button', { name: 'View feed log' }));
+    await user.click(screen.getByRole('button', { name: 'View diaper log' }));
+    await user.click(screen.getByRole('button', { name: 'View bath log' }));
+
+    expect(onOpenLog.mock.calls).toEqual([['feed'], ['diaper'], ['bath']]);
   });
 
   it('predicts the next diaper once there are enough changes to go on', () => {
@@ -95,11 +115,33 @@ describe('Dashboard', () => {
       updatedAt: '2026-09-02T12:00:00.000Z'
     }));
 
-    render(<Dashboard activeTimers={{}} events={events} profile={createDefaultBabyProfile(new Date('2026-06-19T12:00:00.000Z'))} todayKey="2026-09-02" onAdd={vi.fn()} />);
+    render(<Dashboard activeTimers={{}} events={events} profile={createDefaultBabyProfile(new Date('2026-06-19T12:00:00.000Z'))} todayKey="2026-09-02" onAdd={vi.fn()} onOpenLog={vi.fn()} />);
 
-    const prediction = within(screen.getByLabelText('Next diaper'));
-    expect(prediction.getByText(/Next diaper in 2h · likely wet/i)).toBeInTheDocument();
-    expect(prediction.getByText(/Typical 3h between changes/i)).toBeInTheDocument();
+    const prediction = within(screen.getByRole('button', { name: 'View diaper log' }));
+    expect(prediction.getByText(/Next ~7:00 AM · wet/i)).toBeInTheDocument();
+
+    vi.useRealTimers();
+  });
+
+  it('warns on the Last Diaper tile once its estimate has passed', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-02T12:00:00.000Z'));
+    const events: CareEvent[] = Array.from({ length: 8 }, (_, index) => ({
+      babyId: 'theo-roche',
+      createdAt: '2026-09-02T12:00:00.000Z',
+      id: `diaper-${index}`,
+      kind: 'wet' as const,
+      startedAt: new Date(Date.now() - 4 * 60 * 60_000 - (7 - index) * 3 * 60 * 60_000).toISOString(),
+      syncState: 'local' as const,
+      type: 'diaper' as const,
+      updatedAt: '2026-09-02T12:00:00.000Z'
+    }));
+
+    render(<Dashboard activeTimers={{}} events={events} profile={createDefaultBabyProfile(new Date('2026-06-19T12:00:00.000Z'))} todayKey="2026-09-02" onAdd={vi.fn()} onOpenLog={vi.fn()} />);
+
+    const diaper = screen.getByRole('button', { name: 'View diaper log' });
+    expect(diaper).toHaveClass('past-due');
+    expect(within(diaper).getByText('Likely now · wet')).toBeInTheDocument();
 
     vi.useRealTimers();
   });
@@ -111,7 +153,7 @@ describe('Dashboard', () => {
 
     const profile = { ...createDefaultBabyProfile(new Date('2026-06-19T12:00:00.000Z')), birthDate: '2026-09-02' };
 
-    render(<Dashboard activeTimers={{}} events={[]} profile={profile} todayKey="2026-09-16" onAdd={vi.fn()} />);
+    render(<Dashboard activeTimers={{}} events={[]} profile={profile} todayKey="2026-09-16" onAdd={vi.fn()} onOpenLog={vi.fn()} />);
 
     // The old hero was a bare "14" sitting on top of "14 days old".
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('2 weeks');
@@ -146,18 +188,50 @@ describe('Dashboard', () => {
       }
     ];
 
-    render(<Dashboard activeTimers={{}} events={events} profile={createDefaultBabyProfile(new Date('2026-06-19T12:00:00.000Z'))} todayKey="2026-09-10" onAdd={vi.fn()} />);
+    render(<Dashboard activeTimers={{}} events={events} profile={createDefaultBabyProfile(new Date('2026-06-19T12:00:00.000Z'))} todayKey="2026-09-10" onAdd={vi.fn()} onOpenLog={vi.fn()} />);
 
     const reminders = within(screen.getByLabelText('Gentle reminders'));
     expect(reminders.getByText('Last feed was 4h ago')).toBeInTheDocument();
-    expect(reminders.getByText('Last bath was 5 days ago')).toBeInTheDocument();
+    expect(reminders.queryByText('Last bath was 5 days ago')).not.toBeInTheDocument();
+    const bathButton = screen.getByRole('button', { name: 'View bath log' });
+    const bath = within(bathButton);
+    expect(bath.getByText('5 days ago')).toBeInTheDocument();
+    expect(bath.getByText('Bath due · usually every 2–3 days')).toBeInTheDocument();
+    expect(bathButton).toHaveClass('past-due');
+
+    const feed = screen.getByRole('button', { name: 'View feed log' });
+    expect(feed).toHaveClass('past-due');
+    expect(within(feed).getByText('Next feed due')).toBeInTheDocument();
+
+    vi.useRealTimers();
+  });
+
+  it('shows the likely next feed time inside the Last Feed tile', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-10T12:00:00.000Z'));
+    const events = [{
+      babyId: 'theo-roche',
+      createdAt: '2026-09-10T11:00:00.000Z',
+      id: 'feed-1',
+      method: 'nursing' as const,
+      startedAt: '2026-09-10T11:00:00.000Z',
+      syncState: 'local' as const,
+      type: 'feed' as const,
+      updatedAt: '2026-09-10T11:00:00.000Z'
+    }];
+
+    render(<Dashboard activeTimers={{}} events={events} profile={createDefaultBabyProfile(new Date('2026-06-19T12:00:00.000Z'))} todayKey="2026-09-10" onAdd={vi.fn()} onOpenLog={vi.fn()} />);
+
+    const feed = within(screen.getByRole('button', { name: 'View feed log' }));
+    expect(feed.getByText('Next feed ~6:30 AM')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'View feed log' })).not.toHaveClass('past-due');
 
     vi.useRealTimers();
   });
 
   it('stays quiet about the next diaper without enough history', () => {
-    render(<Dashboard activeTimers={{}} events={[]} profile={createDefaultBabyProfile(new Date('2026-06-19T12:00:00.000Z'))} todayKey="2026-09-02" onAdd={vi.fn()} />);
+    render(<Dashboard activeTimers={{}} events={[]} profile={createDefaultBabyProfile(new Date('2026-06-19T12:00:00.000Z'))} todayKey="2026-09-02" onAdd={vi.fn()} onOpenLog={vi.fn()} />);
 
-    expect(screen.queryByLabelText('Next diaper')).not.toBeInTheDocument();
+    expect(within(screen.getByRole('button', { name: 'View diaper log' })).queryByText(/Next diaper/i)).not.toBeInTheDocument();
   });
 });

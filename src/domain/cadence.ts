@@ -35,6 +35,32 @@ export interface CadenceOptions {
   now?: Date;
 }
 
+export interface FeedPrediction {
+  expectedAt: string;
+  minutesAway: number;
+  windowEndAt: string;
+  windowStartAt: string;
+}
+
+/** The midpoint of the usual 2–3 hour feed rhythm, anchored to the last feed. */
+export function predictNextFeed(events: CareEvent[], now = new Date()): FeedPrediction | null {
+  const lastFeed = getLastEvent(events, (event) => event.type === 'feed');
+
+  if (!lastFeed) {
+    return null;
+  }
+
+  const lastFeedAt = new Date(lastFeed.startedAt).getTime();
+  const expectedAt = lastFeedAt + ((FEED_CADENCE_HOURS.min + FEED_CADENCE_HOURS.max) / 2) * 60 * MINUTE;
+
+  return {
+    expectedAt: new Date(expectedAt).toISOString(),
+    minutesAway: Math.round((expectedAt - now.getTime()) / MINUTE),
+    windowEndAt: new Date(lastFeedAt + FEED_CADENCE_HOURS.max * 60 * MINUTE).toISOString(),
+    windowStartAt: new Date(lastFeedAt + FEED_CADENCE_HOURS.min * 60 * MINUTE).toISOString()
+  };
+}
+
 function getFeedReminder(events: CareEvent[], now: Date): CadenceReminder | null {
   const lastFeed = getLastEvent(events, (event) => event.type === 'feed');
 
