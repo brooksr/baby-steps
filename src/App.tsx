@@ -15,7 +15,7 @@ import { ParentDashboard } from './components/ParentDashboard';
 import { ParentReports } from './components/ParentReports';
 import { ShoppingList } from './components/ShoppingList';
 import { Todos } from './components/Todos';
-import { getActiveProfiles, isParent, getStoredActiveProfileId, storeActiveProfileId, type NewProfileInput } from './domain/family';
+import { getActiveProfiles, isChild, isParent, getStoredActiveProfileId, storeActiveProfileId, storeEmergencyChild, type NewProfileInput } from './domain/family';
 import { DEFAULT_SLEEP_WINDOW, planAttribution, planParentSleeps, type Shift, type ShiftPlan, type ShiftResult } from './domain/nightShift';
 import { getLocalDateKey } from './domain/dates';
 import { getFirstYearEvents } from './domain/firstYear';
@@ -108,6 +108,9 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [bootPhase, setBootPhase] = useState<BootPhase>(() => (hasStoredGoogleGrant() ? 'restoring' : 'signin'));
   const [sessionExpired, setSessionExpired] = useState(false);
+  // Opened from the sign-in screen. It stays up through a restore finishing
+  // behind it — the screen must not jump to Home under someone doing CPR.
+  const [splashEmergency, setSplashEmergency] = useState(false);
   const [error, setError] = useState('');
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
   const [storeStatus, setStoreStatus] = useState<StoreStatus | null>(() => trackerStore.getStatus?.() ?? null);
@@ -123,6 +126,13 @@ function App() {
   useEffect(() => {
     applyTheme(theme);
   }, [theme]);
+
+  // Remember the child on screen (or, from a parent's view, the first child) so
+  // the sign-in screen's Emergency guide can be tailored before any sign-in.
+  useEffect(() => {
+    const child = profile && isChild(profile) ? profile : getActiveProfiles(profiles).find(isChild);
+    if (child) storeEmergencyChild(child);
+  }, [profile, profiles]);
 
   // Timers belong to a child, not to the device — follow whoever is on screen.
   const activeChildId = profile?.id;
@@ -582,15 +592,17 @@ function App() {
     }
   }
 
-  if (bootPhase !== 'ready') {
+  if (bootPhase !== 'ready' || splashEmergency) {
     return (
       <LoginSplash
+        emergencyOpen={splashEmergency}
         error={error}
         loading={loading}
         restoring={bootPhase === 'restoring'}
         sessionExpired={sessionExpired}
         storeStatus={storeStatus}
         onContinue={handleSplashContinue}
+        onEmergencyChange={setSplashEmergency}
         onOffline={loadOffline}
       />
     );

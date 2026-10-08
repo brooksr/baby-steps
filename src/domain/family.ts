@@ -1,10 +1,11 @@
 import { createDefaultBabyProfile, getDeviceTimezone } from './dates';
-import type { BabyGender, BabyProfile, ParentRole, PreferredUnits, ProfileKind } from './types';
+import type { BabyGender, BabyProfile, CareContact, ParentRole, PreferredUnits, ProfileKind } from './types';
 
 // Keeps its original name: a device that already stored a choice under this key
 // must not lose it just because the switcher grew to cover parents too.
 const ACTIVE_PROFILE_KEY = 'babysteps.activeChild';
 const CAREGIVER_KEY = 'babysteps.caregiver';
+const EMERGENCY_CHILD_KEY = 'babysteps.emergencyChild';
 
 /** What to call someone whose profile has no usable name yet. */
 const UNNAMED = 'Baby';
@@ -91,6 +92,49 @@ export function getStoredActiveProfileId(): string | undefined {
 
 export function storeActiveProfileId(id: string): void {
   safeStorage()?.setItem(ACTIVE_PROFILE_KEY, id);
+}
+
+/** Just what the Emergency guide reads: an age to tailor to, and who to call. */
+type EmergencyChild = Pick<BabyProfile, 'birthDate' | 'name'> & { pediatrician?: CareContact };
+
+/**
+ * The child the sign-in screen's Emergency guide is about. Before sign-in there
+ * is no sheet to read, and the local database is not a copy of it, so the app
+ * remembers this much on the device whenever a child is on screen — enough to
+ * pick infant vs child technique without waiting on a network.
+ */
+export function storeEmergencyChild(profile: BabyProfile): void {
+  const remembered: EmergencyChild = {
+    birthDate: profile.birthDate,
+    name: profile.name,
+    pediatrician: profile.careInfo?.pediatrician
+  };
+
+  try {
+    safeStorage()?.setItem(EMERGENCY_CHILD_KEY, JSON.stringify(remembered));
+  } catch {
+    // A full or blocked storage just means the guide opens on the default age.
+  }
+}
+
+/** The remembered child as a profile, or the default (an infant) when none is. */
+export function getStoredEmergencyChild(): BabyProfile {
+  const base = createDefaultBabyProfile();
+
+  try {
+    const raw = safeStorage()?.getItem(EMERGENCY_CHILD_KEY);
+    if (!raw) return base;
+    const stored = JSON.parse(raw) as Partial<EmergencyChild>;
+
+    return {
+      ...base,
+      birthDate: typeof stored.birthDate === 'string' ? stored.birthDate : undefined,
+      careInfo: stored.pediatrician ? { pediatrician: stored.pediatrician } : undefined,
+      name: typeof stored.name === 'string' && stored.name.trim() ? stored.name : base.name
+    };
+  } catch {
+    return base;
+  }
 }
 
 /**

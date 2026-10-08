@@ -11,6 +11,7 @@ import { formatVolume, getPreferredUnits } from '../domain/units';
 import { formatDayLabel, type ChartPoint } from './chartFormat';
 import { DateRangeFilter } from './DateRangeFilter';
 import { MiniChart } from './MiniChart';
+import { ReportExplorer } from './ReportExplorer';
 import { Timeline } from './Timeline';
 
 interface ParentReportsProps {
@@ -105,7 +106,7 @@ export function ParentReports({ childEvents, events, profile, profiles = [] }: P
   const recentPeriods = cycle ? [...cycle.stats.periods].reverse().slice(0, 6) : [];
 
   return (
-    <main className="view-stack">
+    <ReportExplorer>
       <section className="section-block">
         <div className="section-heading wrap">
           <div>
@@ -434,7 +435,7 @@ export function ParentReports({ childEvents, events, profile, profiles = [] }: P
         </div>
         <Timeline events={periodEvents} emptyMessage={`Nothing logged for ${firstName} in this period.`} profile={profile} />
       </section>
-    </main>
+    </ReportExplorer>
   );
 }
 

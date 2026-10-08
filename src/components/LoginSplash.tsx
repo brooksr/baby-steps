@@ -1,6 +1,8 @@
-import { Cloud, Heart } from 'lucide-react';
+import { ArrowLeft, Cloud, Heart, Siren } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { getStoredEmergencyChild } from '../domain/family';
 import type { StoreStatus } from '../storage/store';
+import { EmergencyGuide } from './EmergencyGuide';
 
 /** How long a silent reconnect runs before we offer an offline escape hatch. */
 const SLOW_RESTORE_MS = 6_000;
@@ -13,11 +15,24 @@ interface LoginSplashProps {
   /** A stored grant stopped working, so this is a reconnect rather than a first run. */
   sessionExpired: boolean;
   storeStatus: StoreStatus | null;
+  /** The first-aid guide is up — reachable before sign-in, with no network. */
+  emergencyOpen: boolean;
   onContinue: () => Promise<void>;
   onOffline: () => Promise<void>;
+  onEmergencyChange: (open: boolean) => void;
 }
 
-export function LoginSplash({ error, loading, restoring, sessionExpired, storeStatus, onContinue, onOffline }: LoginSplashProps) {
+export function LoginSplash({
+  error,
+  emergencyOpen,
+  loading,
+  restoring,
+  sessionExpired,
+  storeStatus,
+  onContinue,
+  onEmergencyChange,
+  onOffline
+}: LoginSplashProps) {
   const configured = Boolean(storeStatus?.configured);
   const [slowRestore, setSlowRestore] = useState(false);
 
@@ -31,9 +46,27 @@ export function LoginSplash({ error, loading, restoring, sessionExpired, storeSt
     return () => window.clearTimeout(timer);
   }, [restoring]);
 
+  if (emergencyOpen) {
+    return (
+      <main className="splash-screen">
+        <div className="splash-panel splash-emergency-panel">
+          <button className="secondary-button compact splash-emergency-back" type="button" onClick={() => onEmergencyChange(false)}>
+            <ArrowLeft aria-hidden="true" />
+            <span>Back</span>
+          </button>
+          <EmergencyGuide profile={getStoredEmergencyChild()} />
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="splash-screen">
       <section className="splash-panel" aria-labelledby="splash-title">
+        <button className="splash-emergency" type="button" onClick={() => onEmergencyChange(true)}>
+          <Siren aria-hidden="true" />
+          <span>Emergency</span>
+        </button>
         <img className="splash-logo" src={`${import.meta.env.BASE_URL}icons/babysteps-logo.png`} alt="BabySteps mother and baby logo" />
         <p className="eyebrow">BabySteps</p>
 

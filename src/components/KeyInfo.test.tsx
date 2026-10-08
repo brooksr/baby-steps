@@ -54,3 +54,23 @@ describe('KeyInfo guardians', () => {
     );
   });
 });
+
+describe('KeyInfo labels', () => {
+  it('says what each contact is, and leaves the emergency lines to the Emergency tab', () => {
+    const avery = baby({
+      babyAllergies: 'None known',
+      ob: { name: 'Dr. Example A' },
+      pediatrician: { name: 'Dr. Example B', phone: '5550103000' },
+      pharmacy: { name: 'CVS' }
+    });
+
+    render(<KeyInfo profile={avery} profiles={[avery]} onSave={vi.fn()} />);
+
+    expect(screen.getByText('Pediatrician')).toBeInTheDocument();
+    expect(screen.getByText('OB / Midwife')).toBeInTheDocument();
+    expect(screen.getByText('Pharmacy')).toBeInTheDocument();
+    expect(screen.getByText('Allergies / conditions: None known')).toBeInTheDocument();
+    expect(screen.queryByText(/Poison Control/)).toBeNull();
+    expect(screen.queryByRole('link', { name: /911/ })).toBeNull();
+  });
+});

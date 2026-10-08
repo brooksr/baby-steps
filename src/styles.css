@@ -21,6 +21,7 @@
   --coral: #ff8f80;
   --danger: #a74b42;
   --shadow: rgba(34, 75, 112, 0.16);
+  --report-modal-bg: rgba(255, 255, 255, 0.78);
   --font-body:
     Quicksand, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-display:
@@ -65,6 +66,7 @@ h3,
   --coral: #ff8f80;
   --danger: #ff9b8f;
   --shadow: rgba(0, 0, 0, 0.5);
+  --report-modal-bg: rgba(0, 0, 0, 0.72);
 }
 
 /* Dark overrides for surfaces that hardcode light colors. */
@@ -381,6 +383,52 @@ button {
 
 .legal-links a {
   color: inherit;
+}
+
+/* Emergency sits first in the panel, top-right, so it is found before anything
+   about signing in is read — and it needs no sign-in to open. */
+.splash-emergency {
+  display: inline-flex;
+  align-items: center;
+  justify-self: end;
+  gap: 6px;
+  min-height: 40px;
+  margin-bottom: -8px;
+  padding: 8px 14px;
+  color: #ffffff;
+  background: var(--danger);
+  border: 0;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+:root[data-theme='dark'] .splash-emergency {
+  color: #2a1d1b;
+}
+
+.splash-emergency svg {
+  width: 18px;
+  height: 18px;
+}
+
+.splash-emergency-panel {
+  width: min(100%, 640px);
+  align-self: start;
+  padding: 14px;
+}
+
+.splash-emergency-back {
+  justify-self: start;
+}
+
+/* The guide is its own card elsewhere; inside the splash panel it is the panel. */
+.splash-emergency-panel .emergency-block {
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
 }
 
 .splash-continue {
@@ -862,6 +910,127 @@ button {
   font-weight: 700;
 }
 
+.report-drilldown-trigger {
+  cursor: pointer;
+}
+
+.report-drilldown-trigger:focus-visible {
+  outline: 3px solid var(--blue-400);
+  outline-offset: 3px;
+}
+
+.report-detail-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  overflow: auto;
+  background: var(--report-modal-bg);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
+.report-detail {
+  min-height: 100dvh;
+  background: transparent;
+}
+
+.report-detail[data-event] {
+  --report-detail-accent: var(--event-tint);
+}
+
+.report-detail-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: calc(18px + env(safe-area-inset-top)) 20px 18px;
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(18px);
+}
+
+.report-detail-header span,
+.report-detail-value span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.report-detail-header h2 {
+  margin: 3px 0 0;
+}
+
+.report-detail-header .tool-button {
+  flex: 0 0 auto;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 10px;
+}
+
+.report-detail-body {
+  display: grid;
+  gap: 16px;
+  width: min(100%, 760px);
+  margin: 0 auto;
+  padding: 24px 18px calc(36px + env(safe-area-inset-bottom));
+}
+
+.report-detail-value,
+.report-detail-section {
+  padding: 20px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.report-detail-value[data-event] {
+  border-left: 4px solid var(--event-tint);
+}
+
+.report-detail-value strong {
+  display: block;
+  margin-top: 10px;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: clamp(2.4rem, 10vw, 4.8rem);
+  line-height: 1;
+}
+
+.report-detail-chart {
+  min-height: 300px;
+  pointer-events: none;
+}
+
+.report-detail-chart .chart-expand {
+  display: none;
+}
+
+.report-detail-chart .chart-bars {
+  min-height: 180px;
+}
+
+.report-detail-section h3 {
+  margin: 0 0 12px;
+}
+
+.report-detail-section p,
+.report-detail-section ul {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.report-detail-section ul {
+  display: grid;
+  gap: 8px;
+  padding-left: 20px;
+}
+
 .status-list {
   display: grid;
   gap: 10px;
@@ -951,6 +1120,15 @@ button {
 .status-row div {
   display: grid;
   gap: 2px;
+}
+
+/* What a Key Info contact is ("Pediatrician", "Pharmacy"), above who it is. */
+.status-row .contact-role {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .section-block {
@@ -1328,7 +1506,34 @@ button {
 
 .chart-heading {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 4px;
+}
+
+.chart-heading h3,
+.chart-heading strong,
+.chart-heading small {
+  grid-column: 1;
+}
+
+.chart-expand {
+  grid-column: 2;
+  grid-row: 1 / span 3;
+  align-self: start;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.chart-expand svg {
+  width: 17px;
+  height: 17px;
 }
 
 .chart-heading h3,
@@ -2776,6 +2981,166 @@ textarea {
   font-size: 0.7rem;
   font-weight: 800;
   text-transform: uppercase;
+}
+
+/* Care sub-tabs: four equal columns across the full width, tight enough that
+   "Milestones" and "Emergency" fit side by side on a phone. */
+.segmented-control.care-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  width: 100%;
+  margin-top: 12px;
+}
+
+.care-tabs button {
+  padding: 8px 4px;
+  font-size: 0.86rem;
+}
+
+/* Emergency is the one tab worth finding without reading the labels. */
+.care-tabs button.emergency-tab {
+  color: var(--danger);
+}
+
+.care-tabs button.emergency-tab.active,
+:root[data-theme='dark'] .care-tabs button.emergency-tab.active {
+  color: #ffffff;
+  background: var(--danger);
+}
+
+:root[data-theme='dark'] .care-tabs button.emergency-tab.active {
+  color: #2a1d1b;
+}
+
+.emergency-calls {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.emergency-call {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 10px 14px;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  text-decoration: none;
+}
+
+.emergency-call span {
+  display: grid;
+  gap: 2px;
+}
+
+.emergency-call small {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.emergency-call svg {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+}
+
+.emergency-call.primary {
+  color: #ffffff;
+  background: var(--danger);
+  border-color: var(--danger);
+  font-size: 1.05rem;
+}
+
+.emergency-call.primary small {
+  color: inherit;
+  opacity: 0.9;
+}
+
+:root[data-theme='dark'] .emergency-call.primary {
+  color: #2a1d1b;
+}
+
+.emergency-list {
+  display: grid;
+  gap: 8px;
+}
+
+.emergency-guide {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.emergency-guide[open] {
+  border-color: #ffc4ba;
+}
+
+:root[data-theme='dark'] .emergency-guide[open] {
+  border-color: #6e2d24;
+}
+
+.emergency-guide summary {
+  display: grid;
+  gap: 2px;
+  padding: 12px 14px;
+  cursor: pointer;
+}
+
+.emergency-guide summary small {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.emergency-call-when {
+  margin: 0 14px;
+  padding: 10px 12px;
+  background: #fff7f5;
+  border-radius: 8px;
+}
+
+:root[data-theme='dark'] .emergency-call-when {
+  background: #2a1d1b;
+}
+
+.emergency-call-when h3 {
+  margin: 0 0 4px;
+  color: var(--danger);
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.emergency-call-when ul,
+.emergency-notes {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 0.88rem;
+}
+
+.emergency-steps {
+  display: grid;
+  gap: 8px;
+  margin: 12px 14px 0;
+  padding-left: 22px;
+  line-height: 1.45;
+}
+
+.emergency-steps li::marker {
+  font-weight: 800;
+}
+
+.emergency-notes {
+  display: grid;
+  gap: 4px;
+  margin: 12px 14px 0;
+  color: var(--muted);
+}
+
+.emergency-guide > :last-child {
+  margin-bottom: 14px;
 }
 
 .check-row {

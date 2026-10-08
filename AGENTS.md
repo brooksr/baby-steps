@@ -62,6 +62,8 @@ change done.
   - `domain/checkup.ts` — the span since the last growth measurement, behind the
     Reports "Check-Up" period.
   - `domain/download.ts` — client-side file download helper.
+  - `domain/emergency.ts` — the Care → Emergency first-aid guides, split at
+    the first birthday (see "Care tabs & Emergency").
 - `src/data/reference/*.csv` — **single source of truth** for reference data.
   Imported as raw text via `?raw` in `src/data/referenceSheets.ts` (bundled, so
   it works offline). Surfaced on the Learn page. Do NOT duplicate into `public/`.
@@ -680,6 +682,33 @@ without a tap.
   Needs no new event type or column. The card above the charts names the anchor
   date and what was measured then; with nothing measured yet the period says so
   instead of charting all time.
+- **Care tabs & Emergency** — the Care page is four tabs (Key info, Milestones,
+  Vaccines, Emergency), one section at a time, opening on Key info.
+  911 and Poison Control live only on Emergency; Key Info lists the household's
+  own people. Each Key Info card carries a small role label ("Pediatrician",
+  "OB / Midwife", "Pharmacy") above the name, since "Dr. Patel" or "CVS" alone
+  leaves the reader guessing.
+  `EmergencyGuide` sits on `domain/emergency.ts`: tap-to-call 911 / Poison
+  Control (`EMERGENCY_LINES`) plus the pediatrician when Key Info holds a number,
+  then first-aid cards with CPR and choking open by default.
+  - **Technique splits at the first birthday** (`INFANT_MAX_DAYS`), the AHA's
+    infant/child line: infant choking is back blows + chest thrusts and **never
+    abdominal thrusts** (a test holds that), compressions 1½ in vs 2 in. Before a
+    birth it opens on the infant set. A switch overrides the group for a sibling
+    or a rehearsal, and the age-tightened cards then follow the *group*, not the
+    child — a fever under `YOUNG_INFANT_FEVER_DAYS` (90) is retitled and moved up
+    beside breathing.
+  - **Reachable before sign-in.** The sign-in and "Welcome back" screens carry
+    an Emergency button that opens the same guide in the splash, with no
+    network. The sheet cannot be read there and Dexie is not a copy of it, so
+    `App` remembers the on-screen child (or a parent's first child) under
+    `babysteps.emergencyChild` — birth date, name and pediatrician only. App
+    keeps the splash up while `splashEmergency` is open, so a restore finishing
+    behind it does not swap the screen out from under someone mid-CPR.
+  - Every card leads with **when to call 911**. First aid only: no medicine
+    names and no doses (a test scans the copy), and the footnote points at a
+    hands-on CPR class. Danger red is right here — unlike archiving, this *is*
+    the urgent surface.
 - **Theme** — the light/dark control lives in **Settings → Appearance**. The app
   header holds only the wordmark; Settings is also the only way into **Learn**
   (still routable at `#learn`, and the bottom nav stays visible there).

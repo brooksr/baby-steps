@@ -14,6 +14,7 @@ import { FeedClock } from './FeedClock';
 import { FeedOrder } from './FeedOrder';
 import { GrowthStandards } from './GrowthStandards';
 import { NewbornStatus } from './NewbornStatus';
+import { ReportExplorer } from './ReportExplorer';
 import { Timeline } from './Timeline';
 
 type ReportPeriod = 'day' | 'week' | 'month' | 'year' | 'checkup' | 'custom';
@@ -358,7 +359,7 @@ export function Reports({ events, profile, profiles = [] }: ReportsProps) {
   const progressLabel = profile.birthDate ? `${analytics.daysElapsed} of 365 days` : 'Birth not logged';
 
   return (
-    <main className="view-stack">
+    <ReportExplorer>
       <section className="section-block first-year-block">
         <div className="section-heading">
           <div>
@@ -614,6 +615,6 @@ export function Reports({ events, profile, profiles = [] }: ReportsProps) {
           </section>
         </>
       )}
-    </main>
+    </ReportExplorer>
   );
 }

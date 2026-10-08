@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createFamilyProfile, createProfileId, getCaregiverName, getCaregivers, getFirstName, getProfileKind, getStoredActiveProfileId, getStoredCaregiverId, isParent, sortProfiles, storeActiveProfileId, storeCaregiverId, tracksCycle } from './family';
+import { createFamilyProfile, createProfileId, getCaregiverName, getCaregivers, getFirstName, getProfileKind, getStoredActiveProfileId, getStoredCaregiverId, getStoredEmergencyChild, isParent, sortProfiles, storeActiveProfileId, storeCaregiverId, storeEmergencyChild, tracksCycle } from './family';
 import { createDefaultBabyProfile } from './dates';
 import type { BabyProfile } from './types';
 
@@ -146,5 +146,35 @@ describe('attributing an entry to a caregiver', () => {
     expect(getCaregiverName([avery, mom], undefined)).toBeUndefined();
     // History keeps the id after a removal; there is just no name left to print.
     expect(getCaregiverName([avery, mom], dad.id)).toBeUndefined();
+  });
+});
+
+describe('emergency child', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('opens on the default (an infant with no birth date) when nothing is remembered', () => {
+    expect(getStoredEmergencyChild().birthDate).toBeUndefined();
+  });
+
+  // Read before sign-in, so only what the guide needs is kept on the device.
+  it('remembers the age, name and pediatrician — and nothing else', () => {
+    storeEmergencyChild({
+      ...createDefaultBabyProfile(),
+      birthDate: '2026-01-02',
+      careInfo: { babyAllergies: 'Peanuts', pediatrician: { name: 'Dr. Example', phone: '5550103000' } },
+      name: 'Avery Example'
+    });
+
+    const child = getStoredEmergencyChild();
+    expect(child.birthDate).toBe('2026-01-02');
+    expect(child.name).toBe('Avery Example');
+    expect(child.careInfo).toEqual({ pediatrician: { name: 'Dr. Example', phone: '5550103000' } });
+  });
+
+  it('falls back to the default on a corrupt entry', () => {
+    localStorage.setItem('babysteps.emergencyChild', '{not json');
+    expect(getStoredEmergencyChild().name).toBe('Baby');
   });
 });

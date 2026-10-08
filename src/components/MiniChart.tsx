@@ -1,3 +1,4 @@
+import { Maximize2 } from 'lucide-react';
 import { useState } from 'react';
 import type { MetricStats } from '../domain/firstYear';
 import type { CareEventType } from '../domain/types';
@@ -37,6 +38,9 @@ export function MiniChart({ event, label, stats, suffix = '', partAverages, part
         <h3>{label}</h3>
         <strong>{formatStat(stats.average, suffix)} avg</strong>
         <small>{formatStat(total, suffix)} total</small>
+        <button className="chart-expand" type="button" data-report-open aria-haspopup="dialog" aria-label={`Open ${label} report`}>
+          <Maximize2 aria-hidden="true" />
+        </button>
       </div>
       <div
         className="chart-bars"

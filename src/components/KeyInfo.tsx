@@ -1,7 +1,7 @@
 import { Bed, Milk, Navigation, Pencil, Phone, Pill, Stethoscope, Wind, X } from 'lucide-react';
 import { FormEvent, useState } from 'react';
 import { getCaregivers } from '../domain/family';
-import { EMERGENCY_LINES, HOSPITAL, OB } from '../domain/medicalInfo';
+import { HOSPITAL, OB } from '../domain/medicalInfo';
 import { parentRoleLabels, type BabyProfile, type CareContact, type CareInfo, type FeedingType, type MeasurementSystem } from '../domain/types';
 import { formatVolume, getPreferredUnits, toStoredVolume, toUnitVolume } from '../domain/units';
 
@@ -52,9 +52,14 @@ const FEEDING_LABELS: Record<FeedingType, string> = {
 
 // ── read-view sub-components ──────────────────────────────────────────────────
 
-function ContactCard({ contact, icon, urgent, homeAddress }: {
+/**
+ * `role` says what the contact *is* — "Pediatrician", "Pharmacy" — above the
+ * name, since a name alone ("Dr. Patel", "CVS") leaves the reader guessing.
+ */
+function ContactCard({ contact, icon, role, urgent, homeAddress }: {
   contact: CareContact;
   icon?: React.ReactNode;
+  role?: string;
   urgent?: boolean;
   homeAddress?: string;
 }) {
@@ -62,6 +67,7 @@ function ContactCard({ contact, icon, urgent, homeAddress }: {
     <article className={`status-row ${urgent ? 'urgent' : ''}`}>
       {icon ?? <Stethoscope aria-hidden="true" />}
       <div>
+        {role && <small className="contact-role">{role}</small>}
         <strong>{contact.name}</strong>
         {contact.address && <span>{contact.address}</span>}
         <div className="care-actions">
@@ -83,13 +89,14 @@ function ContactCard({ contact, icon, urgent, homeAddress }: {
   );
 }
 
-function InfoCard({ icon, title, lines }: { icon: React.ReactNode; title: string; lines: (string | undefined)[] }) {
+function InfoCard({ icon, role, title, lines }: { icon: React.ReactNode; role?: string; title: string; lines: (string | undefined)[] }) {
   const visible = lines.filter(Boolean) as string[];
   if (visible.length === 0) return null;
   return (
     <article className="status-row">
       {icon}
       <div>
+        {role && <small className="contact-role">{role}</small>}
         <strong>{title}</strong>
         {visible.map((line, i) => <span key={i}>{line}</span>)}
       </div>
@@ -373,30 +380,20 @@ export function KeyInfo({ profile, profiles = [], onSave }: KeyInfoProps) {
           <ContactCard key={guardian.name} contact={guardian} icon={<Phone aria-hidden="true" />} />
         ))}
 
-        <ContactCard contact={hospital} urgent homeAddress={home} />
+        <ContactCard contact={hospital} role="ER / Hospital" urgent homeAddress={home} />
 
-        {info.pediatrician && <ContactCard contact={info.pediatrician} homeAddress={home} />}
+        {info.pediatrician && <ContactCard contact={info.pediatrician} role="Pediatrician" homeAddress={home} />}
 
-        <ContactCard contact={ob} homeAddress={home} />
-
-        {EMERGENCY_LINES.map((line) => (
-          <a className="status-row" key={line.title} href={`tel:${line.tel}`}>
-            <Phone aria-hidden="true" />
-            <div>
-              <strong>{line.title}</strong>
-              <span>{line.detail}</span>
-            </div>
-          </a>
-        ))}
+        <ContactCard contact={ob} role="OB / Midwife" homeAddress={home} />
 
         {info.emergencyContacts?.map((ec, i) => (
-          <ContactCard key={i} contact={ec} icon={<Phone aria-hidden="true" />} />
+          <ContactCard key={i} contact={ec} role="Backup emergency contact" icon={<Phone aria-hidden="true" />} />
         ))}
       </div>
 
       {(info.feedingType || info.feedingNotes || info.safeSleep || info.sleepRoutine ||
         info.soothingMethods || info.currentMedications || info.skinNotes ||
-        info.insurance || info.babyBloodType || info.lactation || info.pharmacy) && (
+        info.insurance || info.babyBloodType || info.babyAllergies || info.lactation || info.pharmacy) && (
         <div className="status-list care-secondary">
           {info.feedingType && (
             <InfoCard icon={<Milk aria-hidden="true" />} title={FEEDING_LABELS[info.feedingType]}
@@ -426,20 +423,20 @@ export function KeyInfo({ profile, profiles = [], onSave }: KeyInfoProps) {
           )}
 
           {info.insurance && (
-            <InfoCard icon={<Stethoscope aria-hidden="true" />} title={info.insurance.plan}
+            <InfoCard icon={<Stethoscope aria-hidden="true" />} role="Health insurance" title={info.insurance.plan}
               lines={[
                 `Member ID: ${info.insurance.memberId}`,
                 info.insurance.phone || undefined
               ]} />
           )}
 
-          {info.babyBloodType && (
-            <InfoCard icon={<Stethoscope aria-hidden="true" />} title={`Blood type: ${info.babyBloodType}`}
-              lines={[info.babyAllergies]} />
+          {(info.babyBloodType || info.babyAllergies) && (
+            <InfoCard icon={<Stethoscope aria-hidden="true" />} role="Baby health" title={`Blood type: ${info.babyBloodType || 'not recorded'}`}
+              lines={[info.babyAllergies ? `Allergies / conditions: ${info.babyAllergies}` : undefined]} />
           )}
 
-          {info.lactation && <ContactCard contact={info.lactation} />}
-          {info.pharmacy && <ContactCard contact={info.pharmacy} />}
+          {info.lactation && <ContactCard contact={info.lactation} role="Lactation consultant" />}
+          {info.pharmacy && <ContactCard contact={info.pharmacy} role="Pharmacy" />}
         </div>
       )}
 
