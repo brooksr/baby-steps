@@ -10,7 +10,7 @@ import type { CareEvent, IntakeKind, OutputKind } from './types';
 
 function intake(startedAt: string, kind: IntakeKind, tags: string[] = [], extra: Partial<CareEvent> = {}): CareEvent {
   return {
-    babyId: 'sara-roche',
+    babyId: 'casey-example',
     createdAt: startedAt,
     id: `in_${startedAt}`,
     kind,
@@ -24,7 +24,7 @@ function intake(startedAt: string, kind: IntakeKind, tags: string[] = [], extra:
 
 function output(startedAt: string, kind: OutputKind, severity?: number): CareEvent {
   return {
-    babyId: 'sara-roche',
+    babyId: 'casey-example',
     createdAt: startedAt,
     id: `out_${startedAt}`,
     kind,
@@ -121,7 +121,7 @@ describe('getIntakeOutputSummary', () => {
   });
 
   it('ignores everything that is neither an input nor an output', () => {
-    const sleep = { babyId: 'sara-roche', createdAt: '', id: 's1', startedAt: '2026-09-10T22:00:00.000Z', type: 'sleep', updatedAt: '' } as CareEvent;
+    const sleep = { babyId: 'casey-example', createdAt: '', id: 's1', startedAt: '2026-09-10T22:00:00.000Z', type: 'sleep', updatedAt: '' } as CareEvent;
     const summary = getIntakeOutputSummary([sleep]);
 
     expect(summary.intakes).toBe(0);

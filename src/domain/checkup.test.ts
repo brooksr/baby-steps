@@ -6,7 +6,7 @@ const NOW = new Date('2026-09-30T12:00:00');
 
 function growth(startedAt: string, weightOz?: number, lengthIn?: number): CareEvent {
   return {
-    babyId: 'theo-roche',
+    babyId: 'avery-example',
     createdAt: startedAt,
     id: startedAt,
     lengthIn,
@@ -19,7 +19,7 @@ function growth(startedAt: string, weightOz?: number, lengthIn?: number): CareEv
 
 function birth(startedAt: string, weightOz: number): CareEvent {
   return {
-    babyId: 'theo-roche',
+    babyId: 'avery-example',
     createdAt: startedAt,
     id: `birth-${startedAt}`,
     startedAt,

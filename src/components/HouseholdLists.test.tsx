@@ -5,7 +5,7 @@ import { createFamilyProfile } from '../domain/family';
 import { ShoppingList } from './ShoppingList';
 import { Todos } from './Todos';
 
-const parent = createFamilyProfile({ kind: 'parent', name: 'Brooks Roche', parentRole: 'dad' });
+const parent = createFamilyProfile({ kind: 'parent', name: 'Jordan Example', parentRole: 'dad' });
 
 describe('household list pages', () => {
   it('adds a custom food item to the shopping catalogue and active list', async () => {

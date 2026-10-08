@@ -7,7 +7,7 @@ import { Log } from './Log';
 
 function note(startedAt: string, title: string): CareEvent {
   return {
-    babyId: 'theo-roche',
+    babyId: 'avery-example',
     createdAt: startedAt,
     id: title,
     startedAt,
@@ -85,7 +85,7 @@ describe('Log date range', () => {
 describe('Log type links', () => {
   it('opens on exactly the requested event type', () => {
     const bath: CareEvent = {
-      babyId: 'theo-roche',
+      babyId: 'avery-example',
       createdAt: '2026-09-11T09:00:00',
       id: 'bath-1',
       startedAt: '2026-09-11T09:00:00',

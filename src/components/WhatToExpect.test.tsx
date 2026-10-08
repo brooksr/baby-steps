@@ -8,8 +8,8 @@ function profileOf(overrides: Partial<BabyProfile> = {}): BabyProfile {
   return {
     createdAt: '2026-01-01T00:00:00.000Z',
     dueDate: '2026-09-01',
-    id: 'theo-roche',
-    name: 'Theo Roche',
+    id: 'avery-example',
+    name: 'Avery Example',
     timezone: 'America/Los_Angeles',
     updatedAt: '2026-01-01T00:00:00.000Z',
     ...overrides
@@ -42,10 +42,10 @@ describe('WhatToExpect', () => {
     const profile = profileOf({ birthDate: '2026-09-01', gender: 'boy' });
     render(<WhatToExpect profile={profile} now={new Date('2026-09-17T12:00:00')} />);
 
-    expect(within(card()).getByText(/Theo holds his head up/i)).toBeInTheDocument();
+    expect(within(card()).getByText(/Avery holds his head up/i)).toBeInTheDocument();
   });
 
-  // Theo: born 34w2d, 40 days early. Past the newborn window the card has to
+  // Avery: born 34w2d, 40 days early. Past the newborn window the card has to
   // say which age it is reading, or the reader compares against the wrong week.
   it('explains the corrected age it is reading for a preterm baby', () => {
     const profile = profileOf({ birthDate: '2026-07-23', dueDate: '2026-09-01', gender: 'boy' });

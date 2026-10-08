@@ -3,7 +3,7 @@ import { getFeedClockReport } from './feedClock';
 import type { CareEvent } from './types';
 
 const base = {
-  babyId: 'theo-roche',
+  babyId: 'avery-example',
   createdAt: '2026-10-01T12:00:00.000Z',
   method: 'nursing' as const,
   syncState: 'local' as const,

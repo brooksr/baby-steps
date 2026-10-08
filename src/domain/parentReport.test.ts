@@ -4,7 +4,7 @@ import type { CareEvent } from './types';
 
 function sleep(startedAt: string, endedAt: string): CareEvent {
   return {
-    babyId: 'mom-roche',
+    babyId: 'mom-example',
     createdAt: startedAt,
     endedAt,
     id: `sleep_${startedAt}`,
@@ -17,7 +17,7 @@ function sleep(startedAt: string, endedAt: string): CareEvent {
 
 function feed(startedAt: string, method: 'nursing' | 'bottle' = 'nursing', caregiverId?: string): CareEvent {
   return {
-    babyId: 'theo-roche',
+    babyId: 'avery-example',
     caregiverId,
     createdAt: startedAt,
     id: `feed_${startedAt}`,
@@ -104,11 +104,11 @@ describe('a parent report', () => {
       const report = getParentReport(
         [night],
         [
-          feed('2026-03-05T01:00:00', 'nursing', 'mom-roche'),
-          feed('2026-03-05T04:00:00', 'bottle', 'dad-roche'),
-          feed('2026-03-05T11:00:00', 'bottle', 'mom-roche')
+          feed('2026-03-05T01:00:00', 'nursing', 'mom-example'),
+          feed('2026-03-05T04:00:00', 'bottle', 'dad-example'),
+          feed('2026-03-05T11:00:00', 'bottle', 'mom-example')
         ],
-        'mom-roche'
+        'mom-example'
       );
 
       expect(report.care.total).toBe(3);
@@ -119,14 +119,14 @@ describe('a parent report', () => {
     // "Logged by" is optional, so a low share can mean a quiet week or an
     // unfilled field — the report has to be able to tell the difference.
     it('counts entries that name nobody separately', () => {
-      const report = getParentReport([night], [feed('2026-03-05T01:00:00'), feed('2026-03-05T04:00:00', 'nursing', 'mom-roche')], 'mom-roche');
+      const report = getParentReport([night], [feed('2026-03-05T01:00:00'), feed('2026-03-05T04:00:00', 'nursing', 'mom-example')], 'mom-example');
 
       expect(report.care.mine.total).toBe(1);
       expect(report.care.unattributed).toBe(1);
     });
 
     it('attributes nothing when no caregiver is asked about', () => {
-      const report = getParentReport([night], [feed('2026-03-05T01:00:00', 'nursing', 'mom-roche')]);
+      const report = getParentReport([night], [feed('2026-03-05T01:00:00', 'nursing', 'mom-example')]);
 
       expect(report.care.total).toBe(1);
       expect(report.care.mine.total).toBe(0);
@@ -135,7 +135,7 @@ describe('a parent report', () => {
     // A wakeup the other parent got up for is still the household's work, but
     // it did not break this parent's sleep.
     it('keeps the other parent\'s wakeup in the load but out of this night', () => {
-      const report = getParentReport([night], [feed('2026-03-05T01:00:00', 'bottle', 'dad-roche')], 'mom-roche');
+      const report = getParentReport([night], [feed('2026-03-05T01:00:00', 'bottle', 'dad-example')], 'mom-example');
 
       expect(report.care.total).toBe(1);
       expect(report.care.mine.total).toBe(0);
@@ -215,8 +215,8 @@ describe('a parent report', () => {
     it('ignores a wakeup recorded against the other parent', () => {
       const mine = getParentReport(
         [sleep(...night)],
-        [feed('2026-08-07T01:00:00', 'nursing', 'brooks-roche')],
-        'jenni-roche'
+        [feed('2026-08-07T01:00:00', 'nursing', 'jordan-example')],
+        'taylor-example'
       );
 
       expect(mine.nights[0].sleepMinutes).toBe(450);
@@ -226,7 +226,7 @@ describe('a parent report', () => {
     // Charging a broken night to the parent who slept through it is exactly
     // what recording a caregiver is there to prevent.
     it('charges an entry naming nobody to nobody', () => {
-      const report = getParentReport([sleep(...night)], [feed('2026-08-07T01:00:00')], 'jenni-roche');
+      const report = getParentReport([sleep(...night)], [feed('2026-08-07T01:00:00')], 'taylor-example');
 
       expect(report.nights[0].interruptions).toBe(0);
       expect(report.nights[0].sleepMinutes).toBe(450);
@@ -238,8 +238,8 @@ describe('a parent report', () => {
     it('counts a wakeup recorded against this parent', () => {
       const report = getParentReport(
         [sleep(...night)],
-        [feed('2026-08-07T01:00:00', 'nursing', 'jenni-roche')],
-        'jenni-roche'
+        [feed('2026-08-07T01:00:00', 'nursing', 'taylor-example')],
+        'taylor-example'
       );
 
       expect(report.nights[0].interruptions).toBe(1);
@@ -297,8 +297,8 @@ describe('a parent report', () => {
         sleep('2026-08-06T21:30:00', '2026-08-07T05:00:00'),
         sleep('2026-08-07T21:30:00', '2026-08-08T05:00:00')
       ],
-      [feed('2026-08-07T01:00:00', 'nursing', 'jenni-roche')],
-      'jenni-roche'
+      [feed('2026-08-07T01:00:00', 'nursing', 'taylor-example')],
+      'taylor-example'
     );
 
     // One night runs unbroken (450); the other splits at 01:00 into 210 and 225.

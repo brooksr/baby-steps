@@ -7,8 +7,10 @@ import { DEFAULT_PROFILE_ID, type BabyGender, type BabyProfile, type BottleConte
 import { requestGoogleSheetsAccessToken } from './googleSheetsAuth';
 import type { BabyTrackerStore, CaregiverAssignment, EventQuery, ImportOptions, ShoppingItemInput, TaskItemInput } from './store';
 
-export const GOOGLE_SHEET_ID = '1VG9px1j-KF29i2J6AG_PP57hOM8V-wLPgP-9VTdURUc';
-export const GOOGLE_SHEET_URL = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/edit`;
+export const GOOGLE_SHEET_ID = String(import.meta.env.VITE_GOOGLE_SHEET_ID ?? '').trim();
+export const GOOGLE_SHEET_URL = GOOGLE_SHEET_ID
+  ? `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/edit`
+  : undefined;
 
 // Widen these together with `profileHeaders` — a new profile field is a new
 // column, and the range has to reach it. The range is open-ended down the
@@ -280,7 +282,7 @@ function profileFromRow(row: unknown[] | undefined, index?: ProfileColumnIndex):
     birthDate: optionalDateString(record.birthDate),
     careInfo,
     createdAt: optionalDateString(record.createdAt) ?? fallback.createdAt,
-    // No fallback: a parent row carries no due date, and inventing Theo's here
+    // No fallback: a parent row carries no due date, and inventing one here
     // would make every parent read as a pregnancy.
     dueDate: optionalDateString(record.dueDate),
     gender: optionalString(record.gender) as BabyGender | undefined,

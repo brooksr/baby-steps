@@ -6,7 +6,7 @@ import { createFamilyProfile } from '../domain/family';
 import type { CareEvent } from '../domain/types';
 import { ParentDashboard } from './ParentDashboard';
 
-const brooks = createFamilyProfile({ kind: 'parent', name: 'Brooks Roche', parentRole: 'dad' });
+const jordan = createFamilyProfile({ kind: 'parent', name: 'Jordan Example', parentRole: 'dad' });
 
 /** Last night, 10:30pm to 5am — the span from the screenshot. */
 function lastNight() {
@@ -19,7 +19,7 @@ function lastNight() {
 function sleep(): CareEvent {
   const { end, start } = lastNight();
   return {
-    babyId: brooks.id,
+    babyId: jordan.id,
     createdAt: start.toISOString(),
     endedAt: end.toISOString(),
     id: 'sleep_1',
@@ -33,7 +33,7 @@ function sleep(): CareEvent {
 function feed(hoursIn: number, caregiverId?: string): CareEvent {
   const at = new Date(lastNight().start.getTime() + hoursIn * 3600000);
   return {
-    babyId: 'theo-roche',
+    babyId: 'avery-example',
     caregiverId,
     createdAt: at.toISOString(),
     id: `feed_${hoursIn}`,
@@ -51,7 +51,7 @@ function renderDashboard(childEvents: CareEvent[], onAdd = vi.fn(), events: Care
       activeTimers={{}}
       childEvents={childEvents}
       events={events}
-      profile={brooks}
+      profile={jordan}
       todayKey={getLocalDateKey(new Date())}
       onAdd={onAdd}
     />
@@ -70,7 +70,7 @@ describe('ParentDashboard', () => {
   });
 
   it('charges the wake-ups recorded against this parent', () => {
-    renderDashboard([feed(3, brooks.id)]);
+    renderDashboard([feed(3, jordan.id)]);
 
     expect(screen.getByText(/6h 30m in bed · 1 wake-up/)).toBeInTheDocument();
   });
@@ -81,7 +81,7 @@ describe('ParentDashboard', () => {
     renderDashboard([]);
 
     expect(screen.getByText('1 entry')).toBeInTheDocument();
-    expect(screen.queryByText(/Nothing logged for Brooks today/)).toBeNull();
+    expect(screen.queryByText(/Nothing logged for Jordan today/)).toBeNull();
   });
 
   // Measuring from the start answered a question nobody asks — what you want to
@@ -105,7 +105,7 @@ describe('ParentDashboard', () => {
         activeTimers={{}}
         childEvents={[]}
         events={[running]}
-        profile={brooks}
+        profile={jordan}
         todayKey={getLocalDateKey(new Date())}
         onAdd={vi.fn()}
       />

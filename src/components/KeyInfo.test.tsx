@@ -7,8 +7,8 @@ import type { BabyProfile } from '../domain/types';
 import { KeyInfo } from './KeyInfo';
 
 const legacyGuardians = [
-  { name: 'Jennifer Jones Roche', phone: '8053009852' },
-  { name: 'Brooks Roche', phone: '6508048261' }
+  { name: 'Morgan Smith Example', phone: '5550101000' },
+  { name: 'Jordan Example', phone: '5550102000' }
 ];
 
 function baby(careInfo = {}): BabyProfile {
@@ -17,24 +17,24 @@ function baby(careInfo = {}): BabyProfile {
 
 describe('KeyInfo guardians', () => {
   it('lists the parent profiles, with their role and phone', () => {
-    const theo = baby({ guardians: legacyGuardians });
-    const mom = createFamilyProfile({ kind: 'parent', name: 'Sara Roche', parentRole: 'mom', phone: '8053009852' }, [theo]);
+    const avery = baby({ guardians: legacyGuardians });
+    const mom = createFamilyProfile({ kind: 'parent', name: 'Casey Example', parentRole: 'mom', phone: '5550101000' }, [avery]);
 
-    render(<KeyInfo profile={theo} profiles={[theo, mom]} onSave={vi.fn()} />);
+    render(<KeyInfo profile={avery} profiles={[avery, mom]} onSave={vi.fn()} />);
 
-    expect(screen.getByText('Sara Roche · Mom')).toBeInTheDocument();
+    expect(screen.getByText('Casey Example · Mom')).toBeInTheDocument();
     // The parent profiles win: the old careInfo list is not shown alongside them.
-    expect(screen.queryByText('Jennifer Jones Roche')).toBeNull();
+    expect(screen.queryByText('Morgan Smith Example')).toBeNull();
   });
 
   // A household that has not added parents yet must not lose the numbers it had.
   it('falls back to the stored guardian list when there are no parents', () => {
-    const theo = baby({ guardians: legacyGuardians });
+    const avery = baby({ guardians: legacyGuardians });
 
-    render(<KeyInfo profile={theo} profiles={[theo]} onSave={vi.fn()} />);
+    render(<KeyInfo profile={avery} profiles={[avery]} onSave={vi.fn()} />);
 
-    expect(screen.getByText('Jennifer Jones Roche')).toBeInTheDocument();
-    expect(screen.getByText('Brooks Roche')).toBeInTheDocument();
+    expect(screen.getByText('Morgan Smith Example')).toBeInTheDocument();
+    expect(screen.getByText('Jordan Example')).toBeInTheDocument();
   });
 
   // The form stopped editing guardians, but an old list is still someone's
@@ -42,9 +42,9 @@ describe('KeyInfo guardians', () => {
   it('carries a stored guardian list through a save untouched', async () => {
     const user = userEvent.setup();
     const onSave = vi.fn().mockResolvedValue(undefined);
-    const theo = baby({ guardians: legacyGuardians, homeAddress: '751 Benson Way' });
+    const avery = baby({ guardians: legacyGuardians, homeAddress: '123 Example Street' });
 
-    render(<KeyInfo profile={theo} profiles={[theo]} onSave={onSave} />);
+    render(<KeyInfo profile={avery} profiles={[avery]} onSave={onSave} />);
 
     await user.click(screen.getByRole('button', { name: /edit care info/i }));
     await user.click(screen.getByRole('button', { name: /save care info/i }));

@@ -7,15 +7,15 @@ const profile: BabyProfile = {
   birthDate: '2026-06-01',
   createdAt: '2026-06-01T00:00:00.000Z',
   dueDate: '2026-06-01',
-  id: 'theo',
-  name: 'Theo',
+  id: 'avery',
+  name: 'Avery',
   timezone: 'America/Los_Angeles',
   updatedAt: '2026-06-01T00:00:00.000Z'
 };
 
 function diaper(dateKey: string, kind: 'wet' | 'dirty' | 'both'): CareEvent {
   return {
-    babyId: 'theo',
+    babyId: 'avery',
     createdAt: `${dateKey}T08:00:00.000Z`,
     id: `${dateKey}-${kind}-${Math.random()}`,
     kind,
@@ -28,7 +28,7 @@ function diaper(dateKey: string, kind: 'wet' | 'dirty' | 'both'): CareEvent {
 function bottle(dateKey: string): CareEvent {
   return {
     amountOz: 2,
-    babyId: 'theo',
+    babyId: 'avery',
     contents: 'breastmilk',
     createdAt: `${dateKey}T08:00:00.000Z`,
     id: `${dateKey}-feed-${Math.random()}`,
@@ -82,7 +82,7 @@ describe('classifyMeasurement', () => {
 describe('getGrowthMeasurements', () => {
   it('converts imperial inputs to metric and sorts by age', () => {
     const events: CareEvent[] = [
-      { babyId: 'theo', createdAt: '2026-06-01T00:00:00.000Z', headCircumferenceIn: 13.6, id: 'birth', lengthIn: 19.7, startedAt: '2026-06-01T10:00:00.000Z', type: 'birth', updatedAt: '2026-06-01T00:00:00.000Z', weightOz: 116.5 }
+      { babyId: 'avery', createdAt: '2026-06-01T00:00:00.000Z', headCircumferenceIn: 13.6, id: 'birth', lengthIn: 19.7, startedAt: '2026-06-01T10:00:00.000Z', type: 'birth', updatedAt: '2026-06-01T00:00:00.000Z', weightOz: 116.5 }
     ];
     const [measurement] = getGrowthMeasurements(profile, events);
     expect(measurement.weightKg).toBeCloseTo(3.3, 1);
@@ -185,7 +185,7 @@ describe('gestational age correction', () => {
 
   it('subtracts the correction from every measurement age', () => {
     const growth: CareEvent = {
-      babyId: 'theo',
+      babyId: 'avery',
       createdAt: '2026-09-01T08:00:00.000Z',
       id: 'growth-1',
       lengthIn: 22,
@@ -202,7 +202,7 @@ describe('gestational age correction', () => {
 
   it('compares against a younger standard when corrected', () => {
     const growth: CareEvent = {
-      babyId: 'theo',
+      babyId: 'avery',
       createdAt: '2026-09-01T08:00:00.000Z',
       id: 'growth-1',
       lengthIn: 22,

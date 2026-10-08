@@ -11,7 +11,7 @@ describe('Dashboard', () => {
     const onAdd = vi.fn();
     const events: CareEvent[] = [
       {
-        babyId: 'theo-roche',
+        babyId: 'avery-example',
         contents: 'breastmilk',
         amountOz: 2,
         createdAt: '2026-09-02T12:00:00.000Z',
@@ -23,7 +23,7 @@ describe('Dashboard', () => {
         updatedAt: '2026-09-02T12:00:00.000Z'
       },
       {
-        babyId: 'theo-roche',
+        babyId: 'avery-example',
         createdAt: '2026-09-02T13:00:00.000Z',
         id: 'diaper-1',
         kind: 'wet',
@@ -36,8 +36,8 @@ describe('Dashboard', () => {
 
     render(<Dashboard activeTimers={{}} events={events} profile={createDefaultBabyProfile(new Date('2026-06-19T12:00:00.000Z'))} todayKey="2026-09-02" onAdd={onAdd} onOpenLog={vi.fn()} />);
 
-    expect(screen.getByText(/Theo Roche/i)).toBeInTheDocument();
-    expect(screen.getByText(/days until due date/i)).toBeInTheDocument();
+    expect(screen.getByText(/^Baby$/i)).toBeInTheDocument();
+    expect(screen.getByText(/Add a due date or birth date in Settings/i)).toBeInTheDocument();
     expect(screen.getByText(/1 feeds · 1 diapers/i)).toBeInTheDocument();
     const today = within(screen.getByLabelText('Today summary'));
     expect(today.getByText('Sleep')).toBeInTheDocument();
@@ -52,7 +52,7 @@ describe('Dashboard', () => {
     const onAdd = vi.fn();
     const events: CareEvent[] = [
       {
-        babyId: 'theo-roche',
+        babyId: 'avery-example',
         createdAt: '2026-09-01T02:00:00.000Z',
         id: 'bath-1',
         startedAt: '2026-09-01T02:00:00.000Z',
@@ -105,7 +105,7 @@ describe('Dashboard', () => {
     vi.setSystemTime(new Date('2026-09-02T12:00:00.000Z'));
 
     const events: CareEvent[] = Array.from({ length: 8 }, (_, index) => ({
-      babyId: 'theo-roche',
+      babyId: 'avery-example',
       createdAt: '2026-09-02T12:00:00.000Z',
       id: `diaper-${index}`,
       kind: 'wet' as const,
@@ -127,7 +127,7 @@ describe('Dashboard', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-09-02T12:00:00.000Z'));
     const events: CareEvent[] = Array.from({ length: 8 }, (_, index) => ({
-      babyId: 'theo-roche',
+      babyId: 'avery-example',
       createdAt: '2026-09-02T12:00:00.000Z',
       id: `diaper-${index}`,
       kind: 'wet' as const,
@@ -168,7 +168,7 @@ describe('Dashboard', () => {
 
     const events: CareEvent[] = [
       {
-        babyId: 'theo-roche',
+        babyId: 'avery-example',
         createdAt: '2026-09-10T12:00:00.000Z',
         id: 'feed-1',
         method: 'nursing',
@@ -178,7 +178,7 @@ describe('Dashboard', () => {
         updatedAt: '2026-09-10T12:00:00.000Z'
       },
       {
-        babyId: 'theo-roche',
+        babyId: 'avery-example',
         createdAt: '2026-09-10T12:00:00.000Z',
         id: 'bath-1',
         startedAt: new Date(Date.now() - 5 * 24 * 60 * 60_000).toISOString(),
@@ -195,8 +195,8 @@ describe('Dashboard', () => {
     expect(reminders.queryByText('Last bath was 5 days ago')).not.toBeInTheDocument();
     const bathButton = screen.getByRole('button', { name: 'View bath log' });
     const bath = within(bathButton);
-    expect(bath.getByText('5 days ago')).toBeInTheDocument();
-    expect(bath.getByText('Bath due · usually every 2–3 days')).toBeInTheDocument();
+    expect(bath.getByText('5 days')).toBeInTheDocument();
+    expect(bath.getByText('Bath due · ~2–3 days')).toBeInTheDocument();
     expect(bathButton).toHaveClass('past-due');
 
     const feed = screen.getByRole('button', { name: 'View feed log' });
@@ -210,7 +210,7 @@ describe('Dashboard', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-09-10T12:00:00.000Z'));
     const events = [{
-      babyId: 'theo-roche',
+      babyId: 'avery-example',
       createdAt: '2026-09-10T11:00:00.000Z',
       id: 'feed-1',
       method: 'nursing' as const,

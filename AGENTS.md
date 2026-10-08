@@ -4,8 +4,8 @@ Guidance for AI agents (and humans) working in the BabySteps repo.
 
 ## What this app is
 
-BabySteps is an offline-first PWA for shared baby-care tracking (built around
-Theo, plus any sibling added since — and the parents doing the tracking). React
+BabySteps is an offline-first PWA for shared baby-care tracking (children and
+the parents doing the tracking). React
 18 + TypeScript + Vite, with a hybrid local (Dexie/IndexedDB) + Google Sheets
 store. No backend of our own.
 
@@ -193,7 +193,7 @@ there is exactly one profile, or that a profile is a baby.
 - `sortProfiles` puts **children before parents**, each oldest first — this is a
   baby tracker, so the switcher opens on the babies.
 - `ChildSwitcher` renders in the header only when there is more than one person,
-  so a single-baby tracker looks exactly as it did. Copy that used to say "Theo"
+  so a single-baby tracker stays uncluttered. Copy that names the active child
   goes through `getFirstName(profile)`.
 - An export carries every child (`profiles`) and every child's entries; an
   export taken before this existed carries one `profile`, and still imports.

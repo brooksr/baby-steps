@@ -4,8 +4,8 @@ import { createFamilyProfile } from '../domain/family';
 import type { CareEvent } from '../domain/types';
 import { ParentReports } from './ParentReports';
 
-const jenni = createFamilyProfile({ kind: 'parent', name: 'Jenni Roche', parentRole: 'mom' });
-const theo = createFamilyProfile({ dueDate: '2026-09-01', name: 'Theo Roche' }, [jenni]);
+const taylor = createFamilyProfile({ kind: 'parent', name: 'Taylor Example', parentRole: 'mom' });
+const avery = createFamilyProfile({ dueDate: '2026-09-01', name: 'Avery Example' }, [taylor]);
 
 /** Last night, 9:30pm to 5am. */
 function lastNight() {
@@ -20,7 +20,7 @@ function lastNight() {
 function sleep(): CareEvent {
   const { end, start } = lastNight();
   return {
-    babyId: jenni.id,
+    babyId: taylor.id,
     createdAt: start.toISOString(),
     endedAt: end.toISOString(),
     id: 'sleep_1',
@@ -34,7 +34,7 @@ function sleep(): CareEvent {
 function feed(hoursIntoNight: number, caregiverId?: string): CareEvent {
   const at = new Date(lastNight().start.getTime() + hoursIntoNight * 3600000);
   return {
-    babyId: 'theo-roche',
+    babyId: 'avery-example',
     caregiverId,
     createdAt: at.toISOString(),
     id: `feed_${hoursIntoNight}`,
@@ -52,9 +52,9 @@ describe('ParentReports', () => {
   it('shows this parent\'s recorded share over the household total', () => {
     render(
       <ParentReports
-        childEvents={[feed(4, jenni.id), feed(6, 'brooks-roche')]}
+        childEvents={[feed(4, taylor.id), feed(6, 'jordan-example')]}
         events={[sleep()]}
-        profile={jenni}
+        profile={taylor}
       />
     );
 
@@ -64,7 +64,7 @@ describe('ParentReports', () => {
   });
 
   it('reports rest net of the wake-up and the settling after it', () => {
-    render(<ParentReports childEvents={[feed(4, jenni.id)]} events={[sleep()]} profile={jenni} />);
+    render(<ParentReports childEvents={[feed(4, taylor.id)]} events={[sleep()]} profile={taylor} />);
 
     // 7h30 in bed, one wake-up, 15 minutes to settle.
     const inBed = screen.getByText('In bed').closest('.metric-card');
@@ -74,7 +74,7 @@ describe('ParentReports', () => {
 
   // A wake-up the other parent got up for did not cost this one any sleep.
   it('sleeps through a wake-up recorded against someone else', () => {
-    render(<ParentReports childEvents={[feed(4, 'brooks-roche')]} events={[sleep()]} profile={jenni} />);
+    render(<ParentReports childEvents={[feed(4, 'jordan-example')]} events={[sleep()]} profile={taylor} />);
 
     const inBed = screen.getByText('In bed').closest('.metric-card');
     expect(inBed).toHaveTextContent('0m of it awake');
@@ -84,7 +84,7 @@ describe('ParentReports', () => {
     /** A period logged long before conception. */
     function oldPeriod(): CareEvent {
       return {
-        babyId: jenni.id,
+        babyId: taylor.id,
         createdAt: '2025-11-20T08:00:00',
         flow: 'medium',
         id: 'menses_old',
@@ -96,18 +96,18 @@ describe('ParentReports', () => {
     }
 
     it('says the cycle is paused while a baby is on the way', () => {
-      const expecting = { ...theo, birthDate: undefined, dueDate: '2099-04-01' };
+      const expecting = { ...avery, birthDate: undefined, dueDate: '2099-04-01' };
 
-      render(<ParentReports childEvents={[]} events={[oldPeriod()]} profile={jenni} profiles={[expecting, jenni]} />);
+      render(<ParentReports childEvents={[]} events={[oldPeriod()]} profile={taylor} profiles={[expecting, taylor]} />);
 
       expect(screen.getByText(/Cycle tracking is paused while a baby is on the way/)).toBeInTheDocument();
     });
 
     // Counting a pre-pregnancy period forward gave "cycle day 291".
     it('waits for the first period back rather than counting through the pregnancy', () => {
-      const born = { ...theo, birthDate: '2026-09-02' };
+      const born = { ...avery, birthDate: '2026-09-02' };
 
-      render(<ParentReports childEvents={[]} events={[oldPeriod()]} profile={jenni} profiles={[born, jenni]} />);
+      render(<ParentReports childEvents={[]} events={[oldPeriod()]} profile={taylor} profiles={[born, taylor]} />);
 
       expect(screen.getByText(/No period logged yet/)).toBeInTheDocument();
       expect(screen.getByText(/Ovulation comes first/)).toBeInTheDocument();

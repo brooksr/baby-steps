@@ -47,6 +47,7 @@ export function Dashboard({ activeTimers, events, profile, profiles = [], todayK
   const firstName = getFirstName(profile);
   const preferredUnits = getPreferredUnits(profile);
   const isBorn = Boolean(profile.birthDate);
+  const hasDueDate = Boolean(profile.dueDate);
   const daysUntilDue = getDaysUntilDue(profile);
   const ageDays = getAgeDays(profile);
   const todayEvents = events.filter((event) => isSameLocalDate(event.startedAt, todayKey));
@@ -77,9 +78,11 @@ export function Dashboard({ activeTimers, events, profile, profiles = [], todayK
         ? `${Math.floor(ageDays / 7)} weeks · ${getDueDateStatus(profile)}`
         : getDueDateStatus(profile)
       : ''
-    : daysUntilDue === 1
-      ? 'day until due date'
-      : 'days until due date';
+    : hasDueDate
+      ? daysUntilDue === 1
+        ? 'day until due date'
+        : 'days until due date'
+      : 'Add a due date or birth date in Settings.';
   const activeSleep = getActiveSleep(events);
   const upcomingMeds = getUpcomingMedicationEvents(events).slice(0, 3);
   const upcomingAppointments = getUpcomingAppointments(events).slice(0, 3);
@@ -95,7 +98,7 @@ export function Dashboard({ activeTimers, events, profile, profiles = [], todayK
         <div className="profile-band-top">
           <div>
             <p className="eyebrow">{profile.name}</p>
-            <h1 className={isBorn ? 'age-headline' : undefined}>{isBorn ? formatAgeSummary(profile) : daysUntilDue}</h1>
+            <h1 className={isBorn || !hasDueDate ? 'age-headline' : undefined}>{isBorn ? formatAgeSummary(profile) : hasDueDate ? daysUntilDue : 'Welcome'}</h1>
             {ageDetail && <p>{ageDetail}</p>}
           </div>
           {!isBorn && (
@@ -111,7 +114,7 @@ export function Dashboard({ activeTimers, events, profile, profiles = [], todayK
         <div className="hero-metrics">
           <button aria-label="View feed log" className={`hero-metric hero-metric-link${feedReminder ? ' past-due' : ''}`} type="button" onClick={() => onOpenLog('feed')}>
             <span>Last feed</span>
-            <strong>{lastFeed ? formatAgo(lastFeed.startedAt) : 'None'}</strong>
+            <strong>{lastFeed ? formatAgo(lastFeed.startedAt).replace(/ ago$/, '') : 'None'}</strong>
             <small>{lastFeed ? `${formatClock(lastFeed.startedAt)}${nextSide ? ` · next: ${nextSide}` : ''}` : 'Nothing logged yet'}</small>
             {nextFeed && (
               <small className="hero-metric-detail">
@@ -121,7 +124,7 @@ export function Dashboard({ activeTimers, events, profile, profiles = [], todayK
           </button>
           <button aria-label="View diaper log" className={`hero-metric hero-metric-link${nextDiaper && nextDiaper.minutesAway <= 0 ? ' past-due' : ''}`} type="button" onClick={() => onOpenLog('diaper')}>
             <span>Last diaper</span>
-            <strong>{lastDiaper ? formatAgo(lastDiaper.startedAt) : 'None'}</strong>
+            <strong>{lastDiaper ? formatAgo(lastDiaper.startedAt).replace(/ ago$/, '') : 'None'}</strong>
             <small>{lastDiaper ? formatClock(lastDiaper.startedAt) : 'Nothing logged yet'}</small>
             {nextDiaper && (
               <small className="hero-metric-detail">
@@ -131,9 +134,9 @@ export function Dashboard({ activeTimers, events, profile, profiles = [], todayK
           </button>
           <button aria-label="View bath log" className={`hero-metric hero-metric-link${bathReminder ? ' past-due' : ''}`} type="button" onClick={() => onOpenLog('bath')}>
             <span>Last bath</span>
-            <strong>{lastBath ? formatDaysAgo(lastBath.startedAt) : 'None'}</strong>
+            <strong>{lastBath ? formatDaysAgo(lastBath.startedAt).replace(/ ago$/, '') : 'None'}</strong>
             <small>{lastBath ? `${formatShortDate(lastBath.startedAt)} · ${formatClock(lastBath.startedAt)}` : 'Nothing logged yet'}</small>
-            {bathReminder && <small className="hero-metric-detail">Bath due · usually every 2–3 days</small>}
+            {bathReminder && <small className="hero-metric-detail">Bath due · ~2–3 days</small>}
           </button>
         </div>
       </section>
@@ -159,8 +162,8 @@ export function Dashboard({ activeTimers, events, profile, profiles = [], todayK
         })}
       </section>
 
-      {/* Only useful on the way to the delivery — retired once Theo is here. */}
-      {!isBorn && (
+      {/* Only useful on the way to the delivery, once a route is configured. */}
+      {!isBorn && HOSPITAL.directionsUrl && (
         <a className="hospital-link" href={HOSPITAL.directionsUrl} target="_blank" rel="noreferrer">
           <Navigation aria-hidden="true" />
           <div>

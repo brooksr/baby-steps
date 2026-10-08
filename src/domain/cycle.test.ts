@@ -5,7 +5,7 @@ import type { BabyProfile, CareEvent, MensesFlow } from './types';
 
 function menses(dateKey: string, flow: MensesFlow = 'medium'): CareEvent {
   return {
-    babyId: 'mom-roche',
+    babyId: 'mom-example',
     createdAt: `${dateKey}T08:00:00.000Z`,
     flow,
     id: `menses_${dateKey}`,
@@ -173,11 +173,11 @@ describe('where today sits', () => {
 });
 
 function child(overrides: Partial<BabyProfile>): BabyProfile {
-  return { ...createFamilyProfile({ dueDate: '2026-09-01', name: 'Theo Roche' }), ...overrides };
+  return { ...createFamilyProfile({ dueDate: '2026-09-01', name: 'Avery Example' }), ...overrides };
 }
 
 describe('a pregnancy and a birth', () => {
-  const mom = createFamilyProfile({ kind: 'parent', name: 'Jenni Roche', parentRole: 'mom' });
+  const mom = createFamilyProfile({ kind: 'parent', name: 'Taylor Example', parentRole: 'mom' });
 
   it('reads the babies for what they mean for the cycle', () => {
     expect(getCycleContext([mom, child({ birthDate: '2026-09-02' })])).toEqual({

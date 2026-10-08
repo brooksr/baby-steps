@@ -71,7 +71,7 @@ export function buildFirstMonthSeed(birthDate = defaultSeedBirthDate()): Tracker
   };
 
   // Birth (day 1) — measurements near the WHO median.
-  push(at(1, 6, 30), { headCircumferenceIn: 13.6, lengthIn: 19.7, notes: 'Welcome, Theo!', type: 'birth', weightOz: 116 });
+  push(at(1, 6, 30), { headCircumferenceIn: 13.6, lengthIn: 19.7, notes: 'Welcome, baby!', type: 'birth', weightOz: 116 });
 
   for (let day = 1; day <= SEED_DAYS; day += 1) {
     // Feeds — alternate nursing and bottle, spread across the day.

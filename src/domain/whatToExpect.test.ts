@@ -18,8 +18,8 @@ function profileOf(overrides: Partial<BabyProfile> = {}): BabyProfile {
   return {
     createdAt: '2026-01-01T00:00:00.000Z',
     dueDate: '2026-09-01',
-    id: 'theo-roche',
-    name: 'Theo Roche',
+    id: 'avery-example',
+    name: 'Avery Example',
     timezone: 'America/Los_Angeles',
     updatedAt: '2026-01-01T00:00:00.000Z',
     ...overrides
@@ -33,10 +33,10 @@ function daysAfter(dateKey: string, days: number) {
 
 describe('personalize', () => {
   const cases: Array<[BabyGender | undefined, string]> = [
-    ['boy', 'Theo holds his head up. Hold him.'],
-    ['girl', 'Theo holds her head up. Hold her.'],
-    ['other', 'Theo holds their head up. Hold them.'],
-    [undefined, 'Theo holds their head up. Hold them.']
+    ['boy', 'Avery holds his head up. Hold him.'],
+    ['girl', 'Avery holds her head up. Hold her.'],
+    ['other', 'Avery holds their head up. Hold them.'],
+    [undefined, 'Avery holds their head up. Hold them.']
   ];
 
   it.each(cases)('renders %s copy with the matching pronouns', (gender, expected) => {
@@ -45,12 +45,12 @@ describe('personalize', () => {
   });
 
   it('uses the first name only, and falls back when there is none', () => {
-    expect(personalize('{name}', profileOf({ name: 'Theo Roche' }))).toBe('Theo');
+    expect(personalize('{name}', profileOf({ name: 'Avery Example' }))).toBe('Avery');
     expect(personalize('{name}', profileOf({ name: '  ' }))).toBe('your baby');
   });
 
   it('leaves an unknown token alone rather than blanking the sentence', () => {
-    expect(personalize('{name} at {nowhere}', profileOf())).toBe('Theo at {nowhere}');
+    expect(personalize('{name} at {nowhere}', profileOf())).toBe('Avery at {nowhere}');
   });
 });
 
@@ -147,7 +147,7 @@ describe('getWhatToExpect — pregnancy', () => {
 
 describe('getWhatToExpect — after birth', () => {
   const term = profileOf({ birthDate: '2026-09-01', dueDate: '2026-09-01', gender: 'boy' });
-  // Theo: born 2026-07-23 against a 2026-09-01 due date — 40 days early, 34w2d.
+  // Avery: born 2026-07-23 against a 2026-09-01 due date — 40 days early, 34w2d.
   const preterm = profileOf({ birthDate: '2026-07-23', dueDate: '2026-09-01', gender: 'boy' });
 
   it('opens on the day of birth', () => {
@@ -158,7 +158,7 @@ describe('getWhatToExpect — after birth', () => {
 
   it('personalizes the stage copy it hands back', () => {
     const outlook = getWhatToExpect(term, daysAfter('2026-09-01', 15));
-    expect(outlook?.phase === 'child' && outlook.stage?.development).toBe('Theo holds his head up briefly during tummy time.');
+    expect(outlook?.phase === 'child' && outlook.stage?.development).toBe('Avery holds his head up briefly during tummy time.');
   });
 
   it('reads a preterm newborn on actual age', () => {
@@ -179,7 +179,7 @@ describe('getWhatToExpect — after birth', () => {
   });
 
   // Corrected age is why a preterm two-year-old is still inside the copy: at
-  // 730 chronological days Theo is only 690 corrected days old.
+  // 730 chronological days Avery is only 690 corrected days old.
   it('is still covered at two years chronological when the birth was preterm', () => {
     const outlook = getWhatToExpect(preterm, daysAfter('2026-07-23', COVERAGE_END_DAYS + 1));
     expect(outlook).toMatchObject({ beyondCoverage: false });
@@ -219,7 +219,7 @@ describe('personal notes', () => {
     const outlook = getWhatToExpect(termGirl, daysAfter('2026-09-01', 3));
     const notes = outlook?.phase === 'child' ? outlook.notes : [];
     expect(notes).toContain('Wipe front to back at every change.');
-    expect(notes.join(' ')).toContain('Theo');
+    expect(notes.join(' ')).toContain('Avery');
   });
 
   // Notes are about the calendar — a cord stump and a car seat screen do not
@@ -232,7 +232,7 @@ describe('personal notes', () => {
 
   it('stops the waking-to-feed note after a baby passes their birth weight', () => {
     const birth = {
-      babyId: 'theo-roche',
+      babyId: 'avery-example',
       createdAt: '2026-07-23T12:00:00.000Z',
       id: 'birth',
       startedAt: '2026-07-23T12:00:00.000Z',

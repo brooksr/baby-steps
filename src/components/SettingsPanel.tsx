@@ -201,7 +201,7 @@ export function SettingsPanel({
           }
         : {
             birthDate: birthDate || undefined,
-            dueDate,
+            dueDate: dueDate || undefined,
             gender: gender || undefined,
             name,
             preferredUnits: { system: unitSystem, weightDisplay },
@@ -353,7 +353,7 @@ export function SettingsPanel({
           {!editingParent && (
             <label>
               Due date
-              <input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} required />
+              <input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} />
             </label>
           )}
           {editingParent && (

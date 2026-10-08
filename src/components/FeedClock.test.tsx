@@ -5,7 +5,7 @@ import type { CareEvent } from '../domain/types';
 import { FeedClock } from './FeedClock';
 
 const base = {
-  babyId: 'theo-roche',
+  babyId: 'avery-example',
   createdAt: '2025-06-10T12:00:00.000Z',
   method: 'nursing' as const,
   syncState: 'local' as const,

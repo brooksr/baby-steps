@@ -5,7 +5,7 @@ import type { BirthEvent } from '../domain/types';
 import { Timeline } from './Timeline';
 
 const birth: BirthEvent = {
-  babyId: 'theo-roche',
+  babyId: 'avery-example',
   createdAt: '2026-09-02T06:30:00.000Z',
   headCircumferenceIn: 13.5,
   id: 'birth-1',

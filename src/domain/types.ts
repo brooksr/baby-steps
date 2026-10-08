@@ -1,5 +1,4 @@
-export const DEFAULT_PROFILE_ID = 'theo-roche';
-export const THEO_DUE_DATE = '2026-09-01';
+export const DEFAULT_PROFILE_ID = 'baby';
 
 export type SyncState = 'local' | 'synced' | 'conflict';
 

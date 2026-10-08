@@ -4,7 +4,7 @@ import { getDayMetricStats, getFirstYearAnalytics } from './firstYear';
 import type { CareEvent } from './types';
 
 const base = {
-  babyId: 'theo-roche',
+  babyId: 'avery-example',
   createdAt: '2026-09-02T12:00:00.000Z',
   syncState: 'local' as const,
   updatedAt: '2026-09-02T12:00:00.000Z'

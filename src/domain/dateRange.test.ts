@@ -16,7 +16,7 @@ const NOW = new Date('2026-09-30T12:00:00');
 
 function diaper(startedAt: string, id = startedAt): CareEvent {
   return {
-    babyId: 'theo-roche',
+    babyId: 'avery-example',
     createdAt: startedAt,
     id,
     kind: 'wet',

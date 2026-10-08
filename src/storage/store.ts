@@ -5,7 +5,7 @@ import { migrateStoredEvents, type StoredCareEvent } from '../domain/legacyEvent
 import { DEFAULT_SHOPPING_CATEGORY, findItemByName, getCatalogSeed } from '../domain/shopping';
 import { type BabyProfile, type CareEvent, type CareEventType, type CreateCareEventInput, type ShoppingItem, type TaskItem, type TrackerExport, type TrackerSnapshot } from '../domain/types';
 
-const DEFAULT_DB_NAME = 'babysteps-theo';
+const DEFAULT_DB_NAME = 'babysteps';
 
 export interface EventQuery {
   babyId?: string;

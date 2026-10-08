@@ -1,7 +1,7 @@
 {
-  "name": "BabySteps Theo",
+  "name": "BabySteps",
   "short_name": "BabySteps",
-  "description": "Shared baby care tracker for Theo Roche.",
+  "description": "Private, offline-first baby and family care tracker.",
   "start_url": ".",
   "scope": ".",
   "display": "standalone",

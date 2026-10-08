@@ -1,4 +1,4 @@
-import { DEFAULT_PROFILE_ID, THEO_DUE_DATE, type BabyProfile } from './types';
+import { DEFAULT_PROFILE_ID, type BabyProfile } from './types';
 
 const MINUTE = 60_000;
 const DAY = 24 * 60 * MINUTE;
@@ -37,9 +37,8 @@ export function createDefaultBabyProfile(now = new Date()): BabyProfile {
 
   return {
     createdAt: timestamp,
-    dueDate: THEO_DUE_DATE,
     id: DEFAULT_PROFILE_ID,
-    name: 'Theo Roche',
+    name: 'Baby',
     preferredUnits: {
       system: 'american',
       weightDisplay: 'pounds-ounces'

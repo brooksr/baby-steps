@@ -120,7 +120,7 @@ export function buildFullYearSeed(birthDate = defaultFullYearBirthDate()): Track
   push(at(1, 6, 30), {
     headCircumferenceIn: 13.6,
     lengthIn: 19.7,
-    notes: 'Welcome, Theo!',
+    notes: 'Welcome, baby!',
     type: 'birth',
     weightOz: 116
   });

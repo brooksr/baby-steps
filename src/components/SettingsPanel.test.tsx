@@ -57,14 +57,14 @@ describe('SettingsPanel', () => {
     renderPanel({ onAddChild });
 
     await user.click(screen.getByRole('button', { name: /add a child/i }));
-    await user.type(screen.getByLabelText(/child's name/i), 'Mila Roche');
+    await user.type(screen.getByLabelText(/child's name/i), 'Riley Example');
     await user.type(screen.getAllByLabelText(/due date/i)[1], '2028-03-04');
     await user.click(screen.getByRole('button', { name: /^add child$/i }));
 
     expect(onAddChild).toHaveBeenCalledWith(
       expect.objectContaining({
         dueDate: '2028-03-04',
-        name: 'Mila Roche',
+        name: 'Riley Example',
         preferredUnits: { system: 'american', weightDisplay: 'pounds-ounces' }
       })
     );
@@ -75,20 +75,20 @@ describe('SettingsPanel', () => {
   it('asks before archiving, and never offers it for an only child', async () => {
     const user = userEvent.setup();
     const onArchiveProfile = vi.fn().mockResolvedValue(undefined);
-    const theo = createDefaultBabyProfile();
-    const mila: BabyProfile = createFamilyProfile({ dueDate: '2028-03-04', name: 'Mila Roche' }, [theo]);
+    const avery = createDefaultBabyProfile();
+    const riley: BabyProfile = createFamilyProfile({ dueDate: '2028-03-04', name: 'Riley Example' }, [avery]);
 
-    const { unmount } = renderPanel({ profile: theo, profiles: [theo] });
+    const { unmount } = renderPanel({ profile: avery, profiles: [avery] });
     expect(screen.queryByRole('button', { name: /archive/i })).toBeNull();
     unmount();
 
-    renderPanel({ onArchiveProfile, profile: theo, profiles: [theo, mila] });
+    renderPanel({ onArchiveProfile, profile: avery, profiles: [avery, riley] });
 
-    await user.click(screen.getByRole('button', { name: 'Archive Mila Roche' }));
+    await user.click(screen.getByRole('button', { name: 'Archive Riley Example' }));
     expect(onArchiveProfile).not.toHaveBeenCalled();
 
-    await user.click(screen.getByRole('button', { name: 'Confirm archiving Mila Roche' }));
-    expect(onArchiveProfile).toHaveBeenCalledWith(mila.id);
+    await user.click(screen.getByRole('button', { name: 'Confirm archiving Riley Example' }));
+    expect(onArchiveProfile).toHaveBeenCalledWith(riley.id);
   });
 
   // Archiving is never a deletion: the person stays listed, with everything
@@ -96,32 +96,32 @@ describe('SettingsPanel', () => {
   it('lists an archived person with a way back', async () => {
     const user = userEvent.setup();
     const onRestoreProfile = vi.fn().mockResolvedValue(undefined);
-    const theo = createDefaultBabyProfile();
-    const mila: BabyProfile = {
-      ...createFamilyProfile({ dueDate: '2028-03-04', name: 'Mila Roche' }, [theo]),
+    const avery = createDefaultBabyProfile();
+    const riley: BabyProfile = {
+      ...createFamilyProfile({ dueDate: '2028-03-04', name: 'Riley Example' }, [avery]),
       archivedAt: '2026-09-11T12:00:00.000Z'
     };
 
-    renderPanel({ onRestoreProfile, profile: theo, profiles: [theo, mila] });
+    renderPanel({ onRestoreProfile, profile: avery, profiles: [avery, riley] });
 
     expect(screen.getByText('Archived')).toBeInTheDocument();
     expect(screen.getByText('every entry kept')).toBeInTheDocument();
     // An archived person cannot be archived again, only brought back.
-    expect(screen.queryByRole('button', { name: /^Archive Mila/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Archive Riley/ })).toBeNull();
 
-    await user.click(screen.getByRole('button', { name: 'Bring Mila Roche back' }));
-    expect(onRestoreProfile).toHaveBeenCalledWith(mila.id);
+    await user.click(screen.getByRole('button', { name: 'Bring Riley Example back' }));
+    expect(onRestoreProfile).toHaveBeenCalledWith(riley.id);
   });
 
   it('switches child from the list', async () => {
     const user = userEvent.setup();
     const onSelectChild = vi.fn().mockResolvedValue(undefined);
-    const theo = createDefaultBabyProfile();
-    const mila: BabyProfile = createFamilyProfile({ dueDate: '2028-03-04', name: 'Mila Roche' }, [theo]);
+    const avery = createDefaultBabyProfile();
+    const riley: BabyProfile = createFamilyProfile({ dueDate: '2028-03-04', name: 'Riley Example' }, [avery]);
 
-    renderPanel({ onSelectChild, profile: theo, profiles: [theo, mila] });
+    renderPanel({ onSelectChild, profile: avery, profiles: [avery, riley] });
 
-    await user.click(screen.getByRole('button', { name: /^mila roche/i }));
-    expect(onSelectChild).toHaveBeenCalledWith(mila.id);
+    await user.click(screen.getByRole('button', { name: /^riley example/i }));
+    expect(onSelectChild).toHaveBeenCalledWith(riley.id);
   });
 });

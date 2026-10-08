@@ -3,17 +3,17 @@ import { createFamilyProfile } from './family';
 import { DEFAULT_NAP_WINDOW, DEFAULT_SLEEP_WINDOW, isWithinShift, planAttribution, planParentSleeps, shiftFor, toMinuteOfDay } from './nightShift';
 import type { CareEvent } from './types';
 
-const jenni = createFamilyProfile({ kind: 'parent', name: 'Jenni Roche', parentRole: 'mom' });
-const brooks = createFamilyProfile({ kind: 'parent', name: 'Brooks Roche', parentRole: 'dad' }, [jenni]);
+const taylor = createFamilyProfile({ kind: 'parent', name: 'Taylor Example', parentRole: 'mom' });
+const jordan = createFamilyProfile({ kind: 'parent', name: 'Jordan Example', parentRole: 'dad' }, [taylor]);
 
 const shifts = [
-  { caregiverId: jenni.id, end: '05:00', start: '21:30' },
-  { caregiverId: brooks.id, end: '09:00', start: '05:00' }
+  { caregiverId: taylor.id, end: '05:00', start: '21:30' },
+  { caregiverId: jordan.id, end: '09:00', start: '05:00' }
 ];
 
 function feed(startedAt: string, caregiverId?: string): CareEvent {
   return {
-    babyId: 'theo-roche',
+    babyId: 'avery-example',
     caregiverId,
     createdAt: startedAt,
     id: `feed_${startedAt}`,
@@ -45,11 +45,11 @@ describe('shift windows', () => {
     expect(isWithinShift(toMinuteOfDay('04:59'), morning)).toBe(false);
   });
 
-  // The boundary belongs to the shift that is starting, so 5am is Brooks'.
+  // The boundary belongs to the shift that is starting, so 5am is Jordan'.
   it('hands an instant to the shift covering it', () => {
-    expect(shiftFor('2026-08-07T23:10:00', shifts)?.caregiverId).toBe(jenni.id);
-    expect(shiftFor('2026-08-07T04:59:00', shifts)?.caregiverId).toBe(jenni.id);
-    expect(shiftFor('2026-08-07T05:00:00', shifts)?.caregiverId).toBe(brooks.id);
+    expect(shiftFor('2026-08-07T23:10:00', shifts)?.caregiverId).toBe(taylor.id);
+    expect(shiftFor('2026-08-07T04:59:00', shifts)?.caregiverId).toBe(taylor.id);
+    expect(shiftFor('2026-08-07T05:00:00', shifts)?.caregiverId).toBe(jordan.id);
     expect(shiftFor('2026-08-07T14:00:00', shifts)).toBeUndefined();
   });
 });
@@ -60,15 +60,15 @@ describe('planning an attribution pass', () => {
     feed('2026-08-07T01:00:00'),
     feed('2026-08-07T06:30:00'),
     feed('2026-08-07T14:00:00'), // no shift covers the afternoon
-    feed('2026-08-07T22:00:00', brooks.id) // already named
+    feed('2026-08-07T22:00:00', jordan.id) // already named
   ];
 
   it('assigns by the shift the entry falls in', () => {
     const plan = planAttribution(events, shifts, '2026-08-06');
 
     expect(plan.assignments).toEqual([
-      { caregiverId: jenni.id, event: events[1] },
-      { caregiverId: brooks.id, event: events[2] }
+      { caregiverId: taylor.id, event: events[1] },
+      { caregiverId: jordan.id, event: events[2] }
     ]);
   });
 
@@ -90,11 +90,11 @@ describe('planning an attribution pass', () => {
 
 describe('planning the parent sleeps', () => {
   it('makes one entry per night across the span', () => {
-    const nights = planParentSleeps(jenni, { end: '05:00', start: '21:30' }, '2026-08-06', '2026-08-09');
+    const nights = planParentSleeps(taylor, { end: '05:00', start: '21:30' }, '2026-08-06', '2026-08-09');
 
     expect(nights).toHaveLength(4);
     expect(nights[0]).toMatchObject({
-      babyId: jenni.id,
+      babyId: taylor.id,
       endedAt: new Date('2026-08-07T05:00:00').toISOString(),
       startedAt: new Date('2026-08-06T21:30:00').toISOString(),
       type: 'sleep'
@@ -103,15 +103,15 @@ describe('planning the parent sleeps', () => {
 
   // Running it twice must propose the same entries, not a second set.
   it('derives a stable id from the parent and the night', () => {
-    const once = planParentSleeps(jenni, { end: '05:00', start: '21:30' }, '2026-08-06', '2026-08-09');
-    const twice = planParentSleeps(jenni, { end: '05:00', start: '21:30' }, '2026-08-06', '2026-08-09');
+    const once = planParentSleeps(taylor, { end: '05:00', start: '21:30' }, '2026-08-06', '2026-08-09');
+    const twice = planParentSleeps(taylor, { end: '05:00', start: '21:30' }, '2026-08-06', '2026-08-09');
 
     expect(once.map((night) => night.id)).toEqual(twice.map((night) => night.id));
     expect(new Set(once.map((night) => night.id)).size).toBe(4);
   });
 
   it('stops before a night that has not finished yet', () => {
-    const far = planParentSleeps(jenni, { end: '05:00', start: '21:30' }, '2026-08-06', '2099-01-01');
+    const far = planParentSleeps(taylor, { end: '05:00', start: '21:30' }, '2026-08-06', '2099-01-01');
 
     expect(far.every((night) => new Date(night.endedAt as string).getTime() <= Date.now())).toBe(true);
   });
@@ -119,18 +119,18 @@ describe('planning the parent sleeps', () => {
   // The shifts say who gets up, not who is asleep — so both parents get the
   // same hours in bed, and the off-duty one sleeps through the night entries.
   it('gives every parent the same window, whatever shift they are on', () => {
-    const hers = planParentSleeps(jenni, DEFAULT_SLEEP_WINDOW, '2026-08-06', '2026-08-07');
-    const his = planParentSleeps(brooks, DEFAULT_SLEEP_WINDOW, '2026-08-06', '2026-08-07');
+    const hers = planParentSleeps(taylor, DEFAULT_SLEEP_WINDOW, '2026-08-06', '2026-08-07');
+    const his = planParentSleeps(jordan, DEFAULT_SLEEP_WINDOW, '2026-08-06', '2026-08-07');
 
     expect(hers[0].startedAt).toBe(his[0].startedAt);
     expect(hers[0].endedAt).toBe(his[0].endedAt);
-    expect(hers[0].babyId).toBe(jenni.id);
-    expect(his[0].babyId).toBe(brooks.id);
+    expect(hers[0].babyId).toBe(taylor.id);
+    expect(his[0].babyId).toBe(jordan.id);
   });
 
   describe('the morning nap', () => {
     it('makes a same-day entry that does not wrap past midnight', () => {
-      const naps = planParentSleeps(jenni, DEFAULT_NAP_WINDOW, '2026-08-06', '2026-08-07');
+      const naps = planParentSleeps(taylor, DEFAULT_NAP_WINDOW, '2026-08-06', '2026-08-07');
 
       expect(naps).toHaveLength(2);
       expect(naps[0]).toMatchObject({
@@ -142,8 +142,8 @@ describe('planning the parent sleeps', () => {
     // A nap and the night it follows are two entries for one person on one day,
     // so the id has to carry the window as well as the date.
     it('never collides with the night sleep it belongs to', () => {
-      const nights = planParentSleeps(jenni, DEFAULT_SLEEP_WINDOW, '2026-08-06', '2026-08-07');
-      const naps = planParentSleeps(jenni, DEFAULT_NAP_WINDOW, '2026-08-06', '2026-08-07');
+      const nights = planParentSleeps(taylor, DEFAULT_SLEEP_WINDOW, '2026-08-06', '2026-08-07');
+      const naps = planParentSleeps(taylor, DEFAULT_NAP_WINDOW, '2026-08-06', '2026-08-07');
 
       expect(new Set([...nights, ...naps].map((entry) => entry.id)).size).toBe(4);
     });

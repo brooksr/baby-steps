@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { migrateStoredEvent, type StoredCareEvent } from './legacyEvents';
 
 const base = {
-  babyId: 'theo-roche',
+  babyId: 'avery-example',
   createdAt: '2026-09-20T08:00:00.000Z',
   id: 'diaper-1',
   startedAt: '2026-09-20T08:00:00.000Z',

@@ -35,7 +35,7 @@ export function LoginSplash({ error, loading, restoring, sessionExpired, storeSt
     <main className="splash-screen">
       <section className="splash-panel" aria-labelledby="splash-title">
         <img className="splash-logo" src={`${import.meta.env.BASE_URL}icons/babysteps-logo.png`} alt="BabySteps mother and baby logo" />
-        <p className="eyebrow">BabySteps Theo</p>
+        <p className="eyebrow">BabySteps</p>
 
         {restoring ? (
           <>

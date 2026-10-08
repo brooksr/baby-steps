@@ -172,7 +172,7 @@ describe('QuickAddDialog', () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     const existing: FeedEvent = {
       amountOz: 4,
-      babyId: 'theo-roche',
+      babyId: 'avery-example',
       contents: 'formula',
       createdAt: '2026-08-01T12:00:00.000Z',
       id: 'event_1',
@@ -294,8 +294,8 @@ describe('QuickAddDialog', () => {
 
   describe('who logged it', () => {
     const baby = createDefaultBabyProfile();
-    const mom = createFamilyProfile({ kind: 'parent', name: 'Sara Roche', parentRole: 'mom' }, [baby]);
-    const dad = createFamilyProfile({ kind: 'parent', name: 'Brooks Roche', parentRole: 'dad' }, [baby, mom]);
+    const mom = createFamilyProfile({ kind: 'parent', name: 'Casey Example', parentRole: 'mom' }, [baby]);
+    const dad = createFamilyProfile({ kind: 'parent', name: 'Jordan Example', parentRole: 'dad' }, [baby, mom]);
 
     beforeEach(() => {
       localStorage.clear();

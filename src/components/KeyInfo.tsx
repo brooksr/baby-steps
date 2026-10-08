@@ -24,7 +24,7 @@ function getGuardians(profiles: BabyProfile[], info: CareInfo): CareContact[] {
   if (parents.length > 0) {
     return parents.map((parent) => ({
       // The role rides along in the name, which is the only line this card
-      // gives a contact — "Sara Roche · Mom" reads the way you would say it.
+      // gives a contact — "Casey Example · Mom" reads the way you would say it.
       name: parent.parentRole ? `${parent.name} · ${parentRoleLabels[parent.parentRole]}` : parent.name,
       phone: parent.phone
     }));

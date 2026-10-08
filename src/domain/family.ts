@@ -150,7 +150,7 @@ function slugify(name: string) {
 /**
  * A readable id, because it is what a caregiver sees in the shared sheet's
  * `babyId` column. Suffixed only on a collision, so the first person of a name
- * reads as plain `mila-roche`.
+ * reads as plain `riley-example`.
  */
 export function createProfileId(name: string, existingIds: readonly string[] = []): string {
   const base = slugify(name) || 'child';

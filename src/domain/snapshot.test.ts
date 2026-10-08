@@ -5,8 +5,8 @@ import type { BabyProfile, CareEvent, ShoppingItem, TaskItem } from './types';
 const profile: BabyProfile = {
   createdAt: '2026-06-20T16:15:00.000Z',
   dueDate: '2026-09-01',
-  id: 'theo-roche',
-  name: 'Theo Roche',
+  id: 'avery-example',
+  name: 'Avery Example',
   syncState: 'synced',
   timezone: 'America/Los_Angeles',
   updatedAt: '2026-06-20T16:15:00.000Z'
@@ -14,7 +14,7 @@ const profile: BabyProfile = {
 
 function diaper(overrides: Partial<CareEvent> = {}): CareEvent {
   return {
-    babyId: 'theo-roche',
+    babyId: 'avery-example',
     createdAt: '2026-09-02T11:00:00.000Z',
     id: 'event_1',
     kind: 'wet',

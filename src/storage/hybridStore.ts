@@ -8,9 +8,10 @@ export function createHybridBabyTrackerStore(): BabyTrackerStore {
   const localStore = createLocalBabyTrackerStore();
   let sheetStore: BabyTrackerStore | null = null;
   let backend: StoreStatus['backend'] = 'local';
-  let message = hasGoogleClientId()
+  const sheetsConfigured = () => hasGoogleClientId() && Boolean(GOOGLE_SHEET_ID);
+  let message = sheetsConfigured()
     ? 'Connect Google Sheets to read and write the shared tracker.'
-    : 'Local fallback is active. Add VITE_GOOGLE_CLIENT_ID to enable browser writes to the shared Google Sheet.';
+    : 'Local fallback is active. Add VITE_GOOGLE_CLIENT_ID and VITE_GOOGLE_SHEET_ID to enable Google Sheets sync.';
 
   function currentStore() {
     return sheetStore ?? localStore;
@@ -19,7 +20,7 @@ export function createHybridBabyTrackerStore(): BabyTrackerStore {
   function getStatus(): StoreStatus {
     return {
       backend,
-      configured: hasGoogleClientId(),
+      configured: sheetsConfigured(),
       connected: Boolean(sheetStore),
       message,
       sheetId: GOOGLE_SHEET_ID,
@@ -28,6 +29,10 @@ export function createHybridBabyTrackerStore(): BabyTrackerStore {
   }
 
   async function connect(interactive = true) {
+    if (!GOOGLE_SHEET_ID) {
+      throw new Error('Add VITE_GOOGLE_SHEET_ID to connect Google Sheets.');
+    }
+
     // Gate on a token first: silent for an automatic (boot) reconnect, or
     // interactive when the user explicitly taps connect.
     await requestGoogleSheetsAccessToken(interactive);
