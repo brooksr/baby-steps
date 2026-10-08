@@ -119,10 +119,10 @@ export function Dashboard({ activeTimers, events, profile, profiles = [], todayK
             {nextFeed && (
               <small className="hero-metric-detail">
                 {nextFeed.minutesAway > 0
-                  ? `Next feed${nextSide ? `: ${nextSide}` : ''} ~${formatClock(nextFeed.expectedAt)}`
+                  ? `Next:${nextSide ? ` ${nextSide}` : ''} ~${formatClock(nextFeed.expectedAt)}`
                   : nextSide
-                    ? `Next feed: ${nextSide} · due`
-                    : 'Next feed due'}
+                    ? `Next: ${nextSide} · due`
+                    : 'Next: due'}
               </small>
             )}
           </button>
@@ -140,7 +140,7 @@ export function Dashboard({ activeTimers, events, profile, profiles = [], todayK
             <span>Last bath</span>
             <strong>{lastBath ? formatDaysAgo(lastBath.startedAt).replace(/ ago$/, '') : 'None'}</strong>
             <small>{lastBath ? `${formatShortDate(lastBath.startedAt)} · ${formatClock(lastBath.startedAt)}` : 'Nothing logged yet'}</small>
-            {bathReminder && <small className="hero-metric-detail">Bath due ~2–3 days</small>}
+            {bathReminder && <small className="hero-metric-detail">Next: ~2–3 days</small>}
           </button>
         </div>
       </section>
