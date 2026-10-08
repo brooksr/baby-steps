@@ -1,4 +1,4 @@
-import { Cloud, Heart, ShieldCheck } from 'lucide-react';
+import { Cloud, Heart } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { StoreStatus } from '../storage/store';
 
@@ -58,7 +58,7 @@ export function LoginSplash({ error, loading, restoring, sessionExpired, storeSt
             <p className="splash-copy">
               {sessionExpired
                 ? 'Google needs a quick re-approval before syncing again. Your logs are safe in the shared sheet — nothing was lost.'
-                : 'This app writes to the shared Google Sheet after Google consent. You only need to connect once per device — after that it stays signed in. The OAuth app is in testing, so Google may show a testing notice the first time.'}
+                : 'Connect your Google Sheet to sync. OAuth is still in testing, so Google may ask you to reconnect often.'}
             </p>
 
             {!sessionExpired && (
@@ -66,10 +66,6 @@ export function LoginSplash({ error, loading, restoring, sessionExpired, storeSt
                 <article>
                   <Heart aria-hidden="true" />
                   <span>Tap Continue</span>
-                </article>
-                <article>
-                  <ShieldCheck aria-hidden="true" />
-                  <span>Choose an approved test user</span>
                 </article>
                 <article>
                   <Cloud aria-hidden="true" />
