@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { getLocalDbName, getPendingJoinId, getStoredFamilyId, storeFamilyId, takeJoinParam } from './familyDirectory';
+import { describeManageResult, getLocalDbName, getPendingJoinId, getStoredFamilyId, storeFamilyId, takeJoinParam } from './familyDirectory';
 import { GOOGLE_SHEET_ID } from './googleSheetsStore';
 
 describe('family directory', () => {
@@ -32,5 +32,14 @@ describe('family directory', () => {
     expect(getPendingJoinId()).toBe('sheet-c');
     expect(window.location.search).toBe('');
     expect(window.location.hash).toBe('#settings');
+  });
+});
+
+describe('describeManageResult', () => {
+  it('tells a refused grant apart from nothing being picked', () => {
+    expect(describeManageResult({ kind: 'not-picked' })).toMatch(/Nothing was selected/);
+    expect(describeManageResult({ kind: 'refused', reason: 'not-granted' })).toMatch(/same Google Cloud project/);
+    expect(describeManageResult({ kind: 'refused', reason: 'not-owner' })).toMatch(/owner/);
+    expect(describeManageResult({ count: 2, kind: 'shared' })).toBe('BabySteps can share this sheet now — shared with 2 people already added.');
   });
 });

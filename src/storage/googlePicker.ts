@@ -93,7 +93,8 @@ export async function pickFamilySheet(spreadsheetId: string): Promise<boolean> {
       .setTitle('Select the family sheet so BabySteps can share it')
       .setCallback((response) => {
         if (response.action === picker.Action.PICKED) {
-          resolve((response.docs ?? []).some((doc) => doc.id === spreadsheetId));
+          // The view is filtered to this one file, so anything picked is it.
+          resolve((response.docs ?? []).length > 0);
         } else if (response.action === picker.Action.CANCEL) {
           resolve(false);
         }

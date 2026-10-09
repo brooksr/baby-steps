@@ -56,7 +56,7 @@ Optional settings, all safe to leave out:
 | --- | --- |
 | `VITE_GOOGLE_CLOUD_PROJECT` | Project id. The admin checklist links straight to its Audience page. |
 | `VITE_GOOGLE_OAUTH_PUBLISHED` | `true` once the consent screen is **In production**, which drops the test-user step. |
-| `VITE_GOOGLE_API_KEY`, `VITE_GOOGLE_APP_ID` | Enables the Google Picker (enable the **Google Picker API**; restrict the key to it and to your site). The app id is the project **number**. Lets the app share a sheet it did not create. |
+| `VITE_GOOGLE_API_KEY` | Enables the Google Picker (enable the **Google Picker API**; create the key **in the same project as the OAuth client** and restrict it to the Picker API and your site). Lets the app share a sheet it did not create. The Picker's app id is read from the OAuth client id. |
 
 ### Families and who can sign in
 

@@ -25,7 +25,7 @@ import { snapshotSignature } from './domain/snapshot';
 import { getFoodNames } from './domain/shopping';
 import { type ActiveTimers, type TimerType, loadActiveTimers, saveActiveTimers } from './domain/timers';
 import type { BabyProfile, CareEvent, CareEventType, CreateCareEventInput, ShoppingItem, TaskItem, TrackerExport, TrackerSnapshot } from './domain/types';
-import { canShareFamilySheet, shareFamilySheet, takeJoinParam } from './storage/familyDirectory';
+import { canShareFamilySheet, getSheetShareAccess, shareFamilySheet, takeJoinParam, type ManageSheetResult } from './storage/familyDirectory';
 import { pickFamilySheet } from './storage/googlePicker';
 import { createHybridBabyTrackerStore, NoFamilyError, type NewFamilyInput } from './storage/hybridStore';
 import type { StoreStatus } from './storage/store';
@@ -565,30 +565,36 @@ function App() {
   /**
    * The one-time Picker step for a sheet the app did not create. Once picked,
    * the app can share it, so everyone already added is shared on it now —
-   * `shareFamilySheet` skips anyone who already has it. Returns how many were
-   * newly shared, or null when the sheet was not picked.
+   * `shareFamilySheet` skips anyone who already has it.
    */
-  async function handleManageSheet(): Promise<number | null> {
+  async function handleManageSheet(): Promise<ManageSheetResult> {
     if (!familyId || !(await pickFamilySheet(familyId))) {
-      return null;
+      return { kind: 'not-picked' };
     }
 
-    const managed = await canShareFamilySheet(familyId);
-    setSheetManaged(managed);
+    // The grant can take a moment to land after the Picker closes.
+    let access = await getSheetShareAccess(familyId);
 
-    if (!managed) {
-      return null;
+    for (let attempt = 0; attempt < 3 && access.reason === 'not-granted'; attempt += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, 1_500));
+      access = await getSheetShareAccess(familyId);
     }
 
-    let shared = 0;
+    setSheetManaged(access.canShare);
+
+    if (!access.canShare) {
+      return { detail: access.detail, kind: 'refused', reason: access.reason ?? 'error' };
+    }
+
+    let count = 0;
 
     for (const person of [...getActiveProfiles(profiles), ...getCaregiverAccounts(profiles)]) {
       if (person.email && person.email !== signedInEmail && (await shareFamilySheet(familyId, person.email)) === 'shared') {
-        shared += 1;
+        count += 1;
       }
     }
 
-    return shared;
+    return { count, kind: 'shared' };
   }
 
   async function handleAddChild(input: NewProfileInput) {

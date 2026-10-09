@@ -188,10 +188,14 @@ a `familyId` filter over one shared sheet would have been a view, not privacy.
   or caregiver row (not the signed-in one) sends the invite link plus sign-in
   steps through `navigator.share`, falling back to a `mailto:`.
 - **The build's own sheet can be handed to the app once** with the Google
-  Picker (`storage/googlePicker.ts`; needs `VITE_GOOGLE_API_KEY` and
-  `VITE_GOOGLE_APP_ID`, the project *number*). A picked file is in `drive.file`'s
-  reach, so `canShareFamilySheet` turns true and everyone already added is
-  shared on it at once.
+  Picker (`storage/googlePicker.ts`; needs `VITE_GOOGLE_API_KEY`). The Picker's
+  app id must be the project *number* or the pick silently grants nothing, so
+  `googleSetup.ts` reads it off the OAuth client id's numeric prefix rather than
+  trusting a setting. A picked file is in `drive.file`'s reach, so
+  `getSheetShareAccess` turns true and everyone already added is shared on it at
+  once. When it does not, `describeManageResult` says which of "nothing picked",
+  "not granted" (key from another project) or "not allowed to share" (not the
+  owner) it was — they used to share one misleading message.
 - **Test users cannot be automated** — Google has no API for the consent
   screen's list. The Settings admin checklist shows only the steps that still
   apply: test users unless `VITE_GOOGLE_OAUTH_PUBLISHED=true` (linking to the

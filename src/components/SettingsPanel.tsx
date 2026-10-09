@@ -8,7 +8,7 @@ import type { Theme } from '../domain/theme';
 import { babyGenderLabels, parentRoleLabels, type BabyGender, type BabyProfile, type CareEvent, type MeasurementSystem, type ParentRole, type TrackerExport, type WeightDisplay } from '../domain/types';
 import { getPreferredUnits } from '../domain/units';
 import { buildInvite } from '../domain/invite';
-import { getInviteLink } from '../storage/familyDirectory';
+import { describeManageResult, getInviteLink, type ManageSheetResult } from '../storage/familyDirectory';
 import { GOOGLE_OAUTH_PUBLISHED, getTestUsersUrl, hasPickerConfig } from '../storage/googleSetup';
 import type { StoreStatus } from '../storage/store';
 
@@ -35,9 +35,9 @@ interface SettingsPanelProps {
   onSelectChild: (babyId: string) => Promise<void>;
   /**
    * The one-time Picker step that lets the app share a sheet it did not create.
-   * Resolves to how many people were newly shared on it, or null if not picked.
+   * Resolves to how it went, so a refusal can say why.
    */
-  onManageSheet?: () => Promise<number | null>;
+  onManageSheet?: () => Promise<ManageSheetResult>;
   /** Whether the app can share this family's sheet itself; null while unknown or offline. */
   sheetManaged?: boolean | null;
   /** Forgets this device's Google sign-in and returns to the sign-in screen. Unset hides the button. */
@@ -185,12 +185,7 @@ export function SettingsPanel({
 
     setManaging(true);
     try {
-      const shared = await onManageSheet();
-      setStatus(
-        shared === null
-          ? 'The sheet was not selected, so it still has to be shared by hand.'
-          : `BabySteps can share this sheet now${shared > 0 ? ` — shared with ${shared} ${shared === 1 ? 'person' : 'people'} already added` : ''}.`
-      );
+      setStatus(describeManageResult(await onManageSheet()));
     } catch (caught) {
       setStatus(caught instanceof Error ? caught.message : 'Could not open the Google Picker.');
     } finally {

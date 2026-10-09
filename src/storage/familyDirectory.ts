@@ -161,15 +161,51 @@ export async function createFamilySheet(title: string): Promise<string> {
 /**
  * Whether the app may share this family's sheet: true for a sheet it created or
  * one handed to it through the Picker. The build's own sheet starts out false
- * until someone does that once. A sheet the app cannot see at all is a 404.
+ * until someone does that once. `reason` says why not, for the one place that
+ * has to explain it.
  */
-export async function canShareFamilySheet(familyId: string): Promise<boolean> {
+export async function getSheetShareAccess(familyId: string): Promise<{ canShare: boolean; reason?: 'not-granted' | 'not-owner' | 'error'; detail?: string }> {
   try {
     const file = await googleRequest<{ capabilities?: { canShare?: boolean } }>(`${DRIVE_FILES_URL}/${familyId}?fields=capabilities(canShare)`);
-    return Boolean(file.capabilities?.canShare);
-  } catch {
-    return false;
+    // Visible but not shareable: an editor on a sheet whose owner keeps sharing to themselves.
+    return file.capabilities?.canShare ? { canShare: true } : { canShare: false, reason: 'not-owner' };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    // drive.file answers 404 for a file this app has not been given.
+    return { canShare: false, detail, reason: /\(404\)/.test(detail) ? 'not-granted' : 'error' };
   }
+}
+
+/** How the one-time Picker step went — each outcome has its own explanation in Settings. */
+export type ManageSheetResult =
+  | { kind: 'not-picked' }
+  | { count: number; kind: 'shared' }
+  | { detail?: string; kind: 'refused'; reason: 'error' | 'not-granted' | 'not-owner' };
+
+/** What the Picker step came to, in words that say what to do next. */
+export function describeManageResult(result: ManageSheetResult): string {
+  if (result.kind === 'shared') {
+    const { count } = result;
+    return `BabySteps can share this sheet now${count > 0 ? ` — shared with ${count} ${count === 1 ? 'person' : 'people'} already added` : ''}.`;
+  }
+
+  if (result.kind === 'not-picked') {
+    return "Nothing was selected in Google's picker, so the sheet still has to be shared by hand.";
+  }
+
+  if (result.reason === 'not-owner') {
+    return "BabySteps can see the sheet now, but this Google account isn't allowed to share it. Have the sheet's owner do this step, or let editors share it in the sheet's Share settings.";
+  }
+
+  if (result.reason === 'not-granted') {
+    return "Google didn't give BabySteps access to the sheet you picked. The Picker's API key has to come from the same Google Cloud project as the sign-in (OAuth) client — check the key's project, then try again.";
+  }
+
+  return `Couldn't check the sheet after picking it. ${result.detail ?? ''}`.trim();
+}
+
+export async function canShareFamilySheet(familyId: string): Promise<boolean> {
+  return (await getSheetShareAccess(familyId)).canShare;
 }
 
 export type ShareResult = 'already' | 'manual' | 'shared';
