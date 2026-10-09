@@ -1,4 +1,4 @@
-import { Archive, ArchiveRestore, BookOpen, Baby, Download, HeartHandshake, LogOut, Moon, Plus, Sun, Upload, UserRound } from 'lucide-react';
+import { Archive, ArchiveRestore, BookOpen, Baby, Download, ExternalLink, HeartHandshake, LogOut, Moon, Plus, Send, Sun, Upload, UserRound } from 'lucide-react';
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react';
 import { getActiveProfiles, getArchivedProfiles, getCaregiverAccounts, getCaregivers, getFirstName, isCaregiverAccount, isParent, normalizeEmail, type NewProfileInput } from '../domain/family';
 import { DEFAULT_MORNING_SHIFT, DEFAULT_NAP_WINDOW, DEFAULT_NIGHT_SHIFT, DEFAULT_SLEEP_WINDOW, formatShiftTime } from '../domain/nightShift';
@@ -7,7 +7,9 @@ import { getDueDateStatus, getTimezoneOptions } from '../domain/dates';
 import type { Theme } from '../domain/theme';
 import { babyGenderLabels, parentRoleLabels, type BabyGender, type BabyProfile, type CareEvent, type MeasurementSystem, type ParentRole, type TrackerExport, type WeightDisplay } from '../domain/types';
 import { getPreferredUnits } from '../domain/units';
+import { buildInvite } from '../domain/invite';
 import { getInviteLink } from '../storage/familyDirectory';
+import { GOOGLE_OAUTH_PUBLISHED, getTestUsersUrl, hasPickerConfig } from '../storage/googleSetup';
 import type { StoreStatus } from '../storage/store';
 
 interface SettingsPanelProps {
@@ -31,6 +33,13 @@ interface SettingsPanelProps {
   onRestoreProfile: (babyId: string) => Promise<void>;
   onSaveProfile: (profile: Partial<BabyProfile>) => Promise<void>;
   onSelectChild: (babyId: string) => Promise<void>;
+  /**
+   * The one-time Picker step that lets the app share a sheet it did not create.
+   * Resolves to how many people were newly shared on it, or null if not picked.
+   */
+  onManageSheet?: () => Promise<number | null>;
+  /** Whether the app can share this family's sheet itself; null while unknown or offline. */
+  sheetManaged?: boolean | null;
   /** Forgets this device's Google sign-in and returns to the sign-in screen. Unset hides the button. */
   onSignOut?: () => void;
   onThemeChange: (theme: Theme) => void;
@@ -124,6 +133,8 @@ export function SettingsPanel({
   onRestoreProfile,
   onSaveProfile,
   onSelectChild,
+  onManageSheet,
+  sheetManaged = null,
   onSignOut,
   onThemeChange
 }: SettingsPanelProps) {
@@ -139,6 +150,72 @@ export function SettingsPanel({
   const [unitSystem, setUnitSystem] = useState<MeasurementSystem>(savedUnits.system);
   const [weightDisplay, setWeightDisplay] = useState<WeightDisplay>(savedUnits.weightDisplay);
   const [status, setStatus] = useState('');
+
+  const familyId = storeStatus?.connected ? storeStatus.familyId : undefined;
+  const me = profiles.find((person) => normalizeEmail(person.email) === normalizeEmail(signedInEmail));
+  const [managing, setManaging] = useState(false);
+
+  /** The share sheet where there is one (a phone), an email everywhere else. */
+  async function handleSendInvite(person: BabyProfile) {
+    if (!familyId) {
+      return;
+    }
+
+    const invite = buildInvite(person, me, getInviteLink(familyId));
+
+    if (typeof navigator.share === 'function') {
+      try {
+        await navigator.share({ text: invite.body, title: invite.subject });
+        return;
+      } catch (caught) {
+        // Closing the share sheet is a choice, not a failure.
+        if (caught instanceof DOMException && caught.name === 'AbortError') {
+          return;
+        }
+      }
+    }
+
+    window.location.href = invite.mailto;
+  }
+
+  async function handleManageSheet() {
+    if (!onManageSheet) {
+      return;
+    }
+
+    setManaging(true);
+    try {
+      const shared = await onManageSheet();
+      setStatus(
+        shared === null
+          ? 'The sheet was not selected, so it still has to be shared by hand.'
+          : `BabySteps can share this sheet now${shared > 0 ? ` — shared with ${shared} ${shared === 1 ? 'person' : 'people'} already added` : ''}.`
+      );
+    } catch (caught) {
+      setStatus(caught instanceof Error ? caught.message : 'Could not open the Google Picker.');
+    } finally {
+      setManaging(false);
+    }
+  }
+
+  function inviteButton(person: BabyProfile) {
+    if (!familyId || !person.email || normalizeEmail(person.email) === normalizeEmail(signedInEmail)) {
+      return null;
+    }
+
+    return (
+      <button type="button" className="child-archive" aria-label={`Send ${person.name} an invite`} onClick={() => void handleSendInvite(person)}>
+        <Send aria-hidden="true" />
+        <span>Invite</span>
+      </button>
+    );
+  }
+
+  // What still has to be done by hand before someone new can sign in. Only the
+  // steps that apply: none once the app is published and can share the sheet.
+  const needsTestUsers = !GOOGLE_OAUTH_PUBLISHED;
+  const needsSharing = sheetManaged === false;
+  const showChecklist = Boolean(familyId) && (needsTestUsers || needsSharing);
 
   async function handleCopyInvite(familyId: string) {
     try {
@@ -505,6 +582,7 @@ export function SettingsPanel({
                     <small>{caption}{showing ? ' · showing now' : ''}</small>
                   </span>
                 </button>
+                {parent && inviteButton(person)}
                 {active.length > 1 && (
                   <button
                     type="button"
@@ -537,6 +615,7 @@ export function SettingsPanel({
                         <small>{[person.email, person.phone].filter(Boolean).join(' · ')}</small>
                       </span>
                     </span>
+                    {inviteButton(person)}
                     <button
                       type="button"
                       className={confirming ? 'child-archive confirming' : 'child-archive'}
@@ -689,12 +768,47 @@ export function SettingsPanel({
         </p>
         <p className="field-note">
           A caregiver, such as a grandparent or a sitter, signs in with their own Google account and sees only the
-          children's Home, where they can log feeds and diapers, and the Care page's Key info and Emergency tabs. Once a
-          parent has a Google account saved here, anyone signing in with an account not listed gets that same caregiver
-          view. To let someone sign in at all, share the Google Sheet with their account and, while the Google app is in
-          testing, add them as a test user. Anyone who can open the sheet can read all of it, so share it only with
-          people you trust.
+          children's Home, where they can log anything but a birth, and the Care page's Key info and Emergency tabs.
+          An account with no profile here sees nothing of this family. Anyone the sheet is shared with can open the
+          sheet itself and read all of it, so add only people you trust.
         </p>
+
+        {showChecklist && (
+          <div className="admin-checklist">
+            <p><strong>Before someone new can sign in</strong></p>
+            <ol>
+              {needsTestUsers && (
+                <li>
+                  Add their Google account as a <strong>test user</strong>. Google has no way for the app to do this, so
+                  the project's admin does it in Google Cloud. Publishing the app removes this step.{' '}
+                  <a href={getTestUsersUrl()} target="_blank" rel="noreferrer">
+                    Open Audience <ExternalLink aria-hidden="true" />
+                  </a>
+                </li>
+              )}
+              {needsSharing && (
+                <li>
+                  <strong>Share the sheet</strong> with them as an editor. This sheet was made outside the app, so the
+                  app can only share it once you select it for BabySteps, once.{' '}
+                  {hasPickerConfig() && onManageSheet ? (
+                    <button className="secondary-button compact" type="button" onClick={() => void handleManageSheet()} disabled={managing}>
+                      {managing ? 'Opening Google' : 'Let BabySteps share this sheet'}
+                    </button>
+                  ) : (
+                    storeStatus?.sheetUrl && (
+                      <a href={storeStatus.sheetUrl} target="_blank" rel="noreferrer">
+                        Open the sheet to share it <ExternalLink aria-hidden="true" />
+                      </a>
+                    )
+                  )}
+                </li>
+              )}
+              <li>
+                Add them above with their Google account, then tap <strong>Invite</strong> to send the link and the steps.
+              </li>
+            </ol>
+          </div>
+        )}
       </section>
 
       {SHOW_NIGHT_SHIFT && parents.length > 0 && (

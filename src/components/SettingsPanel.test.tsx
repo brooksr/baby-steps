@@ -140,4 +140,67 @@ describe('SettingsPanel', () => {
 
     expect(screen.queryByRole('button', { name: 'Sign out' })).not.toBeInTheDocument();
   });
+
+  describe('inviting', () => {
+    const connected = {
+      backend: 'google-sheets' as const,
+      configured: true,
+      connected: true,
+      familyId: 'sheet-a',
+      message: 'Writing to the shared Google Sheet.',
+      sheetUrl: 'https://docs.google.com/spreadsheets/d/sheet-a/edit'
+    };
+
+    function family() {
+      const child = createDefaultBabyProfile();
+      const me = createFamilyProfile({ email: 'me@example.com', kind: 'parent', name: 'Casey Example', parentRole: 'mom' }, [child]);
+      const partner = createFamilyProfile({ email: 'sam@example.com', kind: 'parent', name: 'Sam Example', parentRole: 'dad' }, [child, me]);
+      const nan = createFamilyProfile({ email: 'nan@example.com', kind: 'caregiver', name: 'Nan' }, [child, me, partner]);
+      return { child, me, nan, partner, profiles: [child, me, partner, nan] };
+    }
+
+    it('offers an invite to everyone with an account but the person signed in', () => {
+      const { child, profiles } = family();
+      renderPanel({ profile: child, profiles, signedInEmail: 'me@example.com', storeStatus: connected });
+
+      expect(screen.getByRole('button', { name: 'Send Sam Example an invite' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Send Nan an invite' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Send Casey Example an invite' })).not.toBeInTheDocument();
+    });
+
+    it('shares the invite where the device can, with the link and steps', async () => {
+      const user = userEvent.setup();
+      const share = vi.fn().mockResolvedValue(undefined);
+      vi.stubGlobal('navigator', Object.assign(Object.create(navigator), { share }));
+      const { child, profiles } = family();
+      renderPanel({ profile: child, profiles, signedInEmail: 'me@example.com', storeStatus: connected });
+
+      await user.click(screen.getByRole('button', { name: 'Send Nan an invite' }));
+
+      expect(share).toHaveBeenCalledWith(expect.objectContaining({ title: 'Casey added you to BabySteps', text: expect.stringContaining('?family=sheet-a') }));
+      vi.unstubAllGlobals();
+    });
+
+    it('lists only the manual steps that still apply', () => {
+      const { child, profiles } = family();
+      const { unmount } = renderPanel({ profile: child, profiles, sheetManaged: false, signedInEmail: 'me@example.com', storeStatus: connected });
+
+      // The test build is unpublished and has no Picker key, so both steps show,
+      // the second as a link to share by hand.
+      expect(screen.getByRole('link', { name: /Open Audience/ })).toHaveAttribute('href', expect.stringContaining('console.cloud.google.com/auth/audience'));
+      expect(screen.getByRole('link', { name: /Open the sheet to share it/ })).toHaveAttribute('href', connected.sheetUrl);
+      unmount();
+
+      renderPanel({ profile: child, profiles, sheetManaged: true, signedInEmail: 'me@example.com', storeStatus: connected });
+      expect(screen.queryByRole('link', { name: /Open the sheet to share it/ })).not.toBeInTheDocument();
+    });
+
+    it('has no invites or checklist offline', () => {
+      const { child, profiles } = family();
+      renderPanel({ profile: child, profiles, signedInEmail: 'me@example.com' });
+
+      expect(screen.queryByRole('button', { name: /an invite/ })).not.toBeInTheDocument();
+      expect(screen.queryByText('Before someone new can sign in')).not.toBeInTheDocument();
+    });
+  });
 });

@@ -17,7 +17,7 @@ import { ParentReports } from './components/ParentReports';
 import { ShoppingList } from './components/ShoppingList';
 import { Todos } from './components/Todos';
 import { CAREGIVER_EVENT_TYPES, getAccess } from './domain/access';
-import { getActiveProfiles, isCaregiverAccount, isChild, isParent, getStoredActiveProfileId, storeActiveProfileId, storeEmergencyChild, type NewProfileInput } from './domain/family';
+import { getActiveProfiles, getCaregiverAccounts, isCaregiverAccount, isChild, isParent, getStoredActiveProfileId, storeActiveProfileId, storeEmergencyChild, type NewProfileInput } from './domain/family';
 import { DEFAULT_SLEEP_WINDOW, planAttribution, planParentSleeps, type Shift, type ShiftPlan, type ShiftResult } from './domain/nightShift';
 import { getLocalDateKey } from './domain/dates';
 import { getFirstYearEvents } from './domain/firstYear';
@@ -25,7 +25,8 @@ import { snapshotSignature } from './domain/snapshot';
 import { getFoodNames } from './domain/shopping';
 import { type ActiveTimers, type TimerType, loadActiveTimers, saveActiveTimers } from './domain/timers';
 import type { BabyProfile, CareEvent, CareEventType, CreateCareEventInput, ShoppingItem, TaskItem, TrackerExport, TrackerSnapshot } from './domain/types';
-import { takeJoinParam } from './storage/familyDirectory';
+import { canShareFamilySheet, shareFamilySheet, takeJoinParam } from './storage/familyDirectory';
+import { pickFamilySheet } from './storage/googlePicker';
 import { createHybridBabyTrackerStore, NoFamilyError, type NewFamilyInput } from './storage/hybridStore';
 import type { StoreStatus } from './storage/store';
 
@@ -117,6 +118,8 @@ function App() {
   const [bootPhase, setBootPhase] = useState<BootPhase>(() => (hasStoredGoogleGrant() ? 'restoring' : 'signin'));
   const [sessionExpired, setSessionExpired] = useState(false);
   const [noFamily, setNoFamily] = useState<NoFamilyError | null>(null);
+  // Whether the app may share this family's sheet itself; null until checked.
+  const [sheetManaged, setSheetManaged] = useState<boolean | null>(null);
   // Opened from the sign-in screen. It stays up through a restore finishing
   // behind it — the screen must not jump to Home under someone doing CPR.
   const [splashEmergency, setSplashEmergency] = useState(false);
@@ -129,6 +132,23 @@ function App() {
   // Offline, the profiles on screen are this device's own copy, which need not
   // carry anyone's email — only a connected family can say someone is not in it.
   const connected = Boolean(storeStatus?.connected);
+  const familyId = storeStatus?.familyId;
+
+  useEffect(() => {
+    if (!connected || !familyId) {
+      setSheetManaged(null);
+      return;
+    }
+
+    let current = true;
+    void canShareFamilySheet(familyId).then((managed) => {
+      if (current) setSheetManaged(managed);
+    });
+
+    return () => {
+      current = false;
+    };
+  }, [connected, familyId]);
   const access = useMemo(() => {
     const result = getAccess(profiles, signedInEmail);
     return result.role === 'none' && !connected ? { role: 'full' as const } : result;
@@ -536,8 +556,39 @@ function App() {
     }
 
     if ((await trackerStore.shareFamily(person.email)) === 'manual') {
-      setError(`Share the family's Google Sheet with ${person.email} so ${person.name} can sign in.`);
+      setError(
+        `Share the family's Google Sheet with ${person.email} so ${person.name} can sign in — or use "Let BabySteps share this sheet" in Settings → Family.`
+      );
     }
+  }
+
+  /**
+   * The one-time Picker step for a sheet the app did not create. Once picked,
+   * the app can share it, so everyone already added is shared on it now —
+   * `shareFamilySheet` skips anyone who already has it. Returns how many were
+   * newly shared, or null when the sheet was not picked.
+   */
+  async function handleManageSheet(): Promise<number | null> {
+    if (!familyId || !(await pickFamilySheet(familyId))) {
+      return null;
+    }
+
+    const managed = await canShareFamilySheet(familyId);
+    setSheetManaged(managed);
+
+    if (!managed) {
+      return null;
+    }
+
+    let shared = 0;
+
+    for (const person of [...getActiveProfiles(profiles), ...getCaregiverAccounts(profiles)]) {
+      if (person.email && person.email !== signedInEmail && (await shareFamilySheet(familyId, person.email)) === 'shared') {
+        shared += 1;
+      }
+    }
+
+    return shared;
   }
 
   async function handleAddChild(input: NewProfileInput) {
@@ -882,6 +933,8 @@ function App() {
           onRestoreProfile={handleRestoreProfile}
           onSelectChild={selectChild}
           onSignOut={handleSignOut}
+          onManageSheet={handleManageSheet}
+          sheetManaged={sheetManaged}
           onExport={handleExport}
           onImport={handleImport}
           onOpenLearn={() => navigate('learn')}

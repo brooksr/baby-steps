@@ -158,6 +158,20 @@ export async function createFamilySheet(title: string): Promise<string> {
   return file.id;
 }
 
+/**
+ * Whether the app may share this family's sheet: true for a sheet it created or
+ * one handed to it through the Picker. The build's own sheet starts out false
+ * until someone does that once. A sheet the app cannot see at all is a 404.
+ */
+export async function canShareFamilySheet(familyId: string): Promise<boolean> {
+  try {
+    const file = await googleRequest<{ capabilities?: { canShare?: boolean } }>(`${DRIVE_FILES_URL}/${familyId}?fields=capabilities(canShare)`);
+    return Boolean(file.capabilities?.canShare);
+  } catch {
+    return false;
+  }
+}
+
 export type ShareResult = 'already' | 'manual' | 'shared';
 
 /**

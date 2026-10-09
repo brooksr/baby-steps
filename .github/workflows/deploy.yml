@@ -35,6 +35,10 @@ jobs:
         env:
           VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
           VITE_GOOGLE_SHEET_ID: ${{ vars.VITE_GOOGLE_SHEET_ID }}
+          VITE_GOOGLE_CLOUD_PROJECT: ${{ vars.VITE_GOOGLE_CLOUD_PROJECT }}
+          VITE_GOOGLE_OAUTH_PUBLISHED: ${{ vars.VITE_GOOGLE_OAUTH_PUBLISHED }}
+          VITE_GOOGLE_API_KEY: ${{ vars.VITE_GOOGLE_API_KEY }}
+          VITE_GOOGLE_APP_ID: ${{ vars.VITE_GOOGLE_APP_ID }}
 
       - name: Setup Pages
         uses: actions/configure-pages@v6

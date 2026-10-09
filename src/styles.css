@@ -2373,6 +2373,47 @@ textarea {
   font-size: 0.82rem;
 }
 
+/* The admin's manual steps — only the ones that still apply. */
+.admin-checklist {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--panel);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.admin-checklist p,
+.admin-checklist ol {
+  margin: 0;
+}
+
+.admin-checklist ol {
+  display: grid;
+  gap: 8px;
+  padding-left: 20px;
+}
+
+.admin-checklist a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--blue-700);
+  font-weight: 800;
+}
+
+.admin-checklist svg {
+  width: 14px;
+  height: 14px;
+}
+
+.admin-checklist .secondary-button {
+  margin-top: 6px;
+}
+
 .sign-out {
   width: 100%;
 }

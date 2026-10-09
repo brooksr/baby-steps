@@ -184,6 +184,19 @@ a `familyId` filter over one shared sheet would have been a view, not privacy.
   with them, with an invite link in Google's email. Settings → Storage shows the
   family id and a **Copy invite link** button; a joiner's device cannot find a
   sheet someone else created any other way.
+- **Invites** (`domain/invite.ts` `buildInvite`): the Invite button on a parent
+  or caregiver row (not the signed-in one) sends the invite link plus sign-in
+  steps through `navigator.share`, falling back to a `mailto:`.
+- **The build's own sheet can be handed to the app once** with the Google
+  Picker (`storage/googlePicker.ts`; needs `VITE_GOOGLE_API_KEY` and
+  `VITE_GOOGLE_APP_ID`, the project *number*). A picked file is in `drive.file`'s
+  reach, so `canShareFamilySheet` turns true and everyone already added is
+  shared on it at once.
+- **Test users cannot be automated** — Google has no API for the consent
+  screen's list. The Settings admin checklist shows only the steps that still
+  apply: test users unless `VITE_GOOGLE_OAUTH_PUBLISHED=true` (linking to the
+  Audience page of `VITE_GOOGLE_CLOUD_PROJECT`), and sharing while the sheet is
+  not one the app can share. Deployment settings live in `storage/googleSetup.ts`.
 - **Each family has its own offline database** (`getLocalDbName`: the build's
   sheet keeps `babysteps`, others get `babysteps-<id>`). Connect merges local
   rows into the sheet, so one shared database would leak a previous family's
