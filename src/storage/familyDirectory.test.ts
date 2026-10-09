@@ -40,6 +40,13 @@ describe('describeManageResult', () => {
     expect(describeManageResult({ kind: 'not-picked' })).toMatch(/Nothing was selected/);
     expect(describeManageResult({ kind: 'refused', reason: 'not-granted' })).toMatch(/same Google Cloud project/);
     expect(describeManageResult({ kind: 'refused', reason: 'not-owner' })).toMatch(/owner/);
+    expect(
+      describeManageResult({
+        detail: 'Google request failed (403): Google Drive API has not been used in project 155470529382 before or it is disabled. "reason": "SERVICE_DISABLED"',
+        kind: 'refused',
+        reason: 'error'
+      })
+    ).toMatch(/Drive API is turned off .*\(155470529382\)/);
     expect(describeManageResult({ count: 2, kind: 'shared' })).toBe('BabySteps can share this sheet now — shared with 2 people already added.');
   });
 });

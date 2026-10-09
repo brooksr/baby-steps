@@ -201,6 +201,14 @@ export function describeManageResult(result: ManageSheetResult): string {
     return "Google didn't give BabySteps access to the sheet you picked. The Picker's API key has to come from the same Google Cloud project as the sign-in (OAuth) client — check the key's project, then try again.";
   }
 
+  // The project behind the OAuth client has the Drive API switched off — which
+  // also quietly stops auto-sharing and finding families, so say it plainly.
+  const project = /SERVICE_DISABLED|accessNotConfigured/.test(result.detail ?? '') ? /project[ =](\d+)/.exec(result.detail ?? '')?.[1] : undefined;
+
+  if (project) {
+    return `The Google Drive API is turned off for this app's Google Cloud project (${project}). An admin enables it at console.cloud.google.com → APIs & Services → Google Drive API; it can take a few minutes to apply. Then try again.`;
+  }
+
   return `Couldn't check the sheet after picking it. ${result.detail ?? ''}`.trim();
 }
 
