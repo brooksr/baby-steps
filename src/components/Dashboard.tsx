@@ -134,39 +134,49 @@ export function Dashboard({ activeTimers, allowedTypes, events, profile, profile
           )}
         </div>
 
-        <div className="hero-metrics">
-          <HeroMetric className={`hero-metric${feedReminder ? ' past-due' : ''}`} label="View feed log" onOpen={openLog('feed')}>
-            <span>Last feed</span>
-            <strong>{lastFeed ? formatAgo(lastFeed.startedAt).replace(/ ago$/, '') : 'None'}</strong>
-            <small>{lastFeed ? formatClock(lastFeed.startedAt) : 'Nothing logged yet'}</small>
-            {nextFeed && (
-              <small className="hero-metric-detail">
-                {nextFeed.minutesAway > 0 ? `Next ~${formatClockRange(nextFeed.windowStartAt, nextFeed.windowEndAt)}` : 'Due now'}
-                {sideSuffix}
-              </small>
+        {/* A card only appears once there is something to count from — an empty
+            "None · Nothing logged yet" tile says nothing the quick-add grid doesn't. */}
+        {(lastFeed || lastDiaper || lastBath) && (
+          <div className="hero-metrics">
+            {lastFeed && (
+              <HeroMetric className={`hero-metric${feedReminder ? ' past-due' : ''}`} label="View feed log" onOpen={openLog('feed')}>
+                <span>Last feed</span>
+                <strong>{formatAgo(lastFeed.startedAt).replace(/ ago$/, '')}</strong>
+                <small>{formatClock(lastFeed.startedAt)}</small>
+                {nextFeed && (
+                  <small className="hero-metric-detail">
+                    {nextFeed.minutesAway > 0 ? `Next ~${formatClockRange(nextFeed.windowStartAt, nextFeed.windowEndAt)}` : 'Due now'}
+                    {sideSuffix}
+                  </small>
+                )}
+              </HeroMetric>
             )}
-          </HeroMetric>
-          <HeroMetric className={`hero-metric${nextDiaper && nextDiaper.minutesAway <= 0 ? ' past-due' : ''}`} label="View diaper log" onOpen={openLog('diaper')}>
-            <span>Last diaper</span>
-            <strong>{lastDiaper ? formatAgo(lastDiaper.startedAt).replace(/ ago$/, '') : 'None'}</strong>
-            <small>{lastDiaper ? formatClock(lastDiaper.startedAt) : 'Nothing logged yet'}</small>
-            {nextDiaper && (
-              <small className="hero-metric-detail">
-                {nextDiaper.minutesAway > 0 ? `Next ~${formatClockRange(nextDiaper.windowStartAt, nextDiaper.windowEndAt)}` : 'Likely now'} · {nextDiaper.likelyKind}
-              </small>
+            {lastDiaper && (
+              <HeroMetric className={`hero-metric${nextDiaper && nextDiaper.minutesAway <= 0 ? ' past-due' : ''}`} label="View diaper log" onOpen={openLog('diaper')}>
+                <span>Last diaper</span>
+                <strong>{formatAgo(lastDiaper.startedAt).replace(/ ago$/, '')}</strong>
+                <small>{formatClock(lastDiaper.startedAt)}</small>
+                {nextDiaper && (
+                  <small className="hero-metric-detail">
+                    {nextDiaper.minutesAway > 0 ? `Next ~${formatClockRange(nextDiaper.windowStartAt, nextDiaper.windowEndAt)}` : 'Likely now'} · {nextDiaper.likelyKind}
+                  </small>
+                )}
+              </HeroMetric>
             )}
-          </HeroMetric>
-          <HeroMetric className={`hero-metric${bathReminder ? ' past-due' : ''}`} label="View bath log" onOpen={openLog('bath')}>
-            <span>Last bath</span>
-            <strong>{lastBath ? formatDaysSince(lastBath.startedAt) : 'None'}</strong>
-            <small>{lastBath ? `${formatShortDate(lastBath.startedAt)} · ${formatClock(lastBath.startedAt)}` : 'Nothing logged yet'}</small>
-            {nextBath && (
-              <small className="hero-metric-detail">
-                {nextBath.due ? 'Due today' : `Next ~${dayLabel(nextBath.windowStartKey)}–${dayLabel(nextBath.windowEndKey)}`}
-              </small>
+            {lastBath && (
+              <HeroMetric className={`hero-metric${bathReminder ? ' past-due' : ''}`} label="View bath log" onOpen={openLog('bath')}>
+                <span>Last bath</span>
+                <strong>{formatDaysSince(lastBath.startedAt)}</strong>
+                <small>{`${formatShortDate(lastBath.startedAt)} · ${formatClock(lastBath.startedAt)}`}</small>
+                {nextBath && (
+                  <small className="hero-metric-detail">
+                    {nextBath.due ? 'Due today' : `Next ~${dayLabel(nextBath.windowStartKey)}–${dayLabel(nextBath.windowEndKey)}`}
+                  </small>
+                )}
+              </HeroMetric>
             )}
-          </HeroMetric>
-        </div>
+          </div>
+        )}
       </section>
 
       <section className="quick-grid" aria-label="Quick add">

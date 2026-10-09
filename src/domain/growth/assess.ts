@@ -1,6 +1,7 @@
 import { getLocalDateKey } from '../dates';
 import type { BabyProfile, CareEvent } from '../types';
 import { getNewbornExpectation, type NewbornDayExpectation } from './newbornExpectations';
+import { getGrowthStandards } from './standards';
 import { boyGrowthStandards, type GrowthMetric, type GrowthStandard, type StandardPoint } from './whoBoyStandards';
 
 const DAY_MS = 24 * 60 * 60_000;
@@ -159,8 +160,13 @@ function describeBand(band: GrowthBand, value: number, standard: InterpolatedSta
     : 'On track — above the median but within the normal range.';
 }
 
-export function classifyMeasurement(metric: GrowthMetric, ageMonths: number, value: number): GrowthAssessment {
-  const standard = boyGrowthStandards[metric];
+export function classifyMeasurement(
+  metric: GrowthMetric,
+  ageMonths: number,
+  value: number,
+  standards: Record<GrowthMetric, GrowthStandard> = boyGrowthStandards
+): GrowthAssessment {
+  const standard = standards[metric];
   const bounds = interpolateStandard(standard, ageMonths);
 
   let band: GrowthBand = 'within';
@@ -250,6 +256,7 @@ export function assessLatestGrowth(
   basis: AgeBasis = 'actual'
 ): GrowthAssessment[] {
   const measurements = getGrowthMeasurements(profile, events);
+  const standards = getGrowthStandards(profile.gender);
   const metrics: GrowthMetric[] = ['weight', 'length', 'head'];
   const assessments: GrowthAssessment[] = [];
 
@@ -258,7 +265,7 @@ export function assessLatestGrowth(
     const latest = plots[plots.length - 1];
     if (latest) {
       const ageMonths = basis === 'corrected' ? latest.correctedAgeMonths : latest.ageMonths;
-      assessments.push(classifyMeasurement(metric, ageMonths, latest.value));
+      assessments.push(classifyMeasurement(metric, ageMonths, latest.value, standards));
     }
   }
 

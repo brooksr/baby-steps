@@ -18,9 +18,9 @@ export interface CareContact {
 export type FeedingType = 'breastmilk' | 'formula' | 'combination';
 
 /**
- * Recorded because growth standards are sex-specific. Only the WHO boys' curves
- * are bundled today, so `girl` still charts against them — `GrowthStandards`
- * says so rather than quietly comparing against the wrong reference.
+ * Recorded because growth standards are sex-specific: `girl` charts against the
+ * WHO girls' curves, and `boy`, `other` or unset against the boys' —
+ * `GrowthStandards` says so when no sex is set rather than comparing silently.
  */
 export type BabyGender = 'boy' | 'girl' | 'other';
 

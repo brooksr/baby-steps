@@ -53,7 +53,7 @@ change done.
   - `domain/whatToExpect.ts` — picks the Home "What to expect" copy for one
     profile at one moment: the pregnancy by gestational week before the birth,
     the day/week/month window after it.
-  - `domain/growth/` — WHO standards data + assessment logic.
+  - `domain/growth/` — WHO standards data (boys and girls) + assessment logic.
   - `domain/csv.ts`, `domain/reference.ts` — CSV parsing + typed reference-data accessors.
   - `domain/dateRange.ts` — the inclusive local-day span behind the Log and
     Reports date filters, plus its presets. An empty end is open, so `ALL_TIME`
@@ -579,6 +579,9 @@ without a tap.
   not hours, so the card uses `formatDaysSince` (calendar-day diff — "1 day",
   not "14h"; "Yesterday" overflows a phone-width card) rather than `formatAgo`,
   and `predictNextBath` names the 2–3 day window by weekday ("Next ~Fri–Sat").
+- **Hero cards** (Last feed / Last diaper / Last bath) only render once that
+  type has an entry — an empty log shows the quick-add grid, not three "None"
+  tiles — and the `.hero-metrics` row is left out entirely while all three are.
 - **Hero card predictions** read "Next ~6:30–7:30 AM · left" (feed side) or
   "· wet" (diaper kind), from `formatClockRange` — each prediction's window,
   rounded to the quarter hour, with the minutes dropped when both ends are on
@@ -842,10 +845,13 @@ without a tap.
   gestation to correct for, and `activeBasis` falls back to actual otherwise, so
   a term profile never sees it.
 - **Profile gender** (`BabyProfile.gender`) — recorded because growth standards
-  are sex-specific, but only the WHO *boys'* curves are bundled. A profile set to
-  girl is still charted against them, and `GrowthStandards` says so on the card
-  rather than comparing silently. Adding the girls' curves means three more CSVs
-  plus a standards table, and is the real fix.
+  are sex-specific. Both WHO tables ship (`whoBoyStandards.ts`,
+  `whoGirlStandards.ts`, plus the `*-boys.csv` / `*-girls.csv` sheets on Learn);
+  `growth/standards.ts` `getGrowthStandards(gender)` puts a girl on the girls'
+  curves and a boy, `other` or unset on the boys' — WHO publishes nothing in
+  between, and `GrowthStandards` says so on the card when no sex is set. The
+  girls' ±2 SD bounds are computed from WHO's LMS parameters; a test holds the
+  typed tables and the CSVs to the same numbers.
 - **Timezone** is a select over `Intl.supportedValuesOf('timeZone')`
   (`getTimezoneOptions`), which always includes the device zone and whatever the
   profile already holds — a zone chosen on another device must stay selectable.

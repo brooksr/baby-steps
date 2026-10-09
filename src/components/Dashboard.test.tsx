@@ -78,19 +78,51 @@ describe('Dashboard', () => {
     expect(onAdd).toHaveBeenCalledWith('bath');
   });
 
-  it('reports no bath when none is logged', () => {
-    render(<Dashboard activeTimers={{}} events={[]} profile={createDefaultBabyProfile(new Date('2026-06-19T12:00:00.000Z'))} todayKey="2026-09-02" onAdd={vi.fn()} onOpenLog={vi.fn()} />);
+  it('leaves out the last-feed, last-diaper and last-bath cards until each has an entry', () => {
+    const { container } = render(<Dashboard activeTimers={{}} events={[]} profile={createDefaultBabyProfile(new Date('2026-06-19T12:00:00.000Z'))} todayKey="2026-09-02" onAdd={vi.fn()} onOpenLog={vi.fn()} />);
 
-    const bath = within(screen.getByRole('button', { name: 'View bath log' }));
-    expect(bath.getByText('None')).toBeInTheDocument();
-    expect(bath.getByText(/Nothing logged yet/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'View feed log' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'View diaper log' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'View bath log' })).not.toBeInTheDocument();
+    expect(container.querySelector('.hero-metrics')).toBeNull();
+  });
+
+  it('shows only the cards that have something logged', () => {
+    const events: CareEvent[] = [
+      {
+        babyId: 'avery-example',
+        createdAt: '2026-09-02T13:00:00.000Z',
+        id: 'diaper-1',
+        kind: 'wet',
+        startedAt: '2026-09-02T13:00:00.000Z',
+        type: 'diaper',
+        updatedAt: '2026-09-02T13:00:00.000Z'
+      }
+    ];
+    render(<Dashboard activeTimers={{}} events={events} profile={createDefaultBabyProfile(new Date('2026-06-19T12:00:00.000Z'))} todayKey="2026-09-02" onAdd={vi.fn()} onOpenLog={vi.fn()} />);
+
+    expect(screen.getByRole('button', { name: 'View diaper log' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'View feed log' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'View bath log' })).not.toBeInTheDocument();
   });
 
   it('opens the exact log type from each recent-event tile', async () => {
     const user = userEvent.setup();
     const onOpenLog = vi.fn();
+    const events: CareEvent[] = (['feed', 'diaper', 'bath'] as const).map((type) => ({
+      babyId: 'avery-example',
+      createdAt: '2026-09-02T12:00:00.000Z',
+      id: `${type}-1`,
+      startedAt: '2026-09-02T12:00:00.000Z',
+      updatedAt: '2026-09-02T12:00:00.000Z',
+      ...(type === 'feed'
+        ? { method: 'bottle' as const, type }
+        : type === 'diaper'
+          ? { kind: 'wet' as const, type }
+          : { type })
+    }));
 
-    render(<Dashboard activeTimers={{}} events={[]} profile={createDefaultBabyProfile(new Date('2026-06-19T12:00:00.000Z'))} todayKey="2026-09-02" onAdd={vi.fn()} onOpenLog={onOpenLog} />);
+    render(<Dashboard activeTimers={{}} events={events} profile={createDefaultBabyProfile(new Date('2026-06-19T12:00:00.000Z'))} todayKey="2026-09-02" onAdd={vi.fn()} onOpenLog={onOpenLog} />);
 
     await user.click(screen.getByRole('button', { name: 'View feed log' }));
     await user.click(screen.getByRole('button', { name: 'View diaper log' }));
@@ -234,9 +266,20 @@ describe('Dashboard', () => {
   });
 
   it('stays quiet about the next diaper without enough history', () => {
-    render(<Dashboard activeTimers={{}} events={[]} profile={createDefaultBabyProfile(new Date('2026-06-19T12:00:00.000Z'))} todayKey="2026-09-02" onAdd={vi.fn()} onOpenLog={vi.fn()} />);
+    const events: CareEvent[] = [
+      {
+        babyId: 'avery-example',
+        createdAt: '2026-09-02T13:00:00.000Z',
+        id: 'diaper-1',
+        kind: 'wet',
+        startedAt: '2026-09-02T13:00:00.000Z',
+        type: 'diaper',
+        updatedAt: '2026-09-02T13:00:00.000Z'
+      }
+    ];
+    render(<Dashboard activeTimers={{}} events={events} profile={createDefaultBabyProfile(new Date('2026-06-19T12:00:00.000Z'))} todayKey="2026-09-02" onAdd={vi.fn()} onOpenLog={vi.fn()} />);
 
-    expect(within(screen.getByRole('button', { name: 'View diaper log' })).queryByText(/Next diaper/i)).not.toBeInTheDocument();
+    expect(within(screen.getByRole('button', { name: 'View diaper log' })).queryByText(/Next ~|Likely now/i)).not.toBeInTheDocument();
   });
 
   it('offers a caregiver only the types they may log, and no way into the Log', () => {

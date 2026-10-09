@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { getAgeDays } from '../domain/dates';
 import { getFirstName } from '../domain/family';
 import { assessLatestGrowth, getGestationInfo, getGrowthMeasurements, getMetricPlots, type AgeBasis, type GrowthBand, type MetricPlot } from '../domain/growth/assess';
-import { boyGrowthStandards, type GrowthMetric, type GrowthStandard } from '../domain/growth/whoBoyStandards';
+import { getGrowthStandardSex, getGrowthStandards } from '../domain/growth/standards';
+import type { GrowthMetric, GrowthStandard } from '../domain/growth/whoBoyStandards';
 import type { BabyProfile, CareEvent, PreferredUnits } from '../domain/types';
 import { centimetersToInches, formatLength, formatWeight, getPreferredUnits, kilogramsToOunces } from '../domain/units';
 import { GrowthChart } from './GrowthChart';
@@ -77,6 +78,8 @@ export function GrowthStandards({ events, profile }: GrowthStandardsProps) {
   const [basis, setBasis] = useState<AgeBasis>('corrected');
   const firstName = getFirstName(profile);
   const preferredUnits = getPreferredUnits(profile);
+  const standardSex = getGrowthStandardSex(profile.gender);
+  const standards = getGrowthStandards(profile.gender);
 
   if (!profile.birthDate) {
     return (
@@ -84,7 +87,7 @@ export function GrowthStandards({ events, profile }: GrowthStandardsProps) {
         <div className="section-heading">
           <h2>Growth standards</h2>
         </div>
-        <p className="empty-state">Log {firstName}'s birth to compare measurements against WHO boy growth standards.</p>
+        <p className="empty-state">Log {firstName}'s birth to compare measurements against WHO {standardSex === 'girls' ? 'girl' : 'boy'} growth standards.</p>
       </section>
     );
   }
@@ -107,7 +110,7 @@ export function GrowthStandards({ events, profile }: GrowthStandardsProps) {
         <div className="section-heading">
           <div>
             <h2>Growth standards</h2>
-            <span>WHO boys · {measurements.length} measurement{measurements.length === 1 ? '' : 's'}</span>
+            <span>WHO {standardSex} · {measurements.length} measurement{measurements.length === 1 ? '' : 's'}</span>
           </div>
           {showCorrected && gestation && (
             <div className="segmented-control" aria-label="Age basis">
@@ -131,13 +134,13 @@ export function GrowthStandards({ events, profile }: GrowthStandardsProps) {
           )}
         </div>
 
-        {/* Only the boys' WHO curves are bundled. Say so rather than quietly
-            charting a girl against the wrong reference. */}
-        {profile.gender === 'girl' && (
+        {/* WHO publishes boys' and girls' tables only. With no sex recorded the
+            boys' curves stand in — say so rather than comparing silently. */}
+        {profile.gender !== 'boy' && profile.gender !== 'girl' && (
           <p className="gestation-note">
-            Only the WHO <strong>boys&rsquo;</strong> curves ship with this app, so these bands compare against the
-            boys&rsquo; reference.
-            <span>Read them alongside your pediatrician&rsquo;s own chart.</span>
+            WHO growth standards are published for boys and girls, so these bands use the <strong>boys&rsquo;</strong>{' '}
+            reference.
+            <span>Set {firstName}&rsquo;s sex in Settings to compare against the matching curves.</span>
           </p>
         )}
 
@@ -183,7 +186,7 @@ export function GrowthStandards({ events, profile }: GrowthStandardsProps) {
 
       <section className="chart-grid" aria-label="WHO growth standard charts">
         {METRIC_ORDER.map((metric) => {
-          const standard = displayStandard(boyGrowthStandards[metric], preferredUnits);
+          const standard = displayStandard(standards[metric], preferredUnits);
           const plots = displayPlots(getMetricPlots(measurements, metric), metric, preferredUnits);
 
           return (

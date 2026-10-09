@@ -6,8 +6,10 @@ import bristolStoolScale from './reference/bristol-stool-scale.csv?raw';
 import expectationNotes from './reference/what-to-expect-notes.csv?raw';
 import fetalDevelopment from './reference/fetal-development-by-week.csv?raw';
 import foodTriggers from './reference/food-triggers.csv?raw';
-import headForAge from './reference/head-circumference-for-age-boys.csv?raw';
-import lengthForAge from './reference/length-for-age-boys.csv?raw';
+import headForAgeBoys from './reference/head-circumference-for-age-boys.csv?raw';
+import headForAgeGirls from './reference/head-circumference-for-age-girls.csv?raw';
+import lengthForAgeBoys from './reference/length-for-age-boys.csv?raw';
+import lengthForAgeGirls from './reference/length-for-age-girls.csv?raw';
 import milestones from './reference/developmental-milestones.csv?raw';
 import moodScale from './reference/mood-scale.csv?raw';
 import newbornExpectations from './reference/newborn-daily-expectations.csv?raw';
@@ -16,7 +18,8 @@ import stoolColors from './reference/stool-colors.csv?raw';
 import temperatureRanges from './reference/temperature-ranges.csv?raw';
 import tummyTime from './reference/tummy-time-by-age.csv?raw';
 import vaccinationSchedule from './reference/vaccination-schedule.csv?raw';
-import weightForAge from './reference/weight-for-age-boys.csv?raw';
+import weightForAgeBoys from './reference/weight-for-age-boys.csv?raw';
+import weightForAgeGirls from './reference/weight-for-age-girls.csv?raw';
 import whatToExpect from './reference/what-to-expect-by-age.csv?raw';
 
 export type SheetCategory = 'growth' | 'newborn' | 'expect' | 'feature';
@@ -35,25 +38,49 @@ export const referenceSheets: ReferenceSheet[] = [
     category: 'growth',
     description: 'WHO Child Growth Standards (2006), boys — length in cm.',
     filename: 'length-for-age-boys.csv',
-    id: 'length-for-age',
-    text: lengthForAge,
+    id: 'length-for-age-boys',
+    text: lengthForAgeBoys,
     title: 'Length-for-age (boys)'
   },
   {
     category: 'growth',
     description: 'WHO Child Growth Standards (2006), boys — weight in kg.',
     filename: 'weight-for-age-boys.csv',
-    id: 'weight-for-age',
-    text: weightForAge,
+    id: 'weight-for-age-boys',
+    text: weightForAgeBoys,
     title: 'Weight-for-age (boys)'
   },
   {
     category: 'growth',
     description: 'WHO Child Growth Standards (2006), boys — head circumference in cm.',
     filename: 'head-circumference-for-age-boys.csv',
-    id: 'head-for-age',
-    text: headForAge,
+    id: 'head-for-age-boys',
+    text: headForAgeBoys,
     title: 'Head circumference-for-age (boys)'
+  },
+  {
+    category: 'growth',
+    description: 'WHO Child Growth Standards (2006), girls — length in cm.',
+    filename: 'length-for-age-girls.csv',
+    id: 'length-for-age-girls',
+    text: lengthForAgeGirls,
+    title: 'Length-for-age (girls)'
+  },
+  {
+    category: 'growth',
+    description: 'WHO Child Growth Standards (2006), girls — weight in kg.',
+    filename: 'weight-for-age-girls.csv',
+    id: 'weight-for-age-girls',
+    text: weightForAgeGirls,
+    title: 'Weight-for-age (girls)'
+  },
+  {
+    category: 'growth',
+    description: 'WHO Child Growth Standards (2006), girls — head circumference in cm.',
+    filename: 'head-circumference-for-age-girls.csv',
+    id: 'head-for-age-girls',
+    text: headForAgeGirls,
+    title: 'Head circumference-for-age (girls)'
   },
   {
     category: 'newborn',
