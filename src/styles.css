@@ -313,7 +313,7 @@ button {
 
 .splash-logo {
   width: min(56vw, 220px);
-  aspect-ratio: 1;
+  aspect-ratio: 660 / 623;
   justify-self: center;
   object-fit: contain;
   border-radius: 8px;

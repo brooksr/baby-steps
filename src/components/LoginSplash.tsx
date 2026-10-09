@@ -70,8 +70,8 @@ export function LoginSplash({
           <Siren aria-hidden="true" />
           <span>Emergency</span>
         </button>
-        <img className="splash-logo" src={`${import.meta.env.BASE_URL}icons/babysteps-logo.png`} alt="BabySteps mother and baby logo" />
-        <p className="eyebrow">BabySteps</p>
+        {/* The logo carries the wordmark, so no separate name above the heading. */}
+        <img className="splash-logo" src={`${import.meta.env.BASE_URL}icons/babysteps-logo.png`} alt="BabySteps" />
 
         {restoring ? (
           <>

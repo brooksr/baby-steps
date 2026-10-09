@@ -1,4 +1,4 @@
-const CACHE_NAME = 'babysteps-v2';
+const CACHE_NAME = 'babysteps-v3';
 const BASE_PATH = new URL(self.registration.scope).pathname;
 const CORE_ASSETS = [
   BASE_PATH,
