@@ -9,7 +9,8 @@ interface KeyInfoProps {
   profile: BabyProfile;
   /** Everyone tracked — the parents among them are the guardians. */
   profiles?: BabyProfile[];
-  onSave: (patch: Partial<BabyProfile>) => Promise<void>;
+  /** Unset is read-only — the caregiver view, which reads this card and never edits it. */
+  onSave?: (patch: Partial<BabyProfile>) => Promise<void>;
 }
 
 /**
@@ -231,6 +232,11 @@ export function KeyInfo({ profile, profiles = [], onSave }: KeyInfoProps) {
 
   async function handleSave(e: FormEvent) {
     e.preventDefault();
+
+    if (!onSave) {
+      return;
+    }
+
     setSaving(true);
     try {
       await onSave({ careInfo: draftToCareInfo(d, unitSystem, info) });
@@ -370,9 +376,11 @@ export function KeyInfo({ profile, profiles = [], onSave }: KeyInfoProps) {
           <h2>Key info</h2>
           <span>Have these ready before you need them</span>
         </div>
-        <button type="button" className="icon-button" onClick={handleEdit} aria-label="Edit care info">
-          <Pencil aria-hidden="true" />
-        </button>
+        {onSave && (
+          <button type="button" className="icon-button" onClick={handleEdit} aria-label="Edit care info">
+            <Pencil aria-hidden="true" />
+          </button>
+        )}
       </div>
 
       <div className="status-list">

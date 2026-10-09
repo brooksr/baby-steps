@@ -5,18 +5,19 @@ import { createDefaultBabyProfile } from '../domain/dates';
 import { storeEmergencyChild } from '../domain/family';
 import { LoginSplash } from './LoginSplash';
 
-function renderSplash(props: { emergencyOpen?: boolean; restoring?: boolean; onEmergencyChange?: (open: boolean) => void }) {
+function renderSplash(props: { emergencyOpen?: boolean; restoring?: boolean; sessionExpired?: boolean; onEmergencyChange?: (open: boolean) => void; onSignOut?: () => void }) {
   return render(
     <LoginSplash
       emergencyOpen={props.emergencyOpen ?? false}
       error=""
       loading={false}
       restoring={props.restoring ?? false}
-      sessionExpired={false}
+      sessionExpired={props.sessionExpired ?? false}
       storeStatus={null}
       onContinue={vi.fn()}
       onEmergencyChange={props.onEmergencyChange ?? vi.fn()}
       onOffline={vi.fn()}
+      onSignOut={props.onSignOut}
     />
   );
 }
@@ -51,5 +52,23 @@ describe('LoginSplash emergency', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Back' }));
     expect(onEmergencyChange).toHaveBeenCalledWith(false);
+  });
+});
+
+describe('LoginSplash sign out', () => {
+  it('lets a stuck reconnect sign out and try another account', async () => {
+    const user = userEvent.setup();
+    const onSignOut = vi.fn();
+
+    renderSplash({ onSignOut, sessionExpired: true });
+
+    await user.click(screen.getByRole('button', { name: /sign out/i }));
+    expect(onSignOut).toHaveBeenCalledTimes(1);
+  });
+
+  it('has nothing to sign out of on a first sign-in', () => {
+    renderSplash({ onSignOut: vi.fn() });
+
+    expect(screen.queryByRole('button', { name: /sign out/i })).not.toBeInTheDocument();
   });
 });

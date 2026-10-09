@@ -1,11 +1,12 @@
 import { BarChart3, ClipboardCheck, Home, List, ListTodo, Settings, ShoppingCart } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { applyTheme, getInitialTheme, type Theme } from './domain/theme';
-import { hasStoredGoogleGrant, keepGoogleSessionAlive } from './storage/googleSheetsAuth';
+import { fetchGoogleEmail, getStoredGoogleEmail, hasStoredGoogleGrant, keepGoogleSessionAlive, signOutGoogle } from './storage/googleSheetsAuth';
 import { Care } from './components/Care';
 import { Dashboard } from './components/Dashboard';
 import { Learn } from './components/Learn';
 import { Log } from './components/Log';
+import { FamilySetup } from './components/FamilySetup';
 import { LoginSplash } from './components/LoginSplash';
 import { QuickAddDialog } from './components/QuickAddDialog';
 import { Reports } from './components/Reports';
@@ -15,7 +16,8 @@ import { ParentDashboard } from './components/ParentDashboard';
 import { ParentReports } from './components/ParentReports';
 import { ShoppingList } from './components/ShoppingList';
 import { Todos } from './components/Todos';
-import { getActiveProfiles, isChild, isParent, getStoredActiveProfileId, storeActiveProfileId, storeEmergencyChild, type NewProfileInput } from './domain/family';
+import { CAREGIVER_EVENT_TYPES, getAccess } from './domain/access';
+import { getActiveProfiles, isCaregiverAccount, isChild, isParent, getStoredActiveProfileId, storeActiveProfileId, storeEmergencyChild, type NewProfileInput } from './domain/family';
 import { DEFAULT_SLEEP_WINDOW, planAttribution, planParentSleeps, type Shift, type ShiftPlan, type ShiftResult } from './domain/nightShift';
 import { getLocalDateKey } from './domain/dates';
 import { getFirstYearEvents } from './domain/firstYear';
@@ -23,14 +25,16 @@ import { snapshotSignature } from './domain/snapshot';
 import { getFoodNames } from './domain/shopping';
 import { type ActiveTimers, type TimerType, loadActiveTimers, saveActiveTimers } from './domain/timers';
 import type { BabyProfile, CareEvent, CareEventType, CreateCareEventInput, ShoppingItem, TaskItem, TrackerExport, TrackerSnapshot } from './domain/types';
-import { createHybridBabyTrackerStore } from './storage/hybridStore';
+import { takeJoinParam } from './storage/familyDirectory';
+import { createHybridBabyTrackerStore, NoFamilyError, type NewFamilyInput } from './storage/hybridStore';
 import type { StoreStatus } from './storage/store';
 
 type View = 'dashboard' | 'log' | 'reports' | 'care' | 'shopping' | 'todos' | 'learn' | 'settings';
 
 // 'restoring' resumes a device that already granted Google, so a returning user
-// sees a branded reconnect rather than a flash of the login screen.
-type BootPhase = 'restoring' | 'signin' | 'ready';
+// sees a branded reconnect rather than a flash of the login screen. 'nofamily'
+// is a signed-in account no family has added: it sees nobody's log.
+type BootPhase = 'restoring' | 'signin' | 'nofamily' | 'ready';
 
 const VIEWS: View[] = ['dashboard', 'log', 'reports', 'care', 'shopping', 'todos', 'learn', 'settings'];
 
@@ -76,6 +80,8 @@ function viewFromHash(): View {
   return VIEWS.includes(hash) ? hash : 'dashboard';
 }
 
+// An invite link names the family to try first; read it before anything connects.
+takeJoinParam();
 const trackerStore = createHybridBabyTrackerStore();
 
 const tabs = [
@@ -91,6 +97,8 @@ const tabs = [
 /** Household lists belong to the parent views; Care belongs to a child. */
 const PARENT_TABS = new Set<View>(['dashboard', 'log', 'reports', 'shopping', 'todos', 'settings']);
 const CHILD_TABS = new Set<View>(['dashboard', 'log', 'reports', 'care', 'settings']);
+/** Someone minding the children: log on Home, and read Key info and Emergency. */
+const CAREGIVER_TABS = new Set<View>(['dashboard', 'care']);
 
 function App() {
   const [profile, setProfile] = useState<BabyProfile | null>(null);
@@ -108,6 +116,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [bootPhase, setBootPhase] = useState<BootPhase>(() => (hasStoredGoogleGrant() ? 'restoring' : 'signin'));
   const [sessionExpired, setSessionExpired] = useState(false);
+  const [noFamily, setNoFamily] = useState<NoFamilyError | null>(null);
   // Opened from the sign-in screen. It stays up through a restore finishing
   // behind it — the screen must not jump to Home under someone doing CPR.
   const [splashEmergency, setSplashEmergency] = useState(false);
@@ -115,6 +124,16 @@ function App() {
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
   const [storeStatus, setStoreStatus] = useState<StoreStatus | null>(() => trackerStore.getStatus?.() ?? null);
   const [activeTimers, setActiveTimers] = useState<ActiveTimers>({});
+  // Who signed in, which decides between the full app and the caregiver view.
+  const [signedInEmail, setSignedInEmail] = useState<string | undefined>(getStoredGoogleEmail);
+  // Offline, the profiles on screen are this device's own copy, which need not
+  // carry anyone's email — only a connected family can say someone is not in it.
+  const connected = Boolean(storeStatus?.connected);
+  const access = useMemo(() => {
+    const result = getAccess(profiles, signedInEmail);
+    return result.role === 'none' && !connected ? { role: 'full' as const } : result;
+  }, [connected, profiles, signedInEmail]);
+  const caregiverMode = access.role === 'caregiver';
 
   const hasActiveTimer = Object.keys(activeTimers).length > 0;
   useEffect(() => {
@@ -213,6 +232,16 @@ function App() {
     [refresh]
   );
 
+  // A caregiver has no parent screens, so a device whose stored choice is a
+  // parent (or whose sign-in just turned out to be a caregiver's) moves to the
+  // first child.
+  const firstChildId = getActiveProfiles(profiles).find(isChild)?.id;
+  useEffect(() => {
+    if (caregiverMode && profile && !isChild(profile) && firstChildId) {
+      void selectChild(firstChildId);
+    }
+  }, [caregiverMode, firstChildId, profile, selectChild]);
+
   const todayKey = useMemo(() => getLocalDateKey(new Date()), []);
 
   const navigate = useCallback((view: View) => {
@@ -231,10 +260,26 @@ function App() {
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
+  /** Ask Google who is signed in. A failure keeps whatever this device last knew. */
+  const refreshIdentity = useCallback(() => {
+    void fetchGoogleEmail().then(setSignedInEmail);
+  }, []);
+
   const restoreSession = useCallback(async () => {
     await trackerStore.connect?.(false);
+    // Connecting asked Google who this is; use that before the first render.
+    setSignedInEmail(getStoredGoogleEmail());
     await refresh();
-  }, [refresh]);
+    refreshIdentity();
+  }, [refresh, refreshIdentity]);
+
+  /** Not a failure to retry: this account belongs to no family yet. */
+  const showNoFamily = useCallback((error: NoFamilyError) => {
+    setNoFamily(error);
+    setSignedInEmail(error.email);
+    setSessionExpired(false);
+    setBootPhase('nofamily');
+  }, []);
 
   // Stay signed in: if Google was already granted on this device, silently
   // reconnect on launch instead of showing the login screen.
@@ -258,8 +303,13 @@ function App() {
           }
 
           return;
-        } catch {
+        } catch (caught) {
           if (cancelled) {
+            return;
+          }
+
+          if (caught instanceof NoFamilyError) {
+            showNoFamily(caught);
             return;
           }
 
@@ -281,7 +331,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [bootPhase, restoreSession]);
+  }, [bootPhase, restoreSession, showNoFamily]);
 
   // Keep trying quietly behind the reconnect screen: a grant that failed to
   // restore is usually a transient hiccup, and healing on its own is better
@@ -294,7 +344,15 @@ function App() {
     let stopped = false;
 
     const stop = startPolling(async () => {
-      await restoreSession();
+      try {
+        await restoreSession();
+      } catch (caught) {
+        if (caught instanceof NoFamilyError && !stopped) {
+          showNoFamily(caught);
+        }
+
+        throw caught;
+      }
 
       if (!stopped) {
         setSessionExpired(false);
@@ -306,7 +364,7 @@ function App() {
       stopped = true;
       stop();
     };
-  }, [bootPhase, restoreSession, sessionExpired]);
+  }, [bootPhase, restoreSession, sessionExpired, showNoFamily]);
 
   // Renew the Google token ahead of expiry (and whenever the app is refocused)
   // so a long-lived session never drops the user back to sign-in. Attached from
@@ -453,7 +511,13 @@ function App() {
     mutationRef.current += 1;
     // Always name the child being edited — without an id the store would patch
     // whichever one happens to be first, which is the wrong baby on a switch.
+    const before = profiles.find((person) => person.id === (profilePatch.id ?? activeChildId));
     const saved = await trackerStore.saveProfile({ ...profilePatch, id: profilePatch.id ?? activeChildId });
+
+    if (saved.email && saved.email !== before?.email) {
+      await shareWithPerson(saved);
+    }
+
     setProfile(saved);
     setProfiles((current) => current.map((child) => (child.id === saved.id ? saved : child)));
     // The signature is stale now, so the next poll reconciles rather than
@@ -461,9 +525,25 @@ function App() {
     signatureRef.current = '';
   }
 
+  /**
+   * Someone given an email on a family the app created is shared on its sheet,
+   * with an invite link. The build's own sheet was not made by the app, so its
+   * owner still shares it by hand — say so rather than leave them unable to sign in.
+   */
+  async function shareWithPerson(person: Pick<BabyProfile, 'email' | 'kind' | 'name'>) {
+    if (!person.email || !(isParent(person) || isCaregiverAccount(person))) {
+      return;
+    }
+
+    if ((await trackerStore.shareFamily(person.email)) === 'manual') {
+      setError(`Share the family's Google Sheet with ${person.email} so ${person.name} can sign in.`);
+    }
+  }
+
   async function handleAddChild(input: NewProfileInput) {
     mutationRef.current += 1;
     const added = await trackerStore.addProfile(input);
+    await shareWithPerson(added);
     // Land on the new child: whoever just added one is about to log for them.
     await selectChild(added.id);
   }
@@ -507,7 +587,7 @@ function App() {
 
     const shifts = [plan.night, plan.morning].filter((shift): shift is Shift => Boolean(shift?.caregiverId));
     const everything = await trackerStore.exportData();
-    const childIds = new Set(everything.profiles?.filter((person) => !isParent(person)).map((person) => person.id) ?? []);
+    const childIds = new Set(everything.profiles?.filter(isChild).map((person) => person.id) ?? []);
     const result: ShiftResult = { attributed: 0, skipped: 0, sleepsAdded: 0 };
 
     // Sleeps first: their ids are derived from the night, so a second run
@@ -570,10 +650,21 @@ function App() {
     try {
       await trackerStore.connect?.();
       await refresh();
+      refreshIdentity();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Unable to connect Google Sheets.');
       setStoreStatus(trackerStore.getStatus?.() ?? null);
     }
+  }
+
+  // Forget the token, grant and email, then reload: the sheet store lives in
+  // memory and the next boot, with no grant left, opens on the sign-in screen.
+  // Entries cached on the device stay — signing out is not a wipe. The hash is
+  // dropped so signing back in lands on Home rather than Settings.
+  function handleSignOut() {
+    signOutGoogle();
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
+    window.location.reload();
   }
 
   async function handleSplashContinue() {
@@ -581,15 +672,76 @@ function App() {
     setError('');
     try {
       await trackerStore.connect?.();
+      setSignedInEmail(getStoredGoogleEmail());
       await refresh();
+      refreshIdentity();
       setSessionExpired(false);
       setBootPhase('ready');
     } catch (caught) {
+      if (caught instanceof NoFamilyError) {
+        showNoFamily(caught);
+        return;
+      }
+
       setError(caught instanceof Error ? caught.message : 'Unable to connect Google Sheets.');
       setStoreStatus(trackerStore.getStatus?.() ?? null);
     } finally {
       setLoading(false);
     }
+  }
+
+  async function handleCreateFamily(input: NewFamilyInput) {
+    setLoading(true);
+    setError('');
+    try {
+      await trackerStore.createFamily(input);
+      await enterFamily();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to set up the family.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleClaimFamily(familyId: string, parentId: string) {
+    setLoading(true);
+    setError('');
+    try {
+      await trackerStore.claimFamily(familyId, parentId);
+      await enterFamily();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to open the family.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  /** After a family is created or claimed: the store is connected to it now. */
+  async function enterFamily() {
+    // The previous family's screen (if any) is not this one's.
+    signatureRef.current = '';
+    activeChildRef.current = undefined;
+    setSignedInEmail(getStoredGoogleEmail());
+    await refresh();
+    refreshIdentity();
+    setNoFamily(null);
+    setBootPhase('ready');
+  }
+
+  // A signed-in account no family has added — at sign-in, or taken off the
+  // family's profiles while the app was open. Nothing of any family shows.
+  if ((bootPhase === 'nofamily' || (bootPhase === 'ready' && access.role === 'none')) && !splashEmergency) {
+    return (
+      <FamilySetup
+        claim={noFamily?.claim}
+        email={noFamily?.email ?? signedInEmail}
+        error={error}
+        loading={loading}
+        onClaim={handleClaimFamily}
+        onCreate={handleCreateFamily}
+        onSignOut={handleSignOut}
+      />
+    );
   }
 
   if (bootPhase !== 'ready' || splashEmergency) {
@@ -604,6 +756,7 @@ function App() {
         onContinue={handleSplashContinue}
         onEmergencyChange={setSplashEmergency}
         onOffline={loadOffline}
+        onSignOut={handleSignOut}
       />
     );
   }
@@ -619,7 +772,9 @@ function App() {
 
   const firstYearEvents = getFirstYearEvents(profile, events);
   const parentMode = isParent(profile);
-  const allowedTabs = parentMode ? PARENT_TABS : CHILD_TABS;
+  const allowedTabs = caregiverMode ? CAREGIVER_TABS : parentMode ? PARENT_TABS : CHILD_TABS;
+  // The switcher's people: a caregiver is minding the children, nobody else.
+  const switchable = getActiveProfiles(profiles).filter((person) => !caregiverMode || isChild(person));
   const visibleTabs = tabs.filter((tab) => allowedTabs.has(tab.id));
   // A profile switch can make the current tab inapplicable. Land somewhere
   // useful instead of leaving a hidden household/child view on screen.
@@ -629,7 +784,7 @@ function App() {
     <div className="app-shell">
       <header className="app-header">
         <span className="app-wordmark">BabySteps</span>
-        {profiles.length > 1 && <ChildSwitcher activeId={profile.id} profiles={profiles} onSelect={selectChild} />}
+        {switchable.length > 1 && <ChildSwitcher activeId={profile.id} profiles={switchable} onSelect={selectChild} />}
       </header>
 
       {error && <p className="error-banner" role="alert">{error}</p>}
@@ -648,12 +803,13 @@ function App() {
         ) : (
           <Dashboard
             activeTimers={activeTimers}
+            allowedTypes={caregiverMode ? CAREGIVER_EVENT_TYPES : undefined}
             events={events}
             profile={profile}
             profiles={profiles}
             todayKey={todayKey}
             onAdd={setDialogType}
-            onOpenLog={openFilteredLog}
+            onOpenLog={caregiverMode ? undefined : openFilteredLog}
           />
         ))}
 
@@ -677,7 +833,17 @@ function App() {
           <Reports events={events} profile={profile} profiles={profiles} />
         ))}
 
-      {view === 'care' && <Care events={events} profile={profile} profiles={profiles} onEdit={setEditEvent} onSaveProfile={handleSaveProfile} onToggle={handleToggleRef} />}
+      {view === 'care' && (
+        <Care
+          caregiverView={caregiverMode}
+          events={events}
+          profile={profile}
+          profiles={profiles}
+          onEdit={setEditEvent}
+          onSaveProfile={handleSaveProfile}
+          onToggle={handleToggleRef}
+        />
+      )}
 
       {view === 'shopping' && (
         <ShoppingList
@@ -706,6 +872,7 @@ function App() {
           events={events}
           profile={profile}
           profiles={profiles}
+          signedInEmail={signedInEmail}
           storeStatus={storeStatus}
           theme={theme}
           onAddChild={handleAddChild}
@@ -714,6 +881,7 @@ function App() {
           onArchiveProfile={handleArchiveProfile}
           onRestoreProfile={handleRestoreProfile}
           onSelectChild={selectChild}
+          onSignOut={handleSignOut}
           onExport={handleExport}
           onImport={handleImport}
           onOpenLearn={() => navigate('learn')}
@@ -755,6 +923,7 @@ function App() {
         editEvent={editEvent}
         eventType={dialogType}
         foodNames={getFoodNames(shopping)}
+        loggedBy={caregiverMode ? (access.account?.id ?? '') : undefined}
         onClose={closeDialog}
         onSave={handleSaveEvent}
         onTimerStart={handleTimerStart}

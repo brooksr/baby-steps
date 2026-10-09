@@ -4,7 +4,7 @@ import { addMinutes, fromDateTimeInputValue, getAgeDays, toDateTimeInputValue } 
 import { DEFAULT_STOOL_COLOR } from '../domain/diaperDetails';
 import { CAFFEINE_TAG, INTAKE_KINDS, OUTPUT_KINDS, hasStoolDetail, parseIntakeTags } from '../domain/intakeOutput';
 import { getBristolScale, getFoodTriggers, getMoodScale, getStoolColorById, getStoolColors, isStoolColorFlagged } from '../domain/reference';
-import { getCaregivers, getStoredCaregiverId, isParent, storeCaregiverId } from '../domain/family';
+import { getCaregiverAccounts, getCaregivers, getStoredCaregiverId, isParent, storeCaregiverId } from '../domain/family';
 import { type ActiveTimers, type TimerType, formatElapsed, getElapsedSeconds, isTimerType } from '../domain/timers';
 import { careEventLabels, intakeKindLabels, intakePortionLabels, mensesFlowLabels, outputKindLabels, type BabyProfile, type CareEvent, type CareEventType, type CreateCareEventInput, type DiaperKind, type DiaperPoopSize, type FeedMethod, type IntakeKind, type IntakePortion, type MensesFlow, type OutputKind } from '../domain/types';
 import { getPreferredUnits, toStoredLength, toStoredVolume, toStoredWeight, toUnitLength, toUnitVolume, toUnitWeight } from '../domain/units';
@@ -33,6 +33,12 @@ interface QuickAddDialogProps {
    * A suggestion is a convenience, never a constraint: anything can be typed.
    */
   foodNames?: string[];
+  /**
+   * Set in the caregiver view: every entry is recorded against the signed-in
+   * caregiver (or nobody, for an email no profile names), and there is no
+   * picker to change it.
+   */
+  loggedBy?: string;
   /** Optional subtype already named by the button that opened the dialog. */
   presetKind?: IntakeKind | OutputKind | null;
   onTimerStart: (type: TimerType) => void;
@@ -58,7 +64,7 @@ function roundedInputValue(value: number, fractionDigits: number) {
   return String(Number(value.toFixed(fractionDigits)));
 }
 
-export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, foodNames = [], onClose, onSave, onTimerStart, onTimerStop, presetKind, profile, profiles = [] }: QuickAddDialogProps) {
+export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, foodNames = [], loggedBy, onClose, onSave, onTimerStart, onTimerStop, presetKind, profile, profiles = [] }: QuickAddDialogProps) {
   const preferredUnits = getPreferredUnits(profile);
   const unitSystem = preferredUnits.system;
   const [startedAt, setStartedAt] = useState(() => toDateTimeInputValue(new Date().toISOString()));
@@ -255,10 +261,12 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, fo
     }
   }, [eventType, editEvent, preferredUnits.weightDisplay, presetKind, profile?.careInfo?.bottleAmountOz, unitSystem]);
 
-  const caregivers = useMemo(() => getCaregivers(profiles), [profiles]);
+  // The parents, then anyone with a caregiver sign-in — a parent can record
+  // that the grandparent did the 3pm feed.
+  const caregivers = useMemo(() => [...getCaregivers(profiles), ...getCaregiverAccounts(profiles)], [profiles]);
   // Only a child's entry has a caregiver worth recording — a parent logging
   // their own sleep is not doing it for someone else.
-  const showCaregiver = caregivers.length > 0 && Boolean(profile) && !isParent(profile as BabyProfile);
+  const showCaregiver = loggedBy === undefined && caregivers.length > 0 && Boolean(profile) && !isParent(profile as BabyProfile);
 
   const titleText = useMemo(() => {
     if (!eventType) {
@@ -546,6 +554,8 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, fo
       // Remember for next time: a phone belongs to one person, and re-picking
       // on every entry is how a field like this stops being filled in.
       storeCaregiverId(caregiverId);
+    } else if (loggedBy !== undefined) {
+      payload = { ...payload, caregiverId: loggedBy || undefined } as CreateCareEventInput;
     }
 
     setSaving(true);

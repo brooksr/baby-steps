@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie';
-import { createFamilyProfile, getActiveProfiles, isArchived, isChild, isParent, sortProfiles, type NewProfileInput } from '../domain/family';
+import { createFamilyProfile, getActiveProfiles, isArchived, isCaregiverAccount, isChild, isParent, sortProfiles, type NewProfileInput } from '../domain/family';
 import { createDefaultBabyProfile } from '../domain/dates';
 import { migrateStoredEvents, type StoredCareEvent } from '../domain/legacyEvents';
 import { DEFAULT_SHOPPING_CATEGORY, findItemByName, getCatalogSeed } from '../domain/shopping';
@@ -35,6 +35,8 @@ export interface StoreStatus {
   backend: 'local' | 'google-sheets';
   configured: boolean;
   connected: boolean;
+  /** The family on this device — its spreadsheet id. Unset until one is connected. */
+  familyId?: string;
   message: string;
   sheetId?: string;
   sheetUrl?: string;
@@ -157,7 +159,8 @@ export function createLocalBabyTrackerStore(dbName = DEFAULT_DB_NAME): BabyTrack
 
     const named = profiles.find((profile) => profile.id === babyId);
 
-    if (named && !isArchived(named)) {
+    // A caregiver sign-in has no screen of its own to land on.
+    if (named && !isArchived(named) && !isCaregiverAccount(named)) {
       return named;
     }
 

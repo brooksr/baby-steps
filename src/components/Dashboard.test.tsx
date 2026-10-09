@@ -118,7 +118,8 @@ describe('Dashboard', () => {
     render(<Dashboard activeTimers={{}} events={events} profile={createDefaultBabyProfile(new Date('2026-06-19T12:00:00.000Z'))} todayKey="2026-09-02" onAdd={vi.fn()} onOpenLog={vi.fn()} />);
 
     const prediction = within(screen.getByRole('button', { name: 'View diaper log' }));
-    expect(prediction.getByText(/Next ~7:00 AM · wet/i)).toBeInTheDocument();
+    // Gaps of exactly 3h give the narrowest window, ±15 minutes around 7:00.
+    expect(prediction.getByText('Next ~6:45–7:15 AM · wet')).toBeInTheDocument();
 
     vi.useRealTimers();
   });
@@ -196,12 +197,12 @@ describe('Dashboard', () => {
     const bathButton = screen.getByRole('button', { name: 'View bath log' });
     const bath = within(bathButton);
     expect(bath.getByText('5 days')).toBeInTheDocument();
-    expect(bath.getByText('Next: ~2–3 days')).toBeInTheDocument();
+    expect(bath.getByText('Due today')).toBeInTheDocument();
     expect(bathButton).toHaveClass('past-due');
 
     const feed = screen.getByRole('button', { name: 'View feed log' });
     expect(feed).toHaveClass('past-due');
-    expect(within(feed).getByText('Next: either · due')).toBeInTheDocument();
+    expect(within(feed).getByText('Due now · either')).toBeInTheDocument();
 
     vi.useRealTimers();
   });
@@ -224,7 +225,8 @@ describe('Dashboard', () => {
     render(<Dashboard activeTimers={{}} events={events} profile={createDefaultBabyProfile(new Date('2026-06-19T12:00:00.000Z'))} todayKey="2026-09-10" onAdd={vi.fn()} onOpenLog={vi.fn()} />);
 
     const feed = within(screen.getByRole('button', { name: 'View feed log' }));
-    expect(feed.getByText('Next: either ~6:30 AM')).toBeInTheDocument();
+    // The 2–3 hour window, on the hour at both ends.
+    expect(feed.getByText('Next ~6–7 AM · either')).toBeInTheDocument();
     expect(feed.queryByText(/· next:/i)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'View feed log' })).not.toHaveClass('past-due');
 
@@ -235,5 +237,23 @@ describe('Dashboard', () => {
     render(<Dashboard activeTimers={{}} events={[]} profile={createDefaultBabyProfile(new Date('2026-06-19T12:00:00.000Z'))} todayKey="2026-09-02" onAdd={vi.fn()} onOpenLog={vi.fn()} />);
 
     expect(within(screen.getByRole('button', { name: 'View diaper log' })).queryByText(/Next diaper/i)).not.toBeInTheDocument();
+  });
+
+  it('offers a caregiver only the types they may log, and no way into the Log', () => {
+    render(
+      <Dashboard
+        activeTimers={{}}
+        allowedTypes={['feed', 'diaper']}
+        events={[]}
+        profile={createDefaultBabyProfile(new Date('2026-06-19T12:00:00.000Z'))}
+        todayKey="2026-09-02"
+        onAdd={vi.fn()}
+      />
+    );
+
+    const quickAdd = screen.getByRole('region', { name: 'Quick add' });
+    expect(within(quickAdd).getAllByRole('button').map((button) => button.textContent)).toEqual(['Feed', 'Diaper']);
+    expect(screen.queryByRole('button', { name: 'View feed log' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Log birth/ })).toBeNull();
   });
 });

@@ -7,6 +7,8 @@ import { EmergencyGuide } from './EmergencyGuide';
 import { KeyInfo } from './KeyInfo';
 
 interface CareProps {
+  /** Someone minding the children: Key info and Emergency, read-only. */
+  caregiverView?: boolean;
   events: CareEvent[];
   profile: BabyProfile;
   /** Everyone tracked — the parents among them are the guardians. */
@@ -37,8 +39,11 @@ function addMonths(birthDate: string, months: number) {
   return date;
 }
 
-export function Care({ events, profile, profiles = [], onEdit, onSaveProfile, onToggle }: CareProps) {
+const CAREGIVER_CARE_TABS = new Set<CareTab>(['emergency', 'key-info']);
+
+export function Care({ caregiverView = false, events, profile, profiles = [], onEdit, onSaveProfile, onToggle }: CareProps) {
   const [tab, setTab] = useState<CareTab>('key-info');
+  const tabs = caregiverView ? CARE_TABS.filter((item) => CAREGIVER_CARE_TABS.has(item.id)) : CARE_TABS;
   const ageMonths = profile.birthDate ? getAgeDays(profile) / AVG_DAYS_PER_MONTH : null;
 
   const achieved = new Map<string, CareEvent>();
@@ -76,7 +81,7 @@ export function Care({ events, profile, profiles = [], onEdit, onSaveProfile, on
           </div>
         </div>
         <div className="segmented-control care-tabs" role="tablist" aria-label="Care sections">
-          {CARE_TABS.map((item) => (
+          {tabs.map((item) => (
             <button
               type="button"
               key={item.id}
@@ -94,7 +99,7 @@ export function Care({ events, profile, profiles = [], onEdit, onSaveProfile, on
       </section>
 
       <div className="view-stack" id="care-panel" role="tabpanel" aria-labelledby={`care-tab-${tab}`}>
-        {tab === 'key-info' && <KeyInfo profile={profile} profiles={profiles} onSave={onSaveProfile} />}
+        {tab === 'key-info' && <KeyInfo profile={profile} profiles={profiles} onSave={caregiverView ? undefined : onSaveProfile} />}
 
         {tab === 'milestones' && (
           <section className="section-block" data-event="milestone">

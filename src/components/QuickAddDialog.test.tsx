@@ -341,6 +341,30 @@ describe('QuickAddDialog', () => {
       expect(screen.getByLabelText(/logged by/i)).toHaveValue(dad.id);
     });
 
+    it('records a signed-in caregiver without offering a picker', async () => {
+      const user = userEvent.setup();
+      const onSave = vi.fn().mockResolvedValue(undefined);
+
+      render(
+        <QuickAddDialog
+          activeTimers={{}}
+          eventType="diaper"
+          loggedBy="grandma"
+          profile={baby}
+          profiles={[baby, mom, dad]}
+          onClose={vi.fn()}
+          onSave={onSave}
+          onTimerStart={vi.fn()}
+          onTimerStop={vi.fn()}
+        />
+      );
+
+      expect(screen.queryByLabelText(/logged by/i)).toBeNull();
+      await user.click(screen.getByRole('button', { name: /save/i }));
+
+      expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ caregiverId: 'grandma', type: 'diaper' }));
+    });
+
     it('saves no caregiver when none is picked', async () => {
       const user = userEvent.setup();
       const onSave = vi.fn().mockResolvedValue(undefined);

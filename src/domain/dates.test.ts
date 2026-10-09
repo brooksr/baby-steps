@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createDefaultBabyProfile, formatAgeSummary, formatDaysAgo, getDayFraction, getDeviceTimezone, getTimezoneOptions } from './dates';
+import { addDaysToKey, createDefaultBabyProfile, formatAgeSummary, formatClockRange as formatRange, formatDaysAgo, formatDaysSince, getDayFraction, getDeviceTimezone, getTimezoneOptions } from './dates';
 
 describe('formatDaysAgo', () => {
   const now = new Date('2026-09-10T09:00:00');
@@ -19,6 +19,39 @@ describe('formatDaysAgo', () => {
 
   it('treats a future timestamp as today', () => {
     expect(formatDaysAgo('2026-09-11T08:00:00', now)).toBe('Today');
+  });
+});
+
+describe('formatDaysSince', () => {
+  const now = new Date('2026-09-10T09:00:00');
+
+  it('stays short enough for a phone-width card', () => {
+    expect(formatDaysSince('2026-09-10T06:30:00', now)).toBe('Today');
+    expect(formatDaysSince('2026-09-09T19:00:00', now)).toBe('1 day');
+    expect(formatDaysSince('2026-09-07T19:00:00', now)).toBe('3 days');
+  });
+});
+
+describe('formatClockRange', () => {
+  // ICU puts a narrow no-break space before AM/PM.
+  const formatClockRange = (start: string, end: string) => formatRange(start, end).replace(/\s/g, ' ');
+
+  it('rounds both ends to the quarter hour', () => {
+    expect(formatClockRange('2026-09-10T06:37:00', '2026-09-10T07:22:00')).toBe('6:30–7:15 AM');
+  });
+
+  it('drops the minutes when both ends land on the hour', () => {
+    expect(formatClockRange('2026-09-10T06:02:00', '2026-09-10T06:58:00')).toBe('6–7 AM');
+  });
+
+  it('collapses a window that rounds to one time', () => {
+    expect(formatClockRange('2026-09-10T06:58:00', '2026-09-10T07:05:00')).toBe('7:00 AM');
+  });
+});
+
+describe('addDaysToKey', () => {
+  it('steps across a month end', () => {
+    expect(addDaysToKey('2026-09-29', 3)).toBe('2026-10-02');
   });
 });
 

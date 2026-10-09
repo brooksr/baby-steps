@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getCadenceReminders, predictNextFeed } from './cadence';
+import { getCadenceReminders, predictNextBath, predictNextFeed } from './cadence';
 import type { CareEvent } from './types';
 
 const NOW = new Date('2026-09-10T12:00:00.000Z');
@@ -87,5 +87,33 @@ describe('next feed prediction', () => {
 
   it('returns nothing without a logged feed', () => {
     expect(predictNextFeed([], NOW)).toBeNull();
+  });
+});
+
+describe('predictNextBath', () => {
+  const bath = (startedAt: string): CareEvent => ({
+    babyId: 'avery-example',
+    createdAt: startedAt,
+    id: `bath-${startedAt}`,
+    startedAt,
+    syncState: 'local',
+    type: 'bath',
+    updatedAt: startedAt
+  });
+
+  it('says nothing without a bath to count from', () => {
+    expect(predictNextBath([])).toBeNull();
+  });
+
+  it('spans the usual 2–3 calendar days after the last bath', () => {
+    expect(predictNextBath([bath('2026-09-08T19:00:00')], new Date('2026-09-09T09:00:00'))).toEqual({
+      due: false,
+      windowEndKey: '2026-09-11',
+      windowStartKey: '2026-09-10'
+    });
+  });
+
+  it('is due once the window has run out', () => {
+    expect(predictNextBath([bath('2026-09-08T19:00:00')], new Date('2026-09-11T09:00:00'))?.due).toBe(true);
   });
 });

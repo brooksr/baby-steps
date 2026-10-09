@@ -27,8 +27,12 @@ export type BabyGender = 'boy' | 'girl' | 'other';
 /**
  * Who a profile is. A row written before parents existed has no `kind`, and
  * every one of those is a child — so the default is `child`, never a guess.
+ *
+ * A `caregiver` is not a tracked person at all: it is a sign-in for someone
+ * minding the children — a grandparent, a sitter — who logs feeds and diapers
+ * and can read the Care page, and sees nothing else. See `domain/access.ts`.
  */
-export type ProfileKind = 'child' | 'parent';
+export type ProfileKind = 'child' | 'parent' | 'caregiver';
 
 /**
  * What a parent is tracking as. `mom` is the only role offered cycle tracking,
@@ -119,6 +123,18 @@ export interface BabyProfile extends BaseRecord {
   careInfo?: CareInfo;
   /** A child's due date. Never set on a parent — see `kind`. */
   dueDate?: string;
+  /**
+   * The Google account this person signs in with — a parent's or a caregiver's.
+   * It is what decides which view a device opens on (`getAccessRole`). Stored
+   * lowercased; a child carries none.
+   */
+  email?: string;
+  /**
+   * The family this person belongs to — the id of the family's spreadsheet,
+   * since one family is one sheet. Every row on a sheet carries that sheet's id;
+   * a row written before the column existed is given it on read.
+   */
+  familyId?: string;
   gender?: BabyGender;
   kind?: ProfileKind;
   name: string;

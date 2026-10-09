@@ -126,12 +126,83 @@ to blank the row; it no longer touches anything but that one column.
   could do at 3am is not what makes them put the baby down. A test keeps the
   phrasing out.
 
+### Who signed in: parents and caregivers
+
+A **caregiver** (`kind: 'caregiver'`) is a sign-in for someone minding the
+children, such as a grandparent or a sitter. It is not a tracked person: it has
+no entries of its own, it is never in the switcher (`getActiveProfiles` leaves it
+out, and `pickProfile`/`resolveProfile` never land on one), and its id is what
+its entries carry as `caregiverId`. Settings → Family adds one, with a name, a
+Google account and a phone number, and archives it like anyone else.
+
+- Parents and caregivers carry an `email` (the last profile column). The OAuth
+  scope includes `userinfo.email`, and `fetchGoogleEmail()` asks Google who
+  signed in, caching the answer under `babysteps.google.email` so the right view
+  opens offline. Adding that scope makes a device that had already granted
+  access consent one more time.
+- `domain/access.ts` `getAccess(profiles, email)` decides the view. A parent's
+  email gets the full app, a caregiver's gets the caregiver view, and **any other
+  email gets `none` — nothing of the family at all**, however much or little the
+  family has set up. If no email is known on the device (offline, never signed
+  in) it gets the full app over that device's own local data; `App` only honours
+  `none` while connected, since the offline copy need not carry anyone's email.
+- The caregiver view is the children's Home with `CAREGIVER_EVENT_TYPES` (every
+  child entry except a birth, which also rewrites the profile) to add and the
+  hero cards not linking to the Log, plus Care's Key info (read-only) and
+  Emergency tabs. There is no Log, Reports, Settings, Learn, or parent in the
+  switcher, and quick-add stamps `loggedBy` with no picker.
+- Inside one family this is **a view, not access control.** There is no server:
+  anyone the sheet is shared with could open it directly. Do not describe the
+  caregiver view as a security boundary anywhere in the UI or the docs.
+
+### Families: one family is one spreadsheet
+
+**The family id is the spreadsheet id** (`BabyProfile.familyId`, the `familyId`
+column). Families never share a sheet, so no family can read another's rows —
+a `familyId` filter over one shared sheet would have been a view, not privacy.
+
+- `storage/familyDirectory.ts` + `hybridStore.connect()` pick the family: an
+  invite link (`?family=<id>`, taken out of the URL by `takeJoinParam`), then
+  this device's last family for that email (`babysteps.family`, keyed by
+  email), then the build's own `VITE_GOOGLE_SHEET_ID`, then the families this
+  account started (Drive `files.list` on the `babysteps=family` app property).
+  A candidate counts only if `isFamilyMember` finds a current parent or
+  caregiver with the signed-in email. 400/403/404 skip a candidate; anything
+  else (offline) throws, so a dropped connection never reads as "no family".
+- None found throws `NoFamilyError`, and `App` shows `FamilySetup` (boot phase
+  `nofamily`): start a family — `createFamilySheet` makes a spreadsheet in the
+  user's Drive (Events on sheet id 0, which row deletes address, plus Profile)
+  holding the parent with their email and an optional first child — or, on a
+  family where **no current parent has an email yet** (`getClaimableParents`),
+  say "I'm <parent>", which stamps the email on that parent. Once any parent
+  has an email, only a parent can add people, in Settings → Family.
+- The `drive.file` scope only reaches files the app created. That is what lets
+  it create, list and share a new family's sheet — and why the build's own sheet
+  (created by hand) is still shared by hand: `shareFamilySheet` returns
+  `manual` there and `App` says so in the banner.
+- Adding someone with an email (or giving someone one) shares the family sheet
+  with them, with an invite link in Google's email. Settings → Storage shows the
+  family id and a **Copy invite link** button; a joiner's device cannot find a
+  sheet someone else created any other way.
+- **Each family has its own offline database** (`getLocalDbName`: the build's
+  sheet keeps `babysteps`, others get `babysteps-<id>`). Connect merges local
+  rows into the sheet, so one shared database would leak a previous family's
+  cached rows into the next one's sheet.
+- Every profile row on a sheet carries that sheet's id: read gives it, writes
+  stamp it, and `initialize()` backfills the one column. Column Q is only
+  trusted once its header says `familyId` — the live sheet once had a duplicate
+  `parentRole` header there, and the cells under it are overwritten, not read.
+
 ### Adding a new profile field
 
 Append the new key to the end of `profileHeaders` so existing sheet rows keep
 their columns, and widen `PROFILE_RANGE`, `PROFILE_HEADER_RANGE`, and
-`profileRowRange()` to match (they are `A:O` as of `archivedAt`). The local Dexie
+`profileRowRange()` to match (they are `A:Q` as of `familyId`). The local Dexie
 store needs no change — it stores the whole profile object.
+A tab's grid does not grow on its own: a write past its last column fails with
+"exceeds grid limits". `ensureHeaders()` calls `ensureColumns()` first, which
+appends columns to Events or Profile when either is narrower than its headers,
+so a new column needs nothing more than the header list.
 
 **Reads find a column by header name, not by position.** `columnIndex()` builds
 the map from the sheet's own header row, first occurrence winning, and falls back
@@ -488,8 +559,13 @@ without a tap.
 - **Bath** — a `bath` event carrying nothing but time and notes, so it needs no
   new Sheets column (it reads and writes the base row, like `sleep`). Dashboard
   has a quick action plus a "Last bath" status card. Baths are counted in days,
-  not hours, so it uses `formatDaysAgo` (calendar-day diff — "Yesterday", not
-  "14h ago") rather than `formatAgo`.
+  not hours, so the card uses `formatDaysSince` (calendar-day diff — "1 day",
+  not "14h"; "Yesterday" overflows a phone-width card) rather than `formatAgo`,
+  and `predictNextBath` names the 2–3 day window by weekday ("Next ~Fri–Sat").
+- **Hero card predictions** read "Next ~6:30–7:30 AM · left" (feed side) or
+  "· wet" (diaper kind), from `formatClockRange` — each prediction's window,
+  rounded to the quarter hour, with the minutes dropped when both ends are on
+  the hour. Past the estimate they read "Due now" / "Likely now".
 - **Diaper color & size** — a dirty (or both) change carries `poopSize`
   (small/medium/large) and `color`, a `stool-colors.csv` id. The reference row's
   guidance shows under the selector, styled `.field-note.flagged` when
@@ -709,6 +785,15 @@ without a tap.
     names and no doses (a test scans the copy), and the footnote points at a
     hands-on CPR class. Danger red is right here — unlike archiving, this *is*
     the urgent surface.
+- **Sign out** — the last control on Settings. `App.handleSignOut` calls
+  `signOutGoogle()` (token, grant and cached email) and reloads without the
+  hash, so the next boot has no grant and opens on the sign-in screen at Home.
+  The device's cached entries are kept; signing out is not a wipe.
+  The "Tap to reconnect" screen carries the same control, since an account
+  Google refuses (not a test user) otherwise leaves no way out. Signing out — or
+  an interactive sign-in failing — sets `babysteps.google.pickAccount`, so the
+  next interactive request uses `prompt: 'select_account'` instead of silently
+  reusing the account it just left; a successful sign-in clears it.
 - **Theme** — the light/dark control lives in **Settings → Appearance**. The app
   header holds only the wordmark; Settings is also the only way into **Learn**
   (still routable at `#learn`, and the bottom nav stays visible there).
@@ -787,7 +872,6 @@ anything added below must not reappear there until it is actually built.
 ### V2 — also worth doing
 - Tummy-time daily total vs `getTummyTimeGuide()` and a mood strip in Reports
   (the Stage 1 follow-ups).
-- An explicit "Disconnect Google" control in Settings (calls `signOutGoogle()`).
 - **Editable Key info** — make `domain/medicalInfo.ts` (hospital, OB, contacts,
   "to have on hand") user-editable and persisted on the profile, instead of
   hard-coded. Today it's static + a prompt list shown in the Care tab and a

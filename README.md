@@ -50,6 +50,17 @@ The spreadsheet ID is the value between `/d/` and `/edit` in a Google Sheets URL
 4. Create a blank Google Sheet and set the two environment variables above.
 5. Start BabySteps, open Settings, and connect Google Sheets.
 
+### Who can sign in
+
+The app has no server, so Google decides who gets in. To let someone in:
+
+- **Share the Google Sheet** with their Google account as an editor. The app reads and writes the sheet as whoever is signed in.
+- **Add them as a test user** on the OAuth consent screen while the app is in Testing mode, or publish the app.
+
+In Settings → Family, give each parent their Google account, and add babysitters or grandparents as **caregivers**. A caregiver who signs in sees the children's Home, where they can log feeds and diapers, plus the Care page's Key info and Emergency tabs, and nothing else. Once any parent has an account saved, anyone else who signs in gets that caregiver view too. This only limits what the app shows. Anyone the sheet is shared with can still open the sheet and read all of it.
+
+Every name, phone number and email lives in the sheet, not in the repository. Someone else can run their own copy of this repo against their own sheet and their own OAuth client.
+
 The app creates and maintains its own worksheet headers. Writes use raw cell values so dates and notes round-trip without Google Sheets interpreting them as dates or formulas.
 
 ## Commands

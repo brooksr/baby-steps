@@ -123,6 +123,56 @@ export function formatClock(iso: string) {
   }).format(new Date(iso));
 }
 
+/** Rounds an instant to the nearest `stepMinutes` — a prediction is never minute-exact. */
+export function roundToMinutes(iso: string, stepMinutes = 15) {
+  const step = stepMinutes * MINUTE;
+  return new Date(Math.round(new Date(iso).getTime() / step) * step).toISOString();
+}
+
+/**
+ * A predicted window as a clock span, rounded to the quarter hour so it reads as
+ * the estimate it is: "6:30 – 7:30 AM", or "6 – 7 AM" when both ends are on the
+ * hour. A window that rounds to one instant is shown as that one time.
+ */
+export function formatClockRange(startIso: string, endIso: string, stepMinutes = 15) {
+  const start = new Date(roundToMinutes(startIso, stepMinutes));
+  const end = new Date(roundToMinutes(endIso, stepMinutes));
+
+  if (start.getTime() >= end.getTime()) {
+    return formatClock(start.toISOString());
+  }
+
+  const onTheHour = start.getMinutes() === 0 && end.getMinutes() === 0;
+  const format = new Intl.DateTimeFormat(undefined, onTheHour ? { hour: 'numeric' } : { hour: 'numeric', minute: '2-digit' });
+
+  const startParts = format.formatToParts(start);
+  const endText = format.format(end);
+  const period = (parts: Intl.DateTimeFormatPart[]) => parts.find((part) => part.type === 'dayPeriod')?.value;
+  const sharedPeriod = period(startParts) !== undefined && period(startParts) === period(format.formatToParts(end));
+  // "6:30–7:30 AM", not "6:30 AM–7:30 AM": the hero cards are a third of a phone wide.
+  const startText = sharedPeriod
+    ? startParts
+        .filter((part) => part.type !== 'dayPeriod')
+        .map((part) => part.value)
+        .join('')
+        .trim()
+    : format.format(start);
+
+  return `${startText}–${endText}`;
+}
+
+/** "Sat" for a local day key — near days are easier to read by name than by date. */
+export function formatWeekday(dateKey: string) {
+  return new Intl.DateTimeFormat(undefined, { weekday: 'short' }).format(new Date(`${dateKey}T12:00:00`));
+}
+
+/** A local day key `days` after another, stepped on the calendar so DST cannot skip one. */
+export function addDaysToKey(dateKey: string, days: number) {
+  const date = new Date(`${dateKey}T12:00:00`);
+  date.setDate(date.getDate() + days);
+  return getLocalDateKey(date);
+}
+
 /**
  * The same clock, from minutes after local midnight rather than an instant —
  * for an average time of day, which belongs to no particular date. Formatted
@@ -172,6 +222,17 @@ export function formatDaysAgo(iso: string, now = new Date()) {
   }
 
   return days === 1 ? 'Yesterday' : `${days} days ago`;
+}
+
+/** The bath card's headline: "Today", "1 day", "5 days" — "Yesterday" overflows a phone-width card. */
+export function formatDaysSince(iso: string, now = new Date()) {
+  const days = getDaysAgo(iso, now);
+
+  if (days <= 0) {
+    return 'Today';
+  }
+
+  return days === 1 ? '1 day' : `${days} days`;
 }
 
 export function formatDuration(minutes: number) {

@@ -49,7 +49,7 @@ export function storeCaregiverId(id: string): void {
  * the app was when that row was written.
  */
 export function getProfileKind(profile: Pick<BabyProfile, 'kind'>): ProfileKind {
-  return profile.kind === 'parent' ? 'parent' : 'child';
+  return profile.kind === 'parent' || profile.kind === 'caregiver' ? profile.kind : 'child';
 }
 
 export function isParent(profile: Pick<BabyProfile, 'kind'>): boolean {
@@ -60,13 +60,35 @@ export function isChild(profile: Pick<BabyProfile, 'kind'>): boolean {
   return getProfileKind(profile) === 'child';
 }
 
+/**
+ * A sign-in for someone minding the children, not a tracked person — so it is
+ * never in the switcher, never the profile on screen, and has no entries of its
+ * own. Its id is what their entries carry as `caregiverId`.
+ */
+export function isCaregiverAccount(profile: Pick<BabyProfile, 'kind'>): boolean {
+  return getProfileKind(profile) === 'caregiver';
+}
+
+/** Emails are compared as Google reports them: trimmed and lowercased. */
+export function normalizeEmail(email: string | undefined): string | undefined {
+  return email?.trim().toLowerCase() || undefined;
+}
+
 export function isArchived(profile: Pick<BabyProfile, 'archivedAt'>): boolean {
   return Boolean(profile.archivedAt);
 }
 
-/** Everyone the switcher shows: archived profiles are kept, just set aside. */
+/**
+ * Everyone the switcher shows: archived profiles are kept, just set aside, and
+ * caregiver sign-ins are not people being tracked.
+ */
 export function getActiveProfiles(profiles: BabyProfile[]): BabyProfile[] {
-  return sortProfiles(profiles.filter((profile) => !isArchived(profile)));
+  return sortProfiles(profiles.filter((profile) => !isArchived(profile) && !isCaregiverAccount(profile)));
+}
+
+/** The caregiver sign-ins still in use, oldest first. */
+export function getCaregiverAccounts(profiles: BabyProfile[]): BabyProfile[] {
+  return sortProfiles(profiles.filter((profile) => !isArchived(profile) && isCaregiverAccount(profile)));
 }
 
 export function getArchivedProfiles(profiles: BabyProfile[]): BabyProfile[] {
@@ -137,16 +159,19 @@ export function getStoredEmergencyChild(): BabyProfile {
   }
 }
 
+const KIND_ORDER: Record<ProfileKind, number> = { caregiver: 2, child: 0, parent: 1 };
+
 /**
- * Children first, then parents, each oldest first — the app is a baby tracker,
- * so the switcher opens on the babies. Within a group the order is the order
- * they were added, and is the same on every device. `createdAt` can tie (an
- * import writes a batch in one go), so name breaks it rather than leaving it to
- * whatever order the table happened to return.
+ * Children first, then parents, then caregiver sign-ins, each oldest first —
+ * the app is a baby tracker, so the switcher opens on the babies. Within a
+ * group the order is the order they were added, and is the same on every
+ * device. `createdAt` can tie (an import writes a batch in one go), so name
+ * breaks it rather than leaving it to whatever order the table happened to
+ * return.
  */
 export function sortProfiles(profiles: BabyProfile[]): BabyProfile[] {
   return [...profiles].sort((left, right) => {
-    const byKind = Number(isParent(left)) - Number(isParent(right));
+    const byKind = KIND_ORDER[getProfileKind(left)] - KIND_ORDER[getProfileKind(right)];
 
     if (byKind !== 0) {
       return byKind;
@@ -218,6 +243,7 @@ export interface NewProfileInput {
   birthDate?: string;
   /** A child's due date. Leave unset for a parent. */
   dueDate?: string;
+  email?: string;
   gender?: BabyGender;
   kind?: ProfileKind;
   name: string;
@@ -246,6 +272,7 @@ export function createFamilyProfile(input: NewProfileInput, existing: readonly B
     birthDate: input.birthDate || undefined,
     createdAt: timestamp,
     dueDate: input.dueDate || undefined,
+    email: normalizeEmail(input.email),
     gender: input.gender,
     id: createProfileId(
       input.name,

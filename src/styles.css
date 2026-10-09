@@ -372,6 +372,17 @@ button {
   gap: 10px;
 }
 
+/* An account that belongs to no family: claim a parent, or start a family. */
+.family-claim {
+  display: grid;
+  gap: 10px;
+}
+
+.field-hint {
+  color: var(--muted);
+  font-weight: 600;
+}
+
 .legal-links {
   display: flex;
   justify-content: center;
@@ -2355,6 +2366,15 @@ textarea {
 .sheet-connect {
   width: 100%;
   margin-top: 12px;
+}
+
+.family-id {
+  overflow-wrap: anywhere;
+  font-size: 0.82rem;
+}
+
+.sign-out {
+  width: 100%;
 }
 
 .toast,

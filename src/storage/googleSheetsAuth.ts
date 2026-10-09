@@ -1,5 +1,15 @@
 const GOOGLE_IDENTITY_SCRIPT = 'https://accounts.google.com/gsi/client';
-const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
+// The email scope is how the app knows *who* signed in — a parent or a
+// caregiver (`domain/access.ts`). Adding it asks a device that granted the
+// Sheets scope alone to consent once more. `drive.file` reaches only the files
+// this app created — how a new family's spreadsheet is made, found again on
+// another device, and shared with the people it adds (`familyDirectory.ts`).
+const SCOPES = [
+  'https://www.googleapis.com/auth/drive.file',
+  'https://www.googleapis.com/auth/spreadsheets',
+  'https://www.googleapis.com/auth/userinfo.email'
+].join(' ');
+const USERINFO_URL = 'https://www.googleapis.com/oauth2/v3/userinfo';
 /** Treat a token as spent slightly early so an in-flight request can't expire mid-call. */
 const EXPIRY_SKEW_MS = 120_000;
 /** Renew this far ahead of expiry so the session never lapses while the app is open. */
@@ -7,6 +17,9 @@ const REFRESH_LEAD_MS = 300_000;
 const MIN_REFRESH_DELAY_MS = 30_000;
 const TOKEN_STORAGE_KEY = 'babysteps.google.token';
 const GRANT_STORAGE_KEY = 'babysteps.google.granted';
+const EMAIL_STORAGE_KEY = 'babysteps.google.email';
+/** Set after a sign-out or a refused sign-in: the next interactive request shows Google's account chooser. */
+const PICK_ACCOUNT_STORAGE_KEY = 'babysteps.google.pickAccount';
 const SILENT_TIMEOUT_MS = 20_000;
 
 interface GoogleTokenResponse {
@@ -84,6 +97,44 @@ export function signOutGoogle() {
   const storage = safeStorage();
   storage?.removeItem(TOKEN_STORAGE_KEY);
   storage?.removeItem(GRANT_STORAGE_KEY);
+  storage?.removeItem(EMAIL_STORAGE_KEY);
+  // Otherwise the next sign-in silently reuses the account just signed out of —
+  // which is how an account Google refused leaves no way to pick another.
+  storage?.setItem(PICK_ACCOUNT_STORAGE_KEY, '1');
+}
+
+/**
+ * The signed-in Google account's email, as last seen on this device. Kept so
+ * the right view opens offline and before the first read of a session.
+ */
+export function getStoredGoogleEmail(): string | undefined {
+  return safeStorage()?.getItem(EMAIL_STORAGE_KEY) ?? undefined;
+}
+
+/**
+ * Ask Google who the current token belongs to. Falls back to the stored email
+ * when the lookup fails — a token minted before the email scope was added, or
+ * a dropped connection, should not change which view a device is on.
+ */
+export async function fetchGoogleEmail(): Promise<string | undefined> {
+  try {
+    const token = await requestGoogleSheetsAccessToken(false);
+    const response = await fetch(USERINFO_URL, { cache: 'no-store', headers: { Authorization: `Bearer ${token}` } });
+
+    if (!response.ok) {
+      return getStoredGoogleEmail();
+    }
+
+    const email = ((await response.json()) as { email?: string }).email?.trim().toLowerCase();
+
+    if (email) {
+      safeStorage()?.setItem(EMAIL_STORAGE_KEY, email);
+    }
+
+    return email || getStoredGoogleEmail();
+  } catch {
+    return getStoredGoogleEmail();
+  }
 }
 
 /**
@@ -252,7 +303,7 @@ async function getTokenClient() {
   if (!tokenClient) {
     tokenClient = window.google.accounts.oauth2.initTokenClient({
       client_id: clientId,
-      scope: SHEETS_SCOPE,
+      scope: SCOPES,
       callback: () => {}
     });
   }
@@ -283,6 +334,10 @@ async function fetchToken(interactive: boolean) {
       }
 
       if (response.error || !response.access_token) {
+        if (interactive) {
+          safeStorage()?.setItem(PICK_ACCOUNT_STORAGE_KEY, '1');
+        }
+
         finish(() => reject(new GoogleAuthRequiredError(response.error || 'Google authorization was not completed.')));
         return;
       }
@@ -291,6 +346,7 @@ async function fetchToken(interactive: boolean) {
       expiresAt = Date.now() + (response.expires_in ?? 3600) * 1000;
       persistToken();
       markGranted();
+      safeStorage()?.removeItem(PICK_ACCOUNT_STORAGE_KEY);
       scheduleSilentRefresh();
       finish(() => resolve(accessToken as string));
     };
@@ -298,7 +354,9 @@ async function fetchToken(interactive: boolean) {
     // prompt:'' reuses an existing grant silently and only shows UI when Google
     // actually needs it (e.g. the very first consent), so returning users on
     // this device aren't sent back to a login screen each launch.
-    client.requestAccessToken({ prompt: '' });
+    // After a sign-out or a refusal, ask which account instead.
+    const pickAccount = interactive && safeStorage()?.getItem(PICK_ACCOUNT_STORAGE_KEY) === '1';
+    client.requestAccessToken({ prompt: pickAccount ? 'select_account' : '' });
   });
 }
 

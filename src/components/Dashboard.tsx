@@ -1,7 +1,8 @@
 import { Bath, Bed, Calendar, Droplets, Dumbbell, FileText, Heart, Milk, Navigation, Pill, Plus, Ruler, Smile, Thermometer, TriangleAlert, Wind } from 'lucide-react';
-import { getCadenceReminders, predictNextFeed } from '../domain/cadence';
+import type { ReactNode } from 'react';
+import { getCadenceReminders, predictNextBath, predictNextFeed } from '../domain/cadence';
 import { getFirstName } from '../domain/family';
-import { formatAgeSummary, formatAgo, formatClock, formatDaysAgo, formatDuration, formatShortDate, getAgeDays, getDaysUntilDue, getDueDateStatus, isSameLocalDate } from '../domain/dates';
+import { formatAgeSummary, formatAgo, formatClock, formatClockRange, formatDaysSince, formatDuration, formatShortDate, formatWeekday, getAgeDays, getDaysUntilDue, getDueDateStatus, isSameLocalDate } from '../domain/dates';
 import { predictNextDiaper } from '../domain/diapers';
 import { classifyTemperatureC } from '../domain/reference';
 import { getActiveSleep, getDailySummary, getEventDurationMinutes, getLastEvent, getUpcomingAppointments, getUpcomingMedicationEvents } from '../domain/summary';
@@ -16,13 +17,19 @@ import { WhatToExpect } from './WhatToExpect';
 
 interface DashboardProps {
   activeTimers: ActiveTimers;
+  /**
+   * The only entry types this person may add — a caregiver's feeds and
+   * diapers. Unset is everything.
+   */
+  allowedTypes?: readonly CareEventType[];
   events: CareEvent[];
   profile: BabyProfile;
   todayKey: string;
   /** Everyone tracked, so an entry can name the parent who logged it. */
   profiles?: BabyProfile[];
   onAdd: (type: CareEventType) => void;
-  onOpenLog: (type: CareEventType) => void;
+  /** Unset where there is no Log to open — the caregiver view. */
+  onOpenLog?: (type: CareEventType) => void;
 }
 
 // Ordered by how often a caregiver reaches for it, three to a row: the awake
@@ -42,7 +49,20 @@ const actions = [
   { icon: FileText, label: 'Note', type: 'note' }
 ] satisfies Array<{ icon: typeof Plus; label: string; type: CareEventType }>;
 
-export function Dashboard({ activeTimers, events, profile, profiles = [], todayKey, onAdd, onOpenLog }: DashboardProps) {
+/** Opens the Log filtered to its type, or — with nowhere to open — is just a reading. */
+function HeroMetric({ children, className, label, onOpen }: { children: ReactNode; className: string; label: string; onOpen?: () => void }) {
+  return onOpen ? (
+    <button aria-label={label} className={`${className} hero-metric-link`} type="button" onClick={onOpen}>
+      {children}
+    </button>
+  ) : (
+    <div className={className}>{children}</div>
+  );
+}
+
+export function Dashboard({ activeTimers, allowedTypes, events, profile, profiles = [], todayKey, onAdd, onOpenLog }: DashboardProps) {
+  const canAdd = (type: CareEventType) => !allowedTypes || allowedTypes.includes(type);
+  const openLog = (type: CareEventType) => (onOpenLog ? () => onOpenLog(type) : undefined);
   // Whoever the switcher is on — an alert has to name the right baby.
   const firstName = getFirstName(profile);
   const preferredUnits = getPreferredUnits(profile);
@@ -66,6 +86,9 @@ export function Dashboard({ activeTimers, events, profile, profiles = [], todayK
   const lastDiaper = getLastEvent(events, (event) => event.type === 'diaper');
   const nextDiaper = predictNextDiaper(events);
   const lastBath = getLastEvent(events, (event) => event.type === 'bath');
+  const nextBath = predictNextBath(events);
+  const dayLabel = (dateKey: string) => (dateKey === todayKey ? 'Today' : formatWeekday(dateKey));
+  const sideSuffix = nextSide ? ` · ${nextSide}` : '';
   const cadenceReminders = getCadenceReminders(events, { feedInProgress: Boolean(activeTimers.feed) });
   const bathReminder = cadenceReminders.find((reminder) => reminder.kind === 'bath');
   const feedReminder = cadenceReminders.find((reminder) => reminder.kind === 'feed');
@@ -101,7 +124,7 @@ export function Dashboard({ activeTimers, events, profile, profiles = [], todayK
             <h1 className={isBorn || !hasDueDate ? 'age-headline' : undefined}>{isBorn ? formatAgeSummary(profile) : hasDueDate ? daysUntilDue : 'Welcome'}</h1>
             {ageDetail && <p>{ageDetail}</p>}
           </div>
-          {!isBorn && (
+          {!isBorn && canAdd('birth') && (
             <div className="hero-side">
               <button className="birth-button" type="button" onClick={() => onAdd('birth')}>
                 <Heart aria-hidden="true" />
@@ -112,41 +135,42 @@ export function Dashboard({ activeTimers, events, profile, profiles = [], todayK
         </div>
 
         <div className="hero-metrics">
-          <button aria-label="View feed log" className={`hero-metric hero-metric-link${feedReminder ? ' past-due' : ''}`} type="button" onClick={() => onOpenLog('feed')}>
+          <HeroMetric className={`hero-metric${feedReminder ? ' past-due' : ''}`} label="View feed log" onOpen={openLog('feed')}>
             <span>Last feed</span>
             <strong>{lastFeed ? formatAgo(lastFeed.startedAt).replace(/ ago$/, '') : 'None'}</strong>
             <small>{lastFeed ? formatClock(lastFeed.startedAt) : 'Nothing logged yet'}</small>
             {nextFeed && (
               <small className="hero-metric-detail">
-                {nextFeed.minutesAway > 0
-                  ? `Next:${nextSide ? ` ${nextSide}` : ''} ~${formatClock(nextFeed.expectedAt)}`
-                  : nextSide
-                    ? `Next: ${nextSide} · due`
-                    : 'Next: due'}
+                {nextFeed.minutesAway > 0 ? `Next ~${formatClockRange(nextFeed.windowStartAt, nextFeed.windowEndAt)}` : 'Due now'}
+                {sideSuffix}
               </small>
             )}
-          </button>
-          <button aria-label="View diaper log" className={`hero-metric hero-metric-link${nextDiaper && nextDiaper.minutesAway <= 0 ? ' past-due' : ''}`} type="button" onClick={() => onOpenLog('diaper')}>
+          </HeroMetric>
+          <HeroMetric className={`hero-metric${nextDiaper && nextDiaper.minutesAway <= 0 ? ' past-due' : ''}`} label="View diaper log" onOpen={openLog('diaper')}>
             <span>Last diaper</span>
             <strong>{lastDiaper ? formatAgo(lastDiaper.startedAt).replace(/ ago$/, '') : 'None'}</strong>
             <small>{lastDiaper ? formatClock(lastDiaper.startedAt) : 'Nothing logged yet'}</small>
             {nextDiaper && (
               <small className="hero-metric-detail">
-                {nextDiaper.minutesAway > 0 ? `Next ~${formatClock(nextDiaper.expectedAt)}` : 'Likely now'} · {nextDiaper.likelyKind}
+                {nextDiaper.minutesAway > 0 ? `Next ~${formatClockRange(nextDiaper.windowStartAt, nextDiaper.windowEndAt)}` : 'Likely now'} · {nextDiaper.likelyKind}
               </small>
             )}
-          </button>
-          <button aria-label="View bath log" className={`hero-metric hero-metric-link${bathReminder ? ' past-due' : ''}`} type="button" onClick={() => onOpenLog('bath')}>
+          </HeroMetric>
+          <HeroMetric className={`hero-metric${bathReminder ? ' past-due' : ''}`} label="View bath log" onOpen={openLog('bath')}>
             <span>Last bath</span>
-            <strong>{lastBath ? formatDaysAgo(lastBath.startedAt).replace(/ ago$/, '') : 'None'}</strong>
+            <strong>{lastBath ? formatDaysSince(lastBath.startedAt) : 'None'}</strong>
             <small>{lastBath ? `${formatShortDate(lastBath.startedAt)} · ${formatClock(lastBath.startedAt)}` : 'Nothing logged yet'}</small>
-            {bathReminder && <small className="hero-metric-detail">Next: ~2–3 days</small>}
-          </button>
+            {nextBath && (
+              <small className="hero-metric-detail">
+                {nextBath.due ? 'Due today' : `Next ~${dayLabel(nextBath.windowStartKey)}–${dayLabel(nextBath.windowEndKey)}`}
+              </small>
+            )}
+          </HeroMetric>
         </div>
       </section>
 
       <section className="quick-grid" aria-label="Quick add">
-        {actions.map((action) => {
+        {actions.filter((action) => canAdd(action.type)).map((action) => {
           const Icon = action.icon;
           const timer = isTimerType(action.type) ? activeTimers[action.type] : undefined;
           const elapsed = timer ? getElapsedSeconds(timer.startedAt) : null;

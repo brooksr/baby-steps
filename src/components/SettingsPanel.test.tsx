@@ -124,4 +124,20 @@ describe('SettingsPanel', () => {
     await user.click(screen.getByRole('button', { name: /^riley example/i }));
     expect(onSelectChild).toHaveBeenCalledWith(riley.id);
   });
+
+  it('signs out from the bottom of the page', async () => {
+    const user = userEvent.setup();
+    const onSignOut = vi.fn();
+
+    renderPanel({ onSignOut });
+
+    await user.click(screen.getByRole('button', { name: 'Sign out' }));
+    expect(onSignOut).toHaveBeenCalledTimes(1);
+  });
+
+  it('has no sign-out button where there is no sign-in to forget', () => {
+    renderPanel();
+
+    expect(screen.queryByRole('button', { name: 'Sign out' })).not.toBeInTheDocument();
+  });
 });

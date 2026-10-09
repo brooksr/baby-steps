@@ -1,12 +1,13 @@
-import { Archive, ArchiveRestore, BookOpen, Baby, Download, Moon, Plus, Sun, Upload, UserRound } from 'lucide-react';
+import { Archive, ArchiveRestore, BookOpen, Baby, Download, HeartHandshake, LogOut, Moon, Plus, Sun, Upload, UserRound } from 'lucide-react';
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react';
-import { getActiveProfiles, getArchivedProfiles, getCaregivers, getFirstName, isParent, type NewProfileInput } from '../domain/family';
+import { getActiveProfiles, getArchivedProfiles, getCaregiverAccounts, getCaregivers, getFirstName, isCaregiverAccount, isParent, normalizeEmail, type NewProfileInput } from '../domain/family';
 import { DEFAULT_MORNING_SHIFT, DEFAULT_NAP_WINDOW, DEFAULT_NIGHT_SHIFT, DEFAULT_SLEEP_WINDOW, formatShiftTime } from '../domain/nightShift';
 import type { ShiftPlan, ShiftResult } from '../domain/nightShift';
 import { getDueDateStatus, getTimezoneOptions } from '../domain/dates';
 import type { Theme } from '../domain/theme';
 import { babyGenderLabels, parentRoleLabels, type BabyGender, type BabyProfile, type CareEvent, type MeasurementSystem, type ParentRole, type TrackerExport, type WeightDisplay } from '../domain/types';
 import { getPreferredUnits } from '../domain/units';
+import { getInviteLink } from '../storage/familyDirectory';
 import type { StoreStatus } from '../storage/store';
 
 interface SettingsPanelProps {
@@ -14,6 +15,8 @@ interface SettingsPanelProps {
   /** The child being edited — the one the header switcher is on. */
   profile: BabyProfile;
   profiles: BabyProfile[];
+  /** The Google account this device is signed in with, when known. */
+  signedInEmail?: string;
   storeStatus: StoreStatus | null;
   theme: Theme;
   onAddChild: (input: NewProfileInput) => Promise<void>;
@@ -28,6 +31,8 @@ interface SettingsPanelProps {
   onRestoreProfile: (babyId: string) => Promise<void>;
   onSaveProfile: (profile: Partial<BabyProfile>) => Promise<void>;
   onSelectChild: (babyId: string) => Promise<void>;
+  /** Forgets this device's Google sign-in and returns to the sign-in screen. Unset hides the button. */
+  onSignOut?: () => void;
   onThemeChange: (theme: Theme) => void;
 }
 
@@ -106,6 +111,7 @@ export function SettingsPanel({
   events,
   profile,
   profiles,
+  signedInEmail,
   storeStatus,
   theme,
   onAddChild,
@@ -118,6 +124,7 @@ export function SettingsPanel({
   onRestoreProfile,
   onSaveProfile,
   onSelectChild,
+  onSignOut,
   onThemeChange
 }: SettingsPanelProps) {
   const savedUnits = getPreferredUnits(profile);
@@ -127,14 +134,25 @@ export function SettingsPanel({
   const [gender, setGender] = useState<BabyGender | ''>(profile.gender ?? '');
   const [role, setRole] = useState<ParentRole>(profile.parentRole ?? 'mom');
   const [phone, setPhone] = useState(profile.phone ?? '');
+  const [email, setEmail] = useState(profile.email ?? '');
   const [timezone, setTimezone] = useState(profile.timezone);
   const [unitSystem, setUnitSystem] = useState<MeasurementSystem>(savedUnits.system);
   const [weightDisplay, setWeightDisplay] = useState<WeightDisplay>(savedUnits.weightDisplay);
   const [status, setStatus] = useState('');
+
+  async function handleCopyInvite(familyId: string) {
+    try {
+      await navigator.clipboard.writeText(getInviteLink(familyId));
+      setStatus('Invite link copied.');
+    } catch {
+      setStatus(getInviteLink(familyId));
+    }
+  }
   const [connecting, setConnecting] = useState(false);
-  // Which add form is open, if either — a child and a parent ask for different
-  // things, so they are two forms rather than one with a kind switch on top.
-  const [adding, setAdding] = useState<'child' | 'parent' | null>(null);
+  // Which add form is open, if any — a child, a parent and a caregiver ask for
+  // different things, so they are three forms rather than one with a kind
+  // switch on top.
+  const [adding, setAdding] = useState<'caregiver' | 'child' | 'parent' | null>(null);
   const [childName, setChildName] = useState('');
   const [childDueDate, setChildDueDate] = useState('');
   const [childBirthDate, setChildBirthDate] = useState('');
@@ -143,6 +161,10 @@ export function SettingsPanel({
   const [parentRole, setParentRole] = useState<ParentRole>('mom');
   const [parentBirthDate, setParentBirthDate] = useState('');
   const [parentPhone, setParentPhone] = useState('');
+  const [parentEmail, setParentEmail] = useState('');
+  const [helperName, setHelperName] = useState('');
+  const [helperEmail, setHelperEmail] = useState('');
+  const [helperPhone, setHelperPhone] = useState('');
   // Archiving is one tap away from the wrong person, so it asks first.
   const [confirmArchiveId, setConfirmArchiveId] = useState('');
   const editingParent = isParent(profile);
@@ -161,6 +183,7 @@ export function SettingsPanel({
   const timezones = useMemo(() => getTimezoneOptions(profile.timezone), [profile.timezone]);
   const active = useMemo(() => getActiveProfiles(profiles), [profiles]);
   const archived = useMemo(() => getArchivedProfiles(profiles), [profiles]);
+  const helpers = useMemo(() => getCaregiverAccounts(profiles), [profiles]);
   const parentCount = active.filter(isParent).length;
   const childCount = active.length - parentCount;
 
@@ -177,6 +200,7 @@ export function SettingsPanel({
     setGender(profile.gender ?? '');
     setRole(profile.parentRole ?? 'mom');
     setPhone(profile.phone ?? '');
+    setEmail(profile.email ?? '');
     setTimezone(profile.timezone);
     setUnitSystem(units.system);
     setWeightDisplay(units.weightDisplay);
@@ -193,6 +217,7 @@ export function SettingsPanel({
       editingParent
         ? {
             birthDate: birthDate || undefined,
+            email: normalizeEmail(email),
             name,
             parentRole: role,
             phone: phone.trim() || undefined,
@@ -234,6 +259,10 @@ export function SettingsPanel({
     setParentRole('mom');
     setParentBirthDate('');
     setParentPhone('');
+    setParentEmail('');
+    setHelperName('');
+    setHelperEmail('');
+    setHelperPhone('');
   }
 
   async function handleAddChild(event: FormEvent<HTMLFormElement>) {
@@ -257,6 +286,7 @@ export function SettingsPanel({
     event.preventDefault();
     await onAddChild({
       birthDate: parentBirthDate || undefined,
+      email: parentEmail,
       kind: 'parent',
       name: parentName,
       parentRole,
@@ -267,6 +297,20 @@ export function SettingsPanel({
     });
     resetAddForms();
     setStatus(`${getFirstName({ name: parentName })} added.`);
+  }
+
+  async function handleAddCaregiver(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await onAddChild({
+      email: helperEmail,
+      kind: 'caregiver',
+      name: helperName,
+      phone: helperPhone.trim() || undefined,
+      preferredUnits: { system: unitSystem, weightDisplay },
+      timezone
+    });
+    resetAddForms();
+    setStatus(`${getFirstName({ name: helperName })} can now sign in with ${normalizeEmail(helperEmail)}. Share the Google Sheet with that account too.`);
   }
 
   async function handleArchive(person: BabyProfile) {
@@ -372,6 +416,18 @@ export function SettingsPanel({
               <input type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="(000) 000-0000" />
             </label>
           )}
+          {editingParent && (
+            <label className="form-grid-wide">
+              Google account
+              <input
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder={signedInEmail ?? 'name@gmail.com'}
+                autoComplete="off"
+              />
+            </label>
+          )}
           <label>
             Birth date
             <input type="date" value={birthDate} onChange={(event) => setBirthDate(event.target.value)} />
@@ -465,6 +521,38 @@ export function SettingsPanel({
           })}
         </ul>
 
+        {helpers.length > 0 && (
+          <>
+            <p className="care-form-section archived-heading"><strong>Caregivers</strong></p>
+            <ul className="child-list">
+              {helpers.map((person) => {
+                const confirming = confirmArchiveId === person.id;
+
+                return (
+                  <li key={person.id}>
+                    <span className="child-pick">
+                      <HeartHandshake aria-hidden="true" />
+                      <span>
+                        <strong>{person.name}</strong>
+                        <small>{[person.email, person.phone].filter(Boolean).join(' · ')}</small>
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      className={confirming ? 'child-archive confirming' : 'child-archive'}
+                      aria-label={confirming ? `Confirm archiving ${person.name}` : `Archive ${person.name}`}
+                      onClick={() => handleArchive(person)}
+                    >
+                      <Archive aria-hidden="true" />
+                      {confirming && <span>Archive?</span>}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </>
+        )}
+
         {archived.length > 0 && (
           <>
             <p className="care-form-section archived-heading"><strong>Archived</strong></p>
@@ -472,7 +560,7 @@ export function SettingsPanel({
               {archived.map((person) => (
                 <li key={person.id}>
                   <span className="child-pick">
-                    {isParent(person) ? <UserRound aria-hidden="true" /> : <Baby aria-hidden="true" />}
+                    {isCaregiverAccount(person) ? <HeartHandshake aria-hidden="true" /> : isParent(person) ? <UserRound aria-hidden="true" /> : <Baby aria-hidden="true" />}
                     <span>
                       <strong>{person.name}</strong>
                       <small>every entry kept</small>
@@ -548,7 +636,30 @@ export function SettingsPanel({
                 placeholder="(000) 000-0000"
               />
             </label>
+            <label className="form-grid-wide">
+              Google account
+              <input type="email" value={parentEmail} onChange={(event) => setParentEmail(event.target.value)} placeholder="name@gmail.com" />
+            </label>
             <button className="primary-button" type="submit">Add parent</button>
+            <button className="secondary-button" type="button" onClick={resetAddForms}>Cancel</button>
+          </form>
+        )}
+
+        {adding === 'caregiver' && (
+          <form className="form-grid" onSubmit={handleAddCaregiver}>
+            <label className="form-grid-wide">
+              Caregiver's name
+              <input value={helperName} onChange={(event) => setHelperName(event.target.value)} required autoFocus placeholder="Grandma" />
+            </label>
+            <label className="form-grid-wide">
+              Google account
+              <input type="email" value={helperEmail} onChange={(event) => setHelperEmail(event.target.value)} required placeholder="name@gmail.com" />
+            </label>
+            <label className="form-grid-wide">
+              Phone
+              <input type="tel" value={helperPhone} onChange={(event) => setHelperPhone(event.target.value)} placeholder="(000) 000-0000" />
+            </label>
+            <button className="primary-button" type="submit">Add caregiver</button>
             <button className="secondary-button" type="button" onClick={resetAddForms}>Cancel</button>
           </form>
         )}
@@ -563,6 +674,10 @@ export function SettingsPanel({
               <Plus aria-hidden="true" />
               <span>Add a parent</span>
             </button>
+            <button className="tool-button" type="button" onClick={() => setAdding('caregiver')}>
+              <Plus aria-hidden="true" />
+              <span>Add a caregiver</span>
+            </button>
           </div>
         )}
 
@@ -571,6 +686,14 @@ export function SettingsPanel({
           mom, her cycle. Parents are also the guardian list on the Care page and the names an entry can be logged
           under. Archiving takes someone out of the switcher and keeps everything they have: every entry stays exactly
           as it is, and you can bring them back whenever you like. Nothing here is ever deleted.
+        </p>
+        <p className="field-note">
+          A caregiver, such as a grandparent or a sitter, signs in with their own Google account and sees only the
+          children's Home, where they can log feeds and diapers, and the Care page's Key info and Emergency tabs. Once a
+          parent has a Google account saved here, anyone signing in with an account not listed gets that same caregiver
+          view. To let someone sign in at all, share the Google Sheet with their account and, while the Google app is in
+          testing, add them as a test user. Anyone who can open the sheet can read all of it, so share it only with
+          people you trust.
         </p>
       </section>
 
@@ -698,6 +821,18 @@ export function SettingsPanel({
           <span>{storeStatus?.backend === 'google-sheets' ? 'Google Sheets' : 'Local'}</span>
         </div>
         <p>{storeStatus?.message}</p>
+        {signedInEmail && <p>Signed in as {signedInEmail}.</p>}
+        {storeStatus?.familyId && (
+          <>
+            <p>
+              Family ID <code className="family-id">{storeStatus.familyId}</code>
+            </p>
+            <p>Only people with a profile here can open this family. Add someone in Family with their Google account, then send them the invite link.</p>
+            <button className="secondary-button sheet-connect" type="button" onClick={() => void handleCopyInvite(storeStatus.familyId as string)}>
+              Copy invite link
+            </button>
+          </>
+        )}
         {storeStatus?.sheetUrl && (
           <a className="sheet-link" href={storeStatus.sheetUrl} target="_blank" rel="noreferrer">
             Open sheet
@@ -709,6 +844,13 @@ export function SettingsPanel({
           </button>
         )}
       </section>
+
+      {onSignOut && (
+        <button className="secondary-button sign-out" type="button" onClick={onSignOut}>
+          <LogOut aria-hidden="true" />
+          <span>Sign out</span>
+        </button>
+      )}
 
       <p className="legal-links">
         <a href={`${import.meta.env.BASE_URL}privacy/index.html`}>Privacy Policy</a>

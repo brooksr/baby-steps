@@ -1,4 +1,4 @@
-import { ArrowLeft, Cloud, Heart, Siren } from 'lucide-react';
+import { ArrowLeft, Cloud, Heart, LogOut, Siren } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { getStoredEmergencyChild } from '../domain/family';
 import type { StoreStatus } from '../storage/store';
@@ -20,6 +20,8 @@ interface LoginSplashProps {
   onContinue: () => Promise<void>;
   onOffline: () => Promise<void>;
   onEmergencyChange: (open: boolean) => void;
+  /** Forgets the stuck Google account so a different one can sign in. Shown on the reconnect screen. */
+  onSignOut?: () => void;
 }
 
 export function LoginSplash({
@@ -31,7 +33,8 @@ export function LoginSplash({
   storeStatus,
   onContinue,
   onEmergencyChange,
-  onOffline
+  onOffline,
+  onSignOut
 }: LoginSplashProps) {
   const configured = Boolean(storeStatus?.configured);
   const [slowRestore, setSlowRestore] = useState(false);
@@ -116,6 +119,12 @@ export function LoginSplash({
               <button className="secondary-button" type="button" onClick={onOffline} disabled={loading}>
                 Continue offline
               </button>
+              {sessionExpired && onSignOut && (
+                <button className="secondary-button" type="button" onClick={onSignOut} disabled={loading}>
+                  <LogOut aria-hidden="true" />
+                  <span>Sign out · use another account</span>
+                </button>
+              )}
             </div>
 
             {!configured && <p className="splash-footnote">Google login is not configured in this build, so offline mode is available.</p>}

@@ -1,22 +1,24 @@
-import { createFamilyProfile, getActiveProfiles, isArchived, isChild, isParent, sortProfiles, type NewProfileInput } from '../domain/family';
+import { createFamilyProfile, getActiveProfiles, getProfileKind, isArchived, isCaregiverAccount, isChild, isParent, normalizeEmail, sortProfiles, type NewProfileInput } from '../domain/family';
 import { createDefaultBabyProfile } from '../domain/dates';
 import { parseIntakeTags, serializeIntakeTags } from '../domain/intakeOutput';
 import { DEFAULT_SHOPPING_CATEGORY, getCatalogSeed, isShoppingCategory, normalizeItemName } from '../domain/shopping';
 import { migrateStoredEvent, migrateStoredEvents, type StoredCareEventType } from '../domain/legacyEvents';
-import { DEFAULT_PROFILE_ID, type BabyGender, type BabyProfile, type BottleContents, type CareInfo, type CareEvent, type CreateCareEventInput, type FeedMethod, type IntakeKind, type IntakePortion, type MensesFlow, type NursingSide, type OutputKind, type ShoppingCategory, type ShoppingItem, type ShoppingStatus, type TaskItem, type TaskStatus, type ParentRole, type PreferredUnits, type TrackerExport, type TrackerSnapshot } from '../domain/types';
+import { DEFAULT_PROFILE_ID, type BabyGender, type BabyProfile, type BottleContents, type CareInfo, type CareEvent, type CreateCareEventInput, type FeedMethod, type IntakeKind, type IntakePortion, type MensesFlow, type NursingSide, type OutputKind, type ShoppingCategory, type ShoppingItem, type ShoppingStatus, type TaskItem, type TaskStatus, type ParentRole, type PreferredUnits, type ProfileKind, type TrackerExport, type TrackerSnapshot } from '../domain/types';
 import { requestGoogleSheetsAccessToken } from './googleSheetsAuth';
 import type { BabyTrackerStore, CaregiverAssignment, EventQuery, ImportOptions, ShoppingItemInput, TaskItemInput } from './store';
 
 export const GOOGLE_SHEET_ID = String(import.meta.env.VITE_GOOGLE_SHEET_ID ?? '').trim();
-export const GOOGLE_SHEET_URL = GOOGLE_SHEET_ID
-  ? `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/edit`
-  : undefined;
+export const GOOGLE_SHEET_URL = GOOGLE_SHEET_ID ? getSheetUrl(GOOGLE_SHEET_ID) : undefined;
+
+export function getSheetUrl(spreadsheetId: string) {
+  return `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`;
+}
 
 // Widen these together with `profileHeaders` — a new profile field is a new
 // column, and the range has to reach it. The range is open-ended down the
 // sheet because one row is one child, and there can be any number of them.
-const PROFILE_RANGE = 'Profile!A:O';
-const PROFILE_HEADER_RANGE = 'Profile!A1:O1';
+export const PROFILE_RANGE = 'Profile!A:Q';
+const PROFILE_HEADER_RANGE = 'Profile!A1:Q1';
 /** Row 2 is the first child; `profileRowRange` addresses the rest. */
 const FIRST_PROFILE_ROW = 2;
 const EVENTS_RANGE = 'Events!A:AN';
@@ -66,7 +68,7 @@ function columnLetter(index: number) {
 }
 
 function profileRowRange(rowNumber: number) {
-  return `Profile!A${rowNumber}:O${rowNumber}`;
+  return `Profile!A${rowNumber}:Q${rowNumber}`;
 }
 
 const eventHeaders = [
@@ -169,7 +171,9 @@ const profileHeaders = [
   'kind',
   'parentRole',
   'phone',
-  'archivedAt'
+  'archivedAt',
+  'email',
+  'familyId'
 ] as const;
 
 type ProfileColumnIndex = Map<(typeof profileHeaders)[number], number>;
@@ -287,9 +291,11 @@ function profileFromRow(row: unknown[] | undefined, index?: ProfileColumnIndex):
     dueDate: optionalDateString(record.dueDate),
     gender: optionalString(record.gender) as BabyGender | undefined,
     id: optionalString(record.id) ?? DEFAULT_PROFILE_ID,
+    email: normalizeEmail(optionalString(record.email)),
+    familyId: optionalString(record.familyId),
     // A row written before parents existed has no kind, and every one of those
     // is a child.
-    kind: optionalString(record.kind) === 'parent' ? 'parent' : 'child',
+    kind: getProfileKind({ kind: optionalString(record.kind) as ProfileKind | undefined }),
     name: optionalString(record.name) ?? fallback.name,
     parentRole: optionalString(record.parentRole) as ParentRole | undefined,
     phone: optionalString(record.phone),
@@ -728,12 +734,32 @@ function assertTrackerExport(data: TrackerExport) {
   }
 }
 
+/** A Sheets call Google refused, with the status that says why. */
+export class GoogleSheetsRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number
+  ) {
+    super(message);
+    this.name = 'GoogleSheetsRequestError';
+  }
+}
+
+/** The people on a family's sheet — what deciding whether someone belongs to it reads. */
+export async function readFamilyProfiles(api: GoogleSheetsApi) {
+  return readProfiles(await api.getValues(PROFILE_RANGE), api.spreadsheetId).profiles;
+}
+
 export class GoogleSheetsApi {
-  constructor(private readonly getAccessToken: (forceRefresh?: boolean) => Promise<string>) {}
+  /** One family is one spreadsheet; the build's own sheet is the default. */
+  constructor(
+    private readonly getAccessToken: (forceRefresh?: boolean) => Promise<string>,
+    readonly spreadsheetId: string = GOOGLE_SHEET_ID
+  ) {}
 
   private async request<T>(path: string, init: RequestInit = {}, forceRefresh = false): Promise<T> {
     const token = await this.getAccessToken(forceRefresh);
-    const response = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${GOOGLE_SHEET_ID}${path}`, {
+    const response = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${this.spreadsheetId}${path}`, {
       ...init,
       // Polling only helps if every read hits the network — a cached 200 would
       // hand back exactly the rows we already have.
@@ -753,7 +779,7 @@ export class GoogleSheetsApi {
       }
 
       const text = await response.text();
-      throw new Error(`Google Sheets request failed (${response.status}): ${text}`);
+      throw new GoogleSheetsRequestError(`Google Sheets request failed (${response.status}): ${text}`, response.status);
     }
 
     if (response.status === 204) {
@@ -808,6 +834,26 @@ export class GoogleSheetsApi {
     return (result.sheets ?? []).map((sheet) => sheet.properties?.title).filter((title): title is string => Boolean(title));
   }
 
+  /** Each tab's id and how many columns its grid has — a write past the last one is refused. */
+  async listSheetGrids() {
+    const result = await this.request<{ sheets?: Array<{ properties?: { gridProperties?: { columnCount?: number }; sheetId?: number; title?: string } }> }>(
+      '?fields=sheets.properties(sheetId,title,gridProperties.columnCount)'
+    );
+
+    return (result.sheets ?? []).map((sheet) => ({
+      columnCount: sheet.properties?.gridProperties?.columnCount ?? 0,
+      sheetId: sheet.properties?.sheetId ?? 0,
+      title: sheet.properties?.title ?? ''
+    }));
+  }
+
+  async appendColumns(sheetId: number, length: number) {
+    await this.request(':batchUpdate', {
+      body: JSON.stringify({ requests: [{ appendDimension: { dimension: 'COLUMNS', length, sheetId } }] }),
+      method: 'POST'
+    });
+  }
+
   async addSheets(titles: string[]) {
     if (titles.length === 0) {
       return;
@@ -859,20 +905,31 @@ function rowsFromValues(values: unknown[][]) {
  * exactly that row. A row without an id is a gap left by a removed child, and
  * is skipped rather than read as a nameless baby.
  */
-function profileRowsFromValues(values: unknown[][]) {
+function profileRowsFromValues(values: unknown[][], familyId?: string) {
   const [headerRow, ...rows] = values;
   const columns = columnIndex(profileHeaders, headerRow);
   const idColumn = columns.get('id') ?? 0;
+  const familyColumnNamed = hasFamilyHeader(headerRow);
 
   return rows
     .map((row, index) => ({ row: row ?? [], rowNumber: index + FIRST_PROFILE_ROW }))
     .filter(({ row }) => Boolean(optionalString(row[idColumn])))
-    .map(({ row, rowNumber }) => ({ profile: profileFromRow(row, columns), rowNumber }));
+    .map(({ row, rowNumber }) => {
+      const profile = profileFromRow(row, columns);
+      // Every row on a family's sheet belongs to that family. The column is only
+      // read once its header says so: the live sheet once had stray cells past
+      // the last column, and those must not pass for a family id.
+      return { profile: { ...profile, familyId: familyId ?? (familyColumnNamed ? profile.familyId : undefined) }, rowNumber };
+    });
+}
+
+function hasFamilyHeader(headerRow: unknown[] | undefined) {
+  return (headerRow ?? []).some((cell) => typeof cell === 'string' && cell.trim() === 'familyId');
 }
 
 /** The children in switcher order, and where each one's row is. */
-function readProfiles(values: unknown[][]) {
-  const rows = profileRowsFromValues(values);
+function readProfiles(values: unknown[][], familyId?: string) {
+  const rows = profileRowsFromValues(values, familyId);
   const rowNumbers = new Map(rows.map(({ profile, rowNumber }) => [profile.id, rowNumber]));
   const profiles = sortProfiles(rows.map(({ profile }) => profile));
   const nextRow = rows.reduce((highest, { rowNumber }) => Math.max(highest, rowNumber + 1), FIRST_PROFILE_ROW);
@@ -888,7 +945,8 @@ function readProfiles(values: unknown[][]) {
 function pickProfile(profiles: BabyProfile[], babyId?: string) {
   const named = profiles.find((profile) => profile.id === babyId);
 
-  if (named && !isArchived(named)) {
+  // A caregiver sign-in has no screen of its own to land on.
+  if (named && !isArchived(named) && !isCaregiverAccount(named)) {
     return named;
   }
 
@@ -915,13 +973,17 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
    * range that would fail the whole batch read on a sheet that predates them.
    */
   let listsReady = false;
+  /** This sheet's id, which is its family's — stamped on every profile row read or written. */
+  const familyId: string | undefined = api.spreadsheetId || undefined;
+  const read = (values: unknown[][]) => readProfiles(values, familyId);
+  const toRow = (profile: BabyProfile) => profileToRow(familyId ? { ...profile, familyId } : profile);
 
   async function listRows() {
     return rowsFromValues(await api.getValues(EVENTS_RANGE));
   }
 
   async function listProfiles() {
-    const { profiles } = readProfiles(await api.getValues(PROFILE_RANGE));
+    const { profiles } = read(await api.getValues(PROFILE_RANGE));
     return profiles;
   }
 
@@ -935,9 +997,31 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
       return;
     }
 
+    await ensureColumns();
     await api.updateValues('Events!A1:AN1', [[...eventHeaders]]);
     await api.updateValues(PROFILE_HEADER_RANGE, [[...profileHeaders]]);
     headersWritten = true;
+  }
+
+  /**
+   * Widens a tab that is narrower than our columns. A sheet's grid only grows
+   * when asked: a tab sized to yesterday's last column refuses a write to a new
+   * one ("exceeds grid limits") — which is how adding `familyId` in column Q
+   * failed on a Profile tab that stopped at P.
+   */
+  async function ensureColumns() {
+    const needed = new Map([
+      ['Events', eventHeaders.length],
+      ['Profile', profileHeaders.length]
+    ]);
+
+    for (const grid of await api.listSheetGrids()) {
+      const want = needed.get(grid.title);
+
+      if (want && grid.columnCount < want) {
+        await api.appendColumns(grid.sheetId, want - grid.columnCount);
+      }
+    }
   }
 
   /**
@@ -957,6 +1041,34 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
     const firstExtra = columnLetter(profileHeaders.length);
     const lastExtra = columnLetter(profileHeaders.length + extras.length - 1);
     await api.clearValues(`Profile!${firstExtra}1:${lastExtra}1`);
+  }
+
+  /**
+   * Gives every person on the sheet its family id, down that one column and
+   * nothing else. Until the header names the column, whatever sits in it is a
+   * leftover from before (the live sheet once had stray cells past its last
+   * column), so it is replaced; after that only a blank or a foreign id is.
+   * Runs from `initialize`, the one read that may write.
+   */
+  async function backfillFamilyIds(values: unknown[][]) {
+    if (!familyId) {
+      return;
+    }
+
+    const [headerRow, ...rows] = values;
+    const named = hasFamilyHeader(headerRow);
+    const columns = columnIndex(profileHeaders, headerRow);
+    const idColumn = columns.get('id') ?? 0;
+    const familyColumn = named ? (columns.get('familyId') as number) : profileHeaders.indexOf('familyId');
+    const column = rows.map((row) => [optionalString(row?.[idColumn]) ? familyId : named ? normalizeCell(row?.[familyColumn]) : '']);
+    const changed = column.some(([value], index) => value !== normalizeCell(rows[index]?.[familyColumn]));
+
+    if (!changed) {
+      return;
+    }
+
+    const letter = columnLetter(familyColumn);
+    await api.updateValues(`Profile!${letter}${FIRST_PROFILE_ROW}:${letter}${column.length + 1}`, column);
   }
 
   /**
@@ -1114,17 +1226,23 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
 
   async function initialize() {
     const values = await api.getValues(PROFILE_RANGE);
-    const { profiles } = readProfiles(values);
+    const { profiles } = read(values);
     const profile = profiles[0] ?? createDefaultBabyProfile();
 
     // Seed the first child only when the sheet has none. Writing it back on
     // every read would clobber a profile edit another device made since we read
     // it — and reads happen on every poll now.
     if (profiles.length === 0) {
-      await api.updateValues(profileRowRange(FIRST_PROFILE_ROW), [profileToRow(profile)]);
+      await api.updateValues(profileRowRange(FIRST_PROFILE_ROW), [toRow(profile)]);
     }
 
+    // Headers first: that pass also widens a tab too narrow for the new column.
     await ensureHeaders();
+
+    if (profiles.length > 0) {
+      await backfillFamilyIds(values);
+    }
+
     await clearStrayHeaders(values[0]);
     // Creates the list tabs on a sheet that predates them, so the next poll can
     // read all four ranges in one request.
@@ -1150,7 +1268,7 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
       ? [PROFILE_RANGE, EVENTS_RANGE, SHOPPING_RANGE, TASKS_RANGE]
       : [PROFILE_RANGE, EVENTS_RANGE];
     const [profileValues, eventValues, shoppingValues, taskValues] = await api.batchGetValues(ranges);
-    const { profiles } = readProfiles(profileValues);
+    const { profiles } = read(profileValues);
     const profile = pickProfile(profiles, query.babyId);
     const all = rowsFromValues(eventValues).map((row) => row.event);
     // A parent's report is partly about the babies, so their rows come along.
@@ -1175,7 +1293,7 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
     // One read, not `initialize()`'s read plus this one: an empty sheet needs no
     // seeding here, since the row this write lands on is the row it would seed.
     await ensureHeaders();
-    const { nextRow, profiles, rowNumbers } = readProfiles(await api.getValues(PROFILE_RANGE));
+    const { nextRow, profiles, rowNumbers } = read(await api.getValues(PROFILE_RANGE));
     const existing = pickProfile(profiles, profilePatch.id);
     const targetId = profilePatch.id ?? existing.id;
     const base = existing.id === targetId ? existing : { ...createDefaultBabyProfile(), id: targetId };
@@ -1189,18 +1307,18 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
       updatedAt: timestamp
     };
 
-    await api.updateValues(profileRowRange(rowNumbers.get(targetId) ?? nextRow), [profileToRow(profile)]);
+    await api.updateValues(profileRowRange(rowNumbers.get(targetId) ?? nextRow), [toRow(profile)]);
     return profile;
   }
 
   async function addProfile(input: NewProfileInput) {
     await ensureHeaders();
-    const { nextRow, profiles } = readProfiles(await api.getValues(PROFILE_RANGE));
+    const { nextRow, profiles } = read(await api.getValues(PROFILE_RANGE));
     const profile = createFamilyProfile(input, profiles);
 
     // Written to the next free row rather than appended, so a gap left by a
     // removed child is filled instead of drifting down the sheet forever.
-    await api.updateValues(profileRowRange(nextRow), [profileToRow({ ...profile, syncState: 'synced' })]);
+    await api.updateValues(profileRowRange(nextRow), [toRow({ ...profile, syncState: 'synced' })]);
     return { ...profile, syncState: 'synced' as const };
   }
 
@@ -1210,7 +1328,7 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
    * never a deletion, whatever the reason for it.
    */
   async function setArchived(id: string, archivedAt: string | undefined) {
-    const { profiles, rowNumbers } = readProfiles(await api.getValues(PROFILE_RANGE));
+    const { profiles, rowNumbers } = read(await api.getValues(PROFILE_RANGE));
     const rowNumber = rowNumbers.get(id);
     const existing = profiles.find((person) => person.id === id);
 
@@ -1219,7 +1337,7 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
     }
 
     await api.updateValues(profileRowRange(rowNumber), [
-      profileToRow({ ...existing, archivedAt, syncState: 'synced', updatedAt: new Date().toISOString() })
+      toRow({ ...existing, archivedAt, syncState: 'synced', updatedAt: new Date().toISOString() })
     ]);
   }
 
@@ -1318,7 +1436,7 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
     // `snapshot`, which already knows how to read a sheet whose list tabs have
     // not been created yet.
     const [profileValues, eventValues] = await api.batchGetValues([PROFILE_RANGE, EVENTS_RANGE]);
-    const { profiles } = readProfiles(profileValues);
+    const { profiles } = read(profileValues);
     const events = rowsFromValues(eventValues)
       .map((row) => row.event)
       .sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime());

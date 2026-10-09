@@ -59,12 +59,17 @@ function makeApi() {
 
   return {
     addSheets: vi.fn().mockResolvedValue(undefined),
+    appendColumns: vi.fn().mockResolvedValue(undefined),
     appendValues: vi.fn().mockResolvedValue(undefined),
     batchGetValues,
     clearValues: vi.fn().mockResolvedValue(undefined),
     deleteEventRow: vi.fn().mockResolvedValue(undefined),
     getValues,
     listSheetTitles: vi.fn().mockResolvedValue(['Events', 'Profile', 'Shopping', 'Tasks']),
+    listSheetGrids: vi.fn().mockResolvedValue([
+      { columnCount: 40, sheetId: 0, title: 'Events' },
+      { columnCount: 26, sheetId: 1, title: 'Profile' }
+    ]),
     updateValues: vi.fn().mockResolvedValue(undefined)
   } as unknown as GoogleSheetsApi & {
     appendValues: ReturnType<typeof vi.fn>;
@@ -134,8 +139,8 @@ describe('Google Sheets tracker store', () => {
     // Header rows only — never the profile row itself.
     expect(api.updateValues).toHaveBeenCalledTimes(2);
     expect(api.updateValues).toHaveBeenCalledWith('Events!A1:AN1', [expect.arrayContaining(['id', 'babyId', 'type', 'poopSize'])]);
-    expect(api.updateValues).toHaveBeenCalledWith('Profile!A1:O1', [expect.arrayContaining(['id', 'name', 'gender', 'preferredUnits'])]);
-    expect(api.updateValues).not.toHaveBeenCalledWith('Profile!A2:O2', expect.anything());
+    expect(api.updateValues).toHaveBeenCalledWith('Profile!A1:Q1', [expect.arrayContaining(['id', 'name', 'gender', 'preferredUnits'])]);
+    expect(api.updateValues).not.toHaveBeenCalledWith('Profile!A2:Q2', expect.anything());
   });
 
   it('creates missing household tabs and seeds the supplied shopping history', async () => {
@@ -213,7 +218,7 @@ describe('Google Sheets tracker store', () => {
     const saved = await store.saveProfile({ gender: 'girl' });
 
     expect(saved.gender).toBe('girl');
-    expect(api.updateValues).toHaveBeenCalledWith('Profile!A2:O2', [expect.arrayContaining(['avery-example', 'Avery Example', 'girl'])]);
+    expect(api.updateValues).toHaveBeenCalledWith('Profile!A2:Q2', [expect.arrayContaining(['avery-example', 'Avery Example', 'girl'])]);
   });
 
   it('round-trips preferred units through the profile row', async () => {
@@ -224,7 +229,7 @@ describe('Google Sheets tracker store', () => {
 
     expect(saved.preferredUnits).toEqual({ system: 'metric', weightDisplay: 'ounces' });
     expect(api.updateValues).toHaveBeenCalledWith(
-      'Profile!A2:O2',
+      'Profile!A2:Q2',
       [expect.arrayContaining(['{"system":"metric","weightDisplay":"ounces"}'])]
     );
   });
@@ -337,7 +342,7 @@ describe('Google Sheets API writes', () => {
     });
 
     const api = new GoogleSheetsApi(async () => 'token');
-    await api.updateValues('Profile!A2:O2', [['avery-example']]);
+    await api.updateValues('Profile!A2:Q2', [['avery-example']]);
     await api.appendValues('Events!A:AN', [['event_1']]);
 
     expect(urls).toHaveLength(2);
@@ -416,8 +421,8 @@ describe('Google Sheets API writes', () => {
     const saved = await store.saveProfile({ birthDate: '2028-03-06', id: 'riley-example' });
 
     expect(saved.name).toBe('Riley Example');
-    expect(api.updateValues).toHaveBeenCalledWith('Profile!A3:O3', [expect.arrayContaining(['riley-example', 'Riley Example', '2028-03-06'])]);
-    expect(api.updateValues).not.toHaveBeenCalledWith('Profile!A2:O2', expect.anything());
+    expect(api.updateValues).toHaveBeenCalledWith('Profile!A3:Q3', [expect.arrayContaining(['riley-example', 'Riley Example', '2028-03-06'])]);
+    expect(api.updateValues).not.toHaveBeenCalledWith('Profile!A2:Q2', expect.anything());
   });
 
   it('adds a sibling on the next free row', async () => {
@@ -427,7 +432,7 @@ describe('Google Sheets API writes', () => {
     const added = await store.addProfile({ dueDate: '2028-03-04', name: 'Riley Example' });
 
     expect(added.id).toBe('riley-example');
-    expect(api.updateValues).toHaveBeenCalledWith('Profile!A3:O3', [expect.arrayContaining(['riley-example', 'Riley Example', '2028-03-04'])]);
+    expect(api.updateValues).toHaveBeenCalledWith('Profile!A3:Q3', [expect.arrayContaining(['riley-example', 'Riley Example', '2028-03-04'])]);
   });
 
   // Archiving stamps the row and changes nothing else — no cleared row, no
@@ -440,9 +445,10 @@ describe('Google Sheets API writes', () => {
 
     expect(api.clearValues).not.toHaveBeenCalled();
     expect(api.deleteEventRow).not.toHaveBeenCalled();
-    const written = api.updateValues.mock.calls.find((call: unknown[]) => call[0] === 'Profile!A2:O2')?.[1][0];
+    const written = api.updateValues.mock.calls.find((call: unknown[]) => call[0] === 'Profile!A2:Q2')?.[1][0];
     expect(written[0]).toBe('avery-example');
-    expect(written[written.length - 1]).toBeTruthy();
+    // `archivedAt` is column O, the fifteenth.
+    expect(written[14]).toBeTruthy();
   });
 
   it('brings an archived profile back', async () => {
@@ -451,8 +457,8 @@ describe('Google Sheets API writes', () => {
 
     await store.restoreProfile('avery-example');
 
-    const written = api.updateValues.mock.calls.find((call: unknown[]) => call[0] === 'Profile!A2:O2')?.[1][0];
-    expect(written[written.length - 1]).toBe('');
+    const written = api.updateValues.mock.calls.find((call: unknown[]) => call[0] === 'Profile!A2:Q2')?.[1][0];
+    expect(written[14]).toBe('');
   });
 
   // A profile row written before parents existed has no `kind` column at all,
@@ -486,7 +492,7 @@ describe('Google Sheets API writes', () => {
     const added = await store.addProfile({ birthDate: '1994-05-11', kind: 'parent', name: 'Casey Example', parentRole: 'mom' });
 
     expect(added.kind).toBe('parent');
-    expect(api.updateValues).toHaveBeenCalledWith('Profile!A3:O3', [expect.arrayContaining(['casey-example', 'Casey Example', 'parent', 'mom'])]);
+    expect(api.updateValues).toHaveBeenCalledWith('Profile!A3:Q3', [expect.arrayContaining(['casey-example', 'Casey Example', 'parent', 'mom'])]);
   });
 
   it('round-trips a period entry through the flow column', async () => {
@@ -598,8 +604,8 @@ describe('Google Sheets API writes', () => {
       return api;
     }
 
-    const base = ['id', 'name', 'dueDate', 'birthDate', 'timezone', 'createdAt', 'updatedAt', 'syncState', 'careInfo', 'gender', 'preferredUnits', 'kind', 'parentRole', 'phone', 'archivedAt'];
-    const casey = ['casey-example', 'Casey Example', '', '1994-05-11', 'America/Los_Angeles', '2026-09-10T16:15:00.000Z', '2026-09-10T16:15:00.000Z', 'synced', '', '', '', 'parent', 'mom', '5550101000', ''];
+    const base = ['id', 'name', 'dueDate', 'birthDate', 'timezone', 'createdAt', 'updatedAt', 'syncState', 'careInfo', 'gender', 'preferredUnits', 'kind', 'parentRole', 'phone', 'archivedAt', 'email'];
+    const casey = ['casey-example', 'Casey Example', '', '1994-05-11', 'America/Los_Angeles', '2026-09-10T16:15:00.000Z', '2026-09-10T16:15:00.000Z', 'synced', '', '', '', 'parent', 'mom', '5550101000', '', ''];
 
     it('ignores a duplicate header past the end', async () => {
       const api = withHeaders([...base, 'parentRole'], casey);
@@ -607,6 +613,15 @@ describe('Google Sheets API writes', () => {
       const profiles = await createGoogleSheetsBabyTrackerStore(api).listProfiles();
 
       expect(profiles[0]).toMatchObject({ kind: 'parent', name: 'Casey Example', parentRole: 'mom' });
+    });
+
+    it('reads a caregiver sign-in and its email', async () => {
+      const nan = ['nan', 'Nan', '', '', 'America/Los_Angeles', '2026-09-10T16:15:00.000Z', '2026-09-10T16:15:00.000Z', 'synced', '', '', '', 'caregiver', '', '', '', ' Nan@Example.com'];
+      const api = withHeaders(base, nan);
+
+      const profiles = await createGoogleSheetsBabyTrackerStore(api).listProfiles();
+
+      expect(profiles[0]).toMatchObject({ email: 'nan@example.com', kind: 'caregiver', name: 'Nan' });
     });
 
     it('follows a column someone inserted rather than shifting every field', async () => {
@@ -631,13 +646,72 @@ describe('Google Sheets API writes', () => {
     });
 
     it('blanks a stray duplicate header, and leaves an unrecognised one alone', async () => {
-      const duplicated = withHeaders([...base, 'parentRole'], casey);
+      const duplicated = withHeaders([...base, 'familyId', 'parentRole'], casey);
       await createGoogleSheetsBabyTrackerStore(duplicated).initialize();
-      expect(duplicated.clearValues).toHaveBeenCalledWith('Profile!P1:P1');
+      expect(duplicated.clearValues).toHaveBeenCalledWith('Profile!R1:R1');
 
-      const theirs = withHeaders([...base, 'nannyPhone'], casey);
+      const theirs = withHeaders([...base, 'familyId', 'nannyPhone'], casey);
       await createGoogleSheetsBabyTrackerStore(theirs).initialize();
       expect(theirs.clearValues).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('family id', () => {
+    function onSheet(header: string[], row: unknown[]) {
+      const api = makeApi();
+      api.getValues.mockImplementation(async (range: string) => (range.startsWith('Profile') ? [header, row] : []));
+      api.batchGetValues.mockImplementation(async (ranges: string[]) => Promise.all(ranges.map((range) => api.getValues(range))));
+      Object.assign(api, { spreadsheetId: 'sheet-123' });
+      return api;
+    }
+
+    const header = ['id', 'name', 'dueDate', 'birthDate', 'timezone', 'createdAt', 'updatedAt', 'syncState', 'careInfo', 'gender', 'preferredUnits', 'kind', 'parentRole', 'phone', 'archivedAt', 'email'];
+    const casey = ['casey-example', 'Casey Example', '', '', 'America/Los_Angeles', '2026-09-10T16:15:00.000Z', '2026-09-10T16:15:00.000Z', 'synced', '', '', '', 'parent', 'mom', '', '', 'casey@example.com'];
+
+    // The live sheet once had a duplicate parentRole header where familyId now
+    // goes; the value under it must not pass for a family.
+    it('gives every row its sheet as family, never a stray cell', async () => {
+      const api = onSheet([...header, 'parentRole'], [...casey, 'mom']);
+
+      const profiles = await createGoogleSheetsBabyTrackerStore(api).listProfiles();
+
+      expect(profiles[0].familyId).toBe('sheet-123');
+    });
+
+    it('backfills the column once, then leaves it alone', async () => {
+      const stale = onSheet([...header, 'parentRole'], [...casey, 'mom']);
+      await createGoogleSheetsBabyTrackerStore(stale).initialize();
+      expect(stale.updateValues).toHaveBeenCalledWith('Profile!Q2:Q2', [['sheet-123']]);
+
+      const done = onSheet([...header, 'familyId'], [...casey, 'sheet-123']);
+      await createGoogleSheetsBabyTrackerStore(done).initialize();
+      expect(done.updateValues).not.toHaveBeenCalledWith('Profile!Q2:Q2', expect.anything());
+    });
+
+    // The live Profile tab stopped at column P, and Sheets refuses a write past
+    // a tab's last column rather than growing it.
+    it('widens a tab too narrow for the family column before writing to it', async () => {
+      const api = onSheet([...header, 'parentRole'], [...casey, 'mom']);
+      (api as unknown as { listSheetGrids: ReturnType<typeof vi.fn> }).listSheetGrids.mockResolvedValue([
+        { columnCount: 40, sheetId: 0, title: 'Events' },
+        { columnCount: 16, sheetId: 7, title: 'Profile' }
+      ]);
+
+      await createGoogleSheetsBabyTrackerStore(api).initialize();
+
+      const appendColumns = (api as unknown as { appendColumns: ReturnType<typeof vi.fn> }).appendColumns;
+      expect(appendColumns).toHaveBeenCalledWith(7, 1);
+      expect(appendColumns.mock.invocationCallOrder[0]).toBeLessThan(
+        api.updateValues.mock.invocationCallOrder[api.updateValues.mock.calls.findIndex((call: unknown[]) => call[0] === 'Profile!Q2:Q2')]
+      );
+    });
+
+    it('stamps the family on a profile it writes', async () => {
+      const api = onSheet([...header, 'familyId'], [...casey, 'sheet-123']);
+
+      await createGoogleSheetsBabyTrackerStore(api).saveProfile({ id: 'casey-example', phone: '5550101000' });
+
+      expect(api.updateValues).toHaveBeenCalledWith('Profile!A2:Q2', [expect.arrayContaining(['casey-example', 'sheet-123'])]);
     });
   });
 
@@ -648,7 +722,7 @@ describe('Google Sheets API writes', () => {
     const saved = await store.saveProfile({ id: 'avery-example', phone: '5550101000' });
 
     expect(saved.phone).toBe('5550101000');
-    expect(api.updateValues).toHaveBeenCalledWith('Profile!A2:O2', [expect.arrayContaining(['5550101000'])]);
+    expect(api.updateValues).toHaveBeenCalledWith('Profile!A2:Q2', [expect.arrayContaining(['5550101000'])]);
   });
 
   // Attributing months of history a row at a time would be hundreds of round

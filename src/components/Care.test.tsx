@@ -50,3 +50,13 @@ describe('Care tabs', () => {
     expect(screen.getByText(/^5 abdominal thrusts/)).toBeInTheDocument();
   });
 });
+
+describe('Care in the caregiver view', () => {
+  it('offers only Key info and Emergency, and Key info is read-only', () => {
+    const profile = bornDaysAgo(60);
+    render(<Care caregiverView events={[]} profile={profile} profiles={[profile]} onEdit={vi.fn()} onSaveProfile={vi.fn()} onToggle={vi.fn()} />);
+
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['Key info', 'Emergency']);
+    expect(screen.queryByRole('button', { name: 'Edit care info' })).toBeNull();
+  });
+});

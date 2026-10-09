@@ -1,4 +1,4 @@
-import { formatDaysAgo, formatDuration, getDaysAgo } from './dates';
+import { addDaysToKey, formatDaysAgo, formatDuration, getDaysAgo, getLocalDateKey } from './dates';
 import { getLastEvent } from './summary';
 import type { CareEvent } from './types';
 
@@ -58,6 +58,31 @@ export function predictNextFeed(events: CareEvent[], now = new Date()): FeedPred
     minutesAway: Math.round((expectedAt - now.getTime()) / MINUTE),
     windowEndAt: new Date(lastFeedAt + FEED_CADENCE_HOURS.max * 60 * MINUTE).toISOString(),
     windowStartAt: new Date(lastFeedAt + FEED_CADENCE_HOURS.min * 60 * MINUTE).toISOString()
+  };
+}
+
+export interface BathPrediction {
+  /** The window has run out — the same moment the bath reminder appears. */
+  due: boolean;
+  /** Local day keys, inclusive: the usual 2–3 days on from the last bath. */
+  windowEndKey: string;
+  windowStartKey: string;
+}
+
+/** The usual 2–3 day bath rhythm, counted in calendar days from the last bath. */
+export function predictNextBath(events: CareEvent[], now = new Date()): BathPrediction | null {
+  const lastBath = getLastEvent(events, (event) => event.type === 'bath');
+
+  if (!lastBath) {
+    return null;
+  }
+
+  const lastKey = getLocalDateKey(lastBath.startedAt);
+
+  return {
+    due: getDaysAgo(lastBath.startedAt, now) >= BATH_CADENCE_DAYS.max,
+    windowEndKey: addDaysToKey(lastKey, BATH_CADENCE_DAYS.max),
+    windowStartKey: addDaysToKey(lastKey, BATH_CADENCE_DAYS.min)
   };
 }
 
