@@ -2,11 +2,12 @@ import { Play, Square, X } from 'lucide-react';
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { addMinutes, fromDateTimeInputValue, getAgeDays, toDateTimeInputValue } from '../domain/dates';
 import { DEFAULT_STOOL_COLOR } from '../domain/diaperDetails';
+import { getStoredFeedMethod, storeFeedMethod } from '../domain/feedMethod';
 import { CAFFEINE_TAG, INTAKE_KINDS, OUTPUT_KINDS, hasStoolDetail, parseIntakeTags } from '../domain/intakeOutput';
 import { getBristolScale, getFoodTriggers, getMoodScale, getStoolColorById, getStoolColors, isStoolColorFlagged } from '../domain/reference';
 import { getCaregiverAccounts, getCaregivers, getStoredCaregiverId, isParent, storeCaregiverId } from '../domain/family';
 import { type ActiveTimers, type TimerType, formatElapsed, getElapsedSeconds, isTimerType } from '../domain/timers';
-import { careEventLabels, intakeKindLabels, intakePortionLabels, mensesFlowLabels, outputKindLabels, type BabyProfile, type CareEvent, type CareEventType, type CreateCareEventInput, type DiaperKind, type DiaperPoopSize, type FeedMethod, type IntakeKind, type IntakePortion, type MensesFlow, type OutputKind } from '../domain/types';
+import { careEventLabels, intakeKindLabels, intakePortionLabels, mensesFlowLabels, outputKindLabels, type BabyProfile, type CareEvent, type CareEventType, type CreateCareEventInput, type DiaperKind, type DiaperPoopSize, type FeedMethod, type IntakeKind, type IntakePortion, type MeasurementSystem, type MensesFlow, type OutputKind } from '../domain/types';
 import { getPreferredUnits, toStoredLength, toStoredVolume, toStoredWeight, toUnitLength, toUnitVolume, toUnitWeight } from '../domain/units';
 
 const moodLevels = getMoodScale();
@@ -62,6 +63,13 @@ function numberInputValue(value: number | undefined) {
 
 function roundedInputValue(value: number, fractionDigits: number) {
   return String(Number(value.toFixed(fractionDigits)));
+}
+
+// The household's stated bottle amount, or 2 oz when none is set.
+function defaultBottleAmount(bottleAmountOz: number | undefined, unitSystem: MeasurementSystem) {
+  return bottleAmountOz != null
+    ? roundedInputValue(toUnitVolume(bottleAmountOz, unitSystem), unitSystem === 'metric' ? 0 : 2)
+    : roundedInputValue(toUnitVolume(2, unitSystem), 0);
 }
 
 export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, foodNames = [], loggedBy, onClose, onSave, onTimerStart, onTimerStop, presetKind, profile, profiles = [] }: QuickAddDialogProps) {
@@ -139,18 +147,20 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, fo
     // An edit keeps whoever was recorded — including nobody. A new entry opens
     // on this device's caregiver.
     setCaregiverId(editEvent ? (editEvent.caregiverId ?? '') : (getStoredCaregiverId() ?? ''));
-    setDurationMinutes(eventType === 'sleep' ? '60' : eventType === 'tummytime' ? '5' : '15');
+    // A feed opens on the method this device saved last — the one who nurses
+    // and the one who gives bottles each land on their own tab. Only a bottle
+    // opens with an amount; a nursing session rarely has a known volume.
+    const openingFeedMethod = getStoredFeedMethod();
+    const bottleFeed = eventType === 'feed' && openingFeedMethod === 'bottle';
+    setDurationMinutes(eventType === 'sleep' ? '60' : eventType === 'tummytime' ? '5' : bottleFeed ? '' : '15');
     setSide('left');
-    // A feed opens on nursing, but keeps the household's stated bottle amount
-    // ready for the moment Bottle is selected.
-    const bottleAmountOz = profile?.careInfo?.bottleAmountOz;
     setAmountOz(eventType === 'pump'
       ? roundedInputValue(toUnitVolume(3, unitSystem), 0)
-      : eventType === 'feed' && bottleAmountOz != null
-        ? roundedInputValue(toUnitVolume(bottleAmountOz, unitSystem), unitSystem === 'metric' ? 0 : 2)
+      : bottleFeed
+        ? defaultBottleAmount(profile?.careInfo?.bottleAmountOz, unitSystem)
         : '');
     setContents('breastmilk');
-    setFeedMethod('nursing');
+    setFeedMethod(eventType === 'feed' ? openingFeedMethod : 'nursing');
     setDiaperKind('wet');
     setDiaperColor('');
     setPoopSize('');
@@ -321,7 +331,7 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, fo
       setDurationMinutes((current) => current || '15');
     } else {
       setDurationMinutes('');
-      setAmountOz((current) => current || roundedInputValue(toUnitVolume(2, unitSystem), 0));
+      setAmountOz((current) => current || defaultBottleAmount(profile?.careInfo?.bottleAmountOz, unitSystem));
     }
   }
 
@@ -547,6 +557,10 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, fo
 
         payload = { ...editEvent, notes: trimmedNotes, startedAt: startedAtIso } as CreateCareEventInput;
         break;
+    }
+
+    if (payload.type === 'feed' && !editing) {
+      storeFeedMethod(payload.method);
     }
 
     if (showCaregiver) {

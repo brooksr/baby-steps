@@ -7,6 +7,12 @@ import type { FeedEvent } from '../domain/types';
 import { QuickAddDialog } from './QuickAddDialog';
 
 describe('QuickAddDialog', () => {
+  // The feed method is remembered per device; one test's bottle must not open
+  // the next one on Bottle.
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
   // A parent's own input. The free-text box says what it was; the tags say what
   // it counts as, and the tags are the half a later association pass can group.
   it('submits an input with its food-group tags', async () => {
@@ -131,6 +137,31 @@ describe('QuickAddDialog', () => {
     await user.click(screen.getByRole('radio', { name: /bottle/i }));
 
     expect(screen.getByLabelText(/ounces/i)).toHaveValue(4);
+  });
+
+  it('opens a nursing feed with no amount, even with a bottle amount saved', () => {
+    const profile = { ...createDefaultBabyProfile(), careInfo: { bottleAmountOz: 4 } };
+
+    render(<QuickAddDialog activeTimers={{}} eventType="feed" onClose={vi.fn()} onSave={vi.fn()} onTimerStart={vi.fn()} onTimerStop={vi.fn()} profile={profile} />);
+
+    expect(screen.getByRole('radio', { name: /nursing/i })).toBeChecked();
+    expect(screen.getByLabelText(/ounces/i)).toHaveValue(null);
+  });
+
+  it('opens on the method this device saved last', async () => {
+    const user = userEvent.setup();
+    const profile = { ...createDefaultBabyProfile(), careInfo: { bottleAmountOz: 4 } };
+
+    const first = render(<QuickAddDialog activeTimers={{}} eventType="feed" onClose={vi.fn()} onSave={vi.fn().mockResolvedValue(undefined)} onTimerStart={vi.fn()} onTimerStop={vi.fn()} profile={profile} />);
+    await user.click(screen.getByRole('radio', { name: /bottle/i }));
+    await user.click(screen.getByRole('button', { name: /save/i }));
+    first.unmount();
+
+    render(<QuickAddDialog activeTimers={{}} eventType="feed" onClose={vi.fn()} onSave={vi.fn()} onTimerStart={vi.fn()} onTimerStop={vi.fn()} profile={profile} />);
+
+    expect(screen.getByRole('radio', { name: /bottle/i })).toBeChecked();
+    expect(screen.getByLabelText(/ounces/i)).toHaveValue(4);
+    expect(screen.getByLabelText(/minutes/i)).toHaveValue(null);
   });
 
   it('leaves the amount off a nursing feeding', async () => {
