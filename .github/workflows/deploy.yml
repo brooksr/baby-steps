@@ -48,6 +48,47 @@ jobs:
         with:
           path: ./dist
 
+  # The same build served from the site root, for the Raspberry Pi. The Pi polls
+  # this rolling release and installs each new asset (see the rpi project's
+  # scripts/babysteps/), so nothing has to reach into the home network.
+  pi:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build -- --base /
+        env:
+          VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
+          VITE_GOOGLE_SHEET_ID: ${{ vars.VITE_GOOGLE_SHEET_ID }}
+          VITE_GOOGLE_CLOUD_PROJECT: ${{ vars.VITE_GOOGLE_CLOUD_PROJECT }}
+          VITE_GOOGLE_OAUTH_PUBLISHED: ${{ vars.VITE_GOOGLE_OAUTH_PUBLISHED }}
+          VITE_GOOGLE_API_KEY: ${{ vars.VITE_GOOGLE_API_KEY }}
+          VITE_GOOGLE_APP_ID: ${{ vars.VITE_GOOGLE_APP_ID }}
+
+      - name: Publish pi-latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "{\"sha\":\"${GITHUB_SHA}\",\"builtAt\":\"$(date -u +%FT%TZ)\"}" > dist/version.json
+          tar -czf babysteps-pi.tar.gz -C dist .
+          gh release view pi-latest >/dev/null 2>&1 \
+            || gh release create pi-latest --prerelease --title 'Raspberry Pi build' \
+                 --notes 'Rolling build of main for the Raspberry Pi. Replaced on every push.'
+          gh release upload pi-latest babysteps-pi.tar.gz --clobber
+
   deploy:
     environment:
       name: github-pages
