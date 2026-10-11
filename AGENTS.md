@@ -7,7 +7,9 @@ Guidance for AI agents (and humans) working in the BabySteps repo.
 BabySteps is an offline-first PWA for shared baby-care tracking (children and
 the parents doing the tracking). React
 18 + TypeScript + Vite, with a hybrid local (Dexie/IndexedDB) + Google Sheets
-store. No backend of our own.
+store. No backend of our own — the one exception is the stateless token
+broker the Raspberry Pi build runs for one-time sign-in (see "One-time sign-in
+on the Pi"); it holds no data.
 
 ## Commands
 
@@ -571,6 +573,51 @@ re-arms itself after a *failed* renewal (otherwise one hiccup lets the token
 lapse), the launch reconnect retries before it will show a sign-in screen, and
 the reconnect screen keeps retrying silently behind itself so it can heal
 without a tap.
+
+### One-time sign-in on the Pi (token broker)
+
+On Pages, those three things are the best a static site can do: Google's
+browser-only token flow issues **one-hour access tokens and never a refresh
+token**, and renewing opens a popup the browser blocks without a tap. So the
+session lapses about hourly whatever the consent screen's publishing status —
+publishing only stops *refresh* tokens expiring after 7 days, and this flow has
+none.
+
+The Pi build fixes it with `server/token-broker.mjs`, a dependency-free Node
+server behind the same origin at `/api/token/`. It holds the OAuth client
+**secret** (in `~/babysteps/broker.env` on the Pi — never in a `VITE_` var, never
+in a bundle) and does the three calls that need it: `exchange` a sign-in code,
+`refresh` a refresh token, `revoke` on sign-out. **It stores nothing** — each
+device keeps its own refresh token (`babysteps.google.refresh`), and the sheet is
+still the database. It only answers origins in `ALLOWED_ORIGINS`.
+
+- Only a build with `VITE_GOOGLE_TOKEN_BROKER` set (CI's `pi` job:
+  `/api/token`) uses it; Pages leaves it unset and is unchanged.
+- `storage/googleTokenBroker.ts` signs in by **full-page redirect**, not a popup
+  — popups are what misbehave in an installed phone PWA. It asks for
+  `access_type=offline` + `prompt=consent` (without `consent`, an account that
+  already granted the scopes gets no refresh token) and uses PKCE. Google sends
+  the page back to the app root, so **the root URL must be an authorized
+  redirect URI** on the OAuth client, not just a JavaScript origin.
+  `main.tsx` redeems the code (`completeGoogleSignInRedirect`) *before*
+  rendering, so the app boots already granted; the query the page left with
+  (an invite's `?family=`) is put back.
+- `mintToken` in `googleSheetsAuth.ts` tries the refresh token first, silently,
+  for every renewal. Only an explicit tap on connect may redirect
+  (`allowRedirect`): the background fallback in `getGoogleSheetsAccessToken`
+  must never navigate someone away mid-entry.
+- **The broker being down never locks anyone out.** An unreachable broker
+  (`BrokerUnavailableError`: network, 5xx) keeps the refresh token and falls
+  back to Google's popup flow for the session; only a 400 from Google
+  (`BrokerGrantError`: revoked, expired) drops it.
+- **Framed, it is the popup flow.** The Home Assistant sidebar loads the app in
+  an iframe; Google will not render sign-in in a frame and the frame's storage
+  is partitioned from the top-level site's, so `isFramed()` keeps the old flow
+  there.
+- CI publishes `main` to the `pi-latest` release and the `pi-token-broker`
+  branch to `pi-broker`; the release also carries `token-broker.mjs`, which the
+  Pi's `update.sh` installs and restarts on change. Deployment scripts live in
+  the separate `rpi` project (`scripts/babysteps/`).
 
 ### Outside the staged plan
 - **Bath** — a `bath` event carrying nothing but time and notes, so it needs no

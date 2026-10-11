@@ -1,6 +1,6 @@
 # BabySteps
 
-BabySteps is a private, offline-first progressive web app for tracking baby care and sharing the log with a household. It runs entirely in the browser, stores data locally with IndexedDB, and can optionally synchronize through a Google Sheet you control. There is no BabySteps backend.
+BabySteps is a private, offline-first progressive web app for tracking baby care and sharing the log with a household. It runs entirely in the browser, stores data locally with IndexedDB, and can optionally synchronize through a Google Sheet you control. There is no BabySteps backend (an optional token broker, below, makes sign-in one-time on a self-hosted copy).
 
 ## What it tracks
 
@@ -100,6 +100,18 @@ The workflow in `.github/workflows/deploy.yml` builds and deploys the `dist` dir
 3. Add the deployed site’s origin to the OAuth client’s authorized JavaScript origins.
 
 The current Vite base path is `/baby-steps/`. If the repository or hosting path is different, update `base` in `vite.config.ts` before deploying.
+
+## Raspberry Pi build and one-time sign-in
+
+The same workflow's `pi` job builds for a self-hosted copy served from the site root, and publishes it as a rolling GitHub release (`pi-latest` from `main`, `pi-broker` from the `pi-token-broker` branch) that the host pulls.
+
+On a static site, Google sign-in lasts about an hour: the browser-only flow never issues a refresh token. The Pi build adds a small stateless **token broker** (`server/token-broker.mjs`, Node 24, no dependencies) at `/api/token/`, which holds the OAuth client secret and lets each device keep a refresh token, so signing in is a one-time event per device. To run it:
+
+1. In Google Cloud Console → Credentials → your Web client, add the site root (e.g. `https://your-host/`) as an **Authorized redirect URI** (in addition to the JavaScript origin), and copy the **client secret**.
+2. On the host, run the broker with `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `ALLOWED_ORIGINS` (the site's origin) in its environment, and proxy `/api/` to it (port 8787 by default).
+3. Build the app with `VITE_GOOGLE_TOKEN_BROKER=/api/token` (the `pi` job does).
+
+The secret must never be put in a `VITE_` variable: everything in those ends up in the public bundle. The broker stores no tokens; if it is unreachable, the app falls back to the ordinary hourly sign-in.
 
 ## Data and privacy
 

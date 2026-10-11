@@ -1,3 +1,14 @@
+import {
+  beginBrokerSignIn,
+  BrokerUnavailableError,
+  completeBrokerRedirect,
+  getStoredRefreshToken,
+  isFramed,
+  isTokenBrokerConfigured,
+  refreshWithBroker,
+  revokeWithBroker
+} from './googleTokenBroker';
+
 const GOOGLE_IDENTITY_SCRIPT = 'https://accounts.google.com/gsi/client';
 // The email scope is how the app knows *who* signed in — a parent or a
 // caregiver (`domain/access.ts`). Adding it asks a device that granted the
@@ -57,6 +68,12 @@ let expiresAt = 0;
 let pendingRequest: Promise<string> | null = null;
 let refreshTimer: number | null = null;
 let keepAliveAttached = false;
+/**
+ * Set when the token broker could not be reached this session, so a tap on
+ * "connect" falls back to Google's popup instead of redirecting into a sign-in
+ * whose code nothing could redeem.
+ */
+let brokerUnavailable = false;
 
 export class GoogleAuthRequiredError extends Error {
   constructor(message = 'Connect Google Sheets before using sheet storage.') {
@@ -94,6 +111,7 @@ export function signOutGoogle() {
   accessToken = null;
   expiresAt = 0;
   cancelSilentRefresh();
+  revokeWithBroker();
   const storage = safeStorage();
   storage?.removeItem(TOKEN_STORAGE_KEY);
   storage?.removeItem(GRANT_STORAGE_KEY);
@@ -311,6 +329,78 @@ async function getTokenClient() {
   return tokenClient;
 }
 
+/** Adopt a freshly minted access token, from Google's popup or from the broker. */
+function applyToken(token: string, expiresInSeconds = 3600) {
+  accessToken = token;
+  expiresAt = Date.now() + expiresInSeconds * 1000;
+  persistToken();
+  markGranted();
+  safeStorage()?.removeItem(PICK_ACCOUNT_STORAGE_KEY);
+  scheduleSilentRefresh();
+  return token;
+}
+
+/**
+ * Finish a broker sign-in the page has just been sent back from (a no-op
+ * otherwise, and on any build without a broker). Call once before rendering, so
+ * the app boots already holding the grant.
+ */
+export async function completeGoogleSignInRedirect() {
+  const result = await completeBrokerRedirect();
+
+  if (result.status === 'signed-in') {
+    brokerUnavailable = false;
+    applyToken(result.tokens.accessToken, result.tokens.expiresIn);
+  } else if (result.status === 'denied') {
+    // Declined or the wrong account: offer the account chooser next time.
+    safeStorage()?.setItem(PICK_ACCOUNT_STORAGE_KEY, '1');
+  } else if (result.status === 'failed' && result.error instanceof BrokerUnavailableError) {
+    brokerUnavailable = true;
+  }
+
+  return result.status;
+}
+
+/**
+ * Mint a token. With a broker, the refresh token answers without any Google UI;
+ * without one (or with the broker down) this is Google's popup, as on Pages.
+ * `allowRedirect` is only true for an explicit tap on connect — a background
+ * request must never navigate the page away from someone mid-entry.
+ */
+async function mintToken(interactive: boolean, allowRedirect: boolean) {
+  if (isTokenBrokerConfigured()) {
+    if (getStoredRefreshToken()) {
+      try {
+        const tokens = await refreshWithBroker();
+        brokerUnavailable = false;
+        return applyToken(tokens.accessToken, tokens.expiresIn);
+      } catch (error) {
+        if (error instanceof BrokerUnavailableError) {
+          brokerUnavailable = true;
+        }
+        // A dead grant has already dropped its refresh token; sign in again below.
+      }
+    }
+
+    if (interactive && allowRedirect && !brokerUnavailable && !isFramed()) {
+      const clientId = getGoogleClientId();
+
+      if (!clientId) {
+        throw new GoogleAuthRequiredError('Missing VITE_GOOGLE_CLIENT_ID.');
+      }
+
+      return beginBrokerSignIn({
+        clientId,
+        loginHint: getStoredGoogleEmail(),
+        pickAccount: safeStorage()?.getItem(PICK_ACCOUNT_STORAGE_KEY) === '1',
+        scope: SCOPES
+      });
+    }
+  }
+
+  return fetchToken(interactive);
+}
+
 async function fetchToken(interactive: boolean) {
   const client = await getTokenClient();
 
@@ -342,13 +432,8 @@ async function fetchToken(interactive: boolean) {
         return;
       }
 
-      accessToken = response.access_token;
-      expiresAt = Date.now() + (response.expires_in ?? 3600) * 1000;
-      persistToken();
-      markGranted();
-      safeStorage()?.removeItem(PICK_ACCOUNT_STORAGE_KEY);
-      scheduleSilentRefresh();
-      finish(() => resolve(accessToken as string));
+      const token = applyToken(response.access_token, response.expires_in);
+      finish(() => resolve(token));
     };
 
     // prompt:'' reuses an existing grant silently and only shows UI when Google
@@ -360,7 +445,7 @@ async function fetchToken(interactive: boolean) {
   });
 }
 
-export async function requestGoogleSheetsAccessToken(interactive: boolean) {
+export async function requestGoogleSheetsAccessToken(interactive: boolean, { allowRedirect = interactive } = {}) {
   if (hasFreshToken()) {
     return accessToken as string;
   }
@@ -387,7 +472,7 @@ export async function requestGoogleSheetsAccessToken(interactive: boolean) {
     throw new GoogleAuthRequiredError();
   }
 
-  const request = fetchToken(interactive);
+  const request = mintToken(interactive, allowRedirect);
   pendingRequest = request;
 
   try {
@@ -415,6 +500,6 @@ export async function getGoogleSheetsAccessToken(forceRefresh = false) {
       throw error;
     }
 
-    return requestGoogleSheetsAccessToken(true);
+    return requestGoogleSheetsAccessToken(true, { allowRedirect: false });
   }
 }

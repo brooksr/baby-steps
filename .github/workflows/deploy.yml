@@ -2,7 +2,7 @@ name: Deploy static content to Pages
 
 on:
   push:
-    branches: ['main']
+    branches: ['main', 'pi-token-broker']
   workflow_dispatch:
 
 permissions:
@@ -10,12 +10,15 @@ permissions:
   pages: write
   id-token: write
 
+# Per branch, so a push to the broker branch never cancels a Pages deploy of main.
 concurrency:
-  group: pages
+  group: deploy-${{ github.ref_name }}
   cancel-in-progress: true
 
 jobs:
   build:
+    # Pages only ever ships main; other branches build for the Pi alone.
+    if: github.ref_name == 'main'
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -51,10 +54,16 @@ jobs:
   # The same build served from the site root, for the Raspberry Pi. The Pi polls
   # this rolling release and installs each new asset (see the rpi project's
   # scripts/babysteps/), so nothing has to reach into the home network.
+  # main publishes "pi-latest"; the token-broker branch publishes "pi-broker",
+  # so trying it on the Pi never touches what main ships.
+  # The Pi build signs in through the broker it serves at /api/token (one-time
+  # sign-in); the broker script rides along as a release asset.
   pi:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+    env:
+      PI_TAG: ${{ github.ref_name == 'main' && 'pi-latest' || 'pi-broker' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -77,19 +86,21 @@ jobs:
           VITE_GOOGLE_OAUTH_PUBLISHED: ${{ vars.VITE_GOOGLE_OAUTH_PUBLISHED }}
           VITE_GOOGLE_API_KEY: ${{ vars.VITE_GOOGLE_API_KEY }}
           VITE_GOOGLE_APP_ID: ${{ vars.VITE_GOOGLE_APP_ID }}
+          VITE_GOOGLE_TOKEN_BROKER: /api/token
 
-      - name: Publish pi-latest release
+      - name: Publish Pi release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           echo "{\"sha\":\"${GITHUB_SHA}\",\"builtAt\":\"$(date -u +%FT%TZ)\"}" > dist/version.json
           tar -czf babysteps-pi.tar.gz -C dist .
-          gh release view pi-latest >/dev/null 2>&1 \
-            || gh release create pi-latest --prerelease --title 'Raspberry Pi build' \
-                 --notes 'Rolling build of main for the Raspberry Pi. Replaced on every push.'
-          gh release upload pi-latest babysteps-pi.tar.gz --clobber
+          gh release view "$PI_TAG" >/dev/null 2>&1 \
+            || gh release create "$PI_TAG" --prerelease --target "$GITHUB_SHA" --title "Raspberry Pi build (${GITHUB_REF_NAME})" \
+                 --notes "Rolling build of ${GITHUB_REF_NAME} for the Raspberry Pi. Replaced on every push."
+          gh release upload "$PI_TAG" babysteps-pi.tar.gz server/token-broker.mjs --clobber
 
   deploy:
+    if: github.ref_name == 'main'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
