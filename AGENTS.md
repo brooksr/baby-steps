@@ -7,9 +7,10 @@ Guidance for AI agents (and humans) working in the BabySteps repo.
 BabySteps is an offline-first PWA for shared baby-care tracking (children and
 the parents doing the tracking). React
 18 + TypeScript + Vite, with a hybrid local (Dexie/IndexedDB) + Google Sheets
-store. No backend of our own — the one exception is the stateless token
-broker the Raspberry Pi build runs for one-time sign-in (see "One-time sign-in
-on the Pi"); it holds no data.
+store. No backend of our own — the two exceptions both run on the Raspberry
+Pi and hold no data: the stateless token broker for one-time sign-in (see
+"One-time sign-in on the Pi") and the events API that lets voice assistants
+log an entry (see "Logging from outside the app").
 
 ## Commands
 
@@ -18,6 +19,7 @@ npm run dev      # local dev server (host 0.0.0.0)
 npm run build    # tsc -b && vite build  — must pass before shipping
 npm run lint     # eslint .
 npm test         # vitest run
+npm run build:server  # the Pi's events API → dist-server/events-api.mjs
 ```
 
 Always run `npm run lint`, `npm test`, and `npm run build` before considering a
@@ -76,6 +78,7 @@ change done.
   wider than the card once a period runs to months, and the bars spill out of it.
 - `src/components/` — React views. `App.tsx` owns the tab router + store wiring.
   `DateRangeFilter` is shared by the Log and by the Reports "Custom" period.
+- `src/server/` — the Pi's events API (Node, bundled by `build:server`).
 - `src/storage/` — local, Google Sheets, and hybrid stores. New event fields
   must be persisted here (see `googleSheetsStore.ts` column mapping).
   - `store.snapshot()` reads profile + events together. On the sheets store
@@ -618,6 +621,55 @@ still the database. It only answers origins in `ALLOWED_ORIGINS`.
   branch to `pi-broker`; the release also carries `token-broker.mjs`, which the
   Pi's `update.sh` installs and restarts on change. Deployment scripts live in
   the separate `rpi` project (`scripts/babysteps/`).
+
+### Logging from outside the app (`POST /api/events`)
+
+Voice assistants, Home Assistant and other agents log an entry by sending
+structured JSON to the Pi; they never see the sheet. Natural-language parsing
+("add 4 oz feed") happens in the caller, not here.
+
+```json
+{ "type": "feed", "amount": 4, "unit": "oz", "timestamp": "2026-10-12T14:32:00-07:00", "source": "voice" }
+```
+
+- `domain/eventRequest.ts` is the whole contract, and it is pure: request →
+  `CreateCareEventInput`, with no column names in it, so the sheet schema can
+  move without breaking a caller. **A new type is one entry in `builders`**
+  (and a test). `diaper`, `feed` and `sleep` ship.
+  - **It refuses rather than guesses**: an amount needs a unit (`oz`/`ounce`/
+    `ounces` or `ml`) because "4" is a bottle in one and a sip in the other; a
+    timestamp needs an offset because the Pi's zone is not the kitchen's; more
+    than one child and no `child` named is an error, not the first child. Every
+    problem comes back at once, in `errors`.
+  - Amounts are stored in canonical ounces via `units.ts`. Bounds borrow the
+    report cutoffs: a feed over 4h and a sleep over 16h are timers left running.
+  - A feed with an amount is a bottle; with only `durationMinutes` it is
+    nursing. A sleep given as `durationMinutes` **ends** at `timestamp` (or now)
+    — it is said on waking — unless `startedAt` is given; `startedAt` alone is a
+    sleep still running. `start`/`end`/`startTime`/`endTime` are read too.
+  - `source` is accepted and not stored — there is no column for it, and adding
+    one is a schema change this contract exists to avoid.
+  - `describeLoggedEvent` returns `message`, a sentence for the assistant to
+    read back, in the child's units and timezone.
+- `server/eventsApi.ts` is written against Fetch `Request`/`Response` (tested
+  without a server); `server/main.ts` adapts it to `node:http`. **Writes go
+  through `createGoogleSheetsBabyTrackerStore`** — the app's own store — so a
+  row logged here is the same row a phone would write, and the app picks it up
+  on its next poll.
+- **Every POST needs `Authorization: Bearer $EVENTS_API_TOKEN`.** The Pi is on
+  the internet through the Funnel; the token, not the network, keeps strangers
+  out of the log. `GET /api/events/health` is open and lists the types.
+- **It signs in as a service account** (`server/serviceAccount.ts`, WebCrypto
+  RS256, no dependencies), with the family sheet shared to its email as an
+  editor. Unlike the broker this does hold a credential — but it belongs to no
+  person, so it survives a parent signing out or revoking, and reaches only the
+  sheet someone shared with it. One family per process (`BABYSTEPS_SHEET_ID`).
+- `npm run build:server` (`vite.server.config.ts`) bundles it, Sheets store and
+  reference CSVs included, into one `dist-server/events-api.mjs`; CI uploads it
+  to the Pi release next to `token-broker.mjs`.
+- A sheet error is a 502, never a 201: the caller must not tell anyone it was
+  saved. There is no retry de-duplication yet — a caller that retries a request
+  that did land will log it twice.
 
 ### Outside the staged plan
 - **Bath** — a `bath` event carrying nothing but time and notes, so it needs no

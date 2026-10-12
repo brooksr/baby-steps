@@ -57,7 +57,8 @@ jobs:
   # main publishes "pi-latest"; the token-broker branch publishes "pi-broker",
   # so trying it on the Pi never touches what main ships.
   # The Pi build signs in through the broker it serves at /api/token (one-time
-  # sign-in); the broker script rides along as a release asset.
+  # sign-in); the broker script rides along as a release asset, and so does the
+  # events API.
   pi:
     runs-on: ubuntu-24.04
     permissions:
@@ -88,6 +89,11 @@ jobs:
           VITE_GOOGLE_APP_ID: ${{ vars.VITE_GOOGLE_APP_ID }}
           VITE_GOOGLE_TOKEN_BROKER: /api/token
 
+      # The events API (POST /api/events, for voice assistants) as one bundled
+      # Node module; it rides along on the release like the broker.
+      - name: Build events API
+        run: npm run build:server
+
       - name: Publish Pi release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -97,7 +103,7 @@ jobs:
           gh release view "$PI_TAG" >/dev/null 2>&1 \
             || gh release create "$PI_TAG" --prerelease --target "$GITHUB_SHA" --title "Raspberry Pi build (${GITHUB_REF_NAME})" \
                  --notes "Rolling build of ${GITHUB_REF_NAME} for the Raspberry Pi. Replaced on every push."
-          gh release upload "$PI_TAG" babysteps-pi.tar.gz server/token-broker.mjs --clobber
+          gh release upload "$PI_TAG" babysteps-pi.tar.gz server/token-broker.mjs dist-server/events-api.mjs --clobber
 
   deploy:
     if: github.ref_name == 'main'
