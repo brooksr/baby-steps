@@ -818,6 +818,14 @@ export class GoogleSheetsApi {
     });
   }
 
+  /** Several ranges in one write — the nursery upsert's updated rows and headers. */
+  async batchUpdateValues(data: Array<{ range: string; values: unknown[][] }>) {
+    await this.request('/values:batchUpdate', {
+      body: JSON.stringify({ data: data.map((entry) => ({ ...entry, majorDimension: 'ROWS' })), valueInputOption: VALUE_INPUT_OPTION }),
+      method: 'POST'
+    });
+  }
+
   async clearValues(range: string) {
     await this.request(`/values/${encodeRange(range)}:clear`, {
       body: JSON.stringify({}),

@@ -683,6 +683,37 @@ structured JSON to the Pi; they never see the sheet. Natural-language parsing
   saved. There is no retry de-duplication yet — a caller that retries a request
   that did land will log it twice.
 
+### Nursery sensor delivery (`POST /api/nursery`)
+
+The nursery sensor phone (the separate `oneplus` Android project) sends numeric
+sound summaries here every five minutes; `server/nurseryApi.ts` upserts them
+into four tabs of the family sheet: **Nursery Nightly Summaries** (one row per
+night, noon to noon, the report row), **Nursery Sound Episodes** (likely cry,
+speech, snoring, cough), **Nursery Sound Levels** (15-minute intervals) and
+**Nursery Sessions** (capture health). About 100 rows a day; per-second data
+stays on the phone.
+
+- **It never writes Events.** These are experimental model estimates, not care
+  records. Suggested events built from them (a likely cry, a quiet window that
+  might be sleep) belong in the app and must read as suggestions. The phone
+  makes no sleep, mood or movement claim; the parser refuses one.
+- The contract is versioned (`schemaVersion` 2) and mirrored in the phone's
+  `NightRepository.kt` and `oneplus/integration/google-apps-script/Code.js`.
+  Change all three together. A bad record refuses the whole batch with a
+  reason (400); nothing is partially written.
+- **Every write is an upsert by `recordKey`** (column A): the phone queues
+  durably and retries, and must be able to resend a batch whose reply was
+  lost. The reply lists exactly the keys stored; the phone drops only those.
+  Writes are serialized in-process, and values are written RAW.
+- A missing tab is created and a header-only tab adopts the header; a tab
+  holding rows under another header is a 409, never overwritten. The Sessions
+  tab has 28 columns, so the grid is widened past the default 26.
+- **Its own token, `NURSERY_API_TOKEN`** (`Authorization: Bearer`), separate
+  from `EVENTS_API_TOKEN`, so the phone can write only these tabs. Without it
+  the route is a 404. `main.ts` allows this route a 180 KB body (100 records).
+- On the Pi, nginx proxies `= /api/nursery` to the events container
+  (`rpi/scripts/babysteps/nginx.conf`); `install.sh` generates the token.
+
 ### Outside the staged plan
 - **Bath** — a `bath` event carrying nothing but time and notes, so it needs no
   new Sheets column (it reads and writes the base row, like `sleep`). Dashboard

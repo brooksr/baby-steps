@@ -6,6 +6,8 @@
 // Environment:
 //   BABYSTEPS_SHEET_ID              the family's spreadsheet id
 //   EVENTS_API_TOKEN                the bearer token callers must send
+//   NURSERY_API_TOKEN               optional: the nursery sensor phone's own
+//     bearer token for POST /api/nursery; that route is off without it
 //   GOOGLE_SERVICE_ACCOUNT_FILE     path to the service account's JSON key
 //     (or GOOGLE_SERVICE_ACCOUNT_JSON, the key itself)
 //   PORT                            default 8788
@@ -14,6 +16,7 @@ import { readFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createGoogleSheetsBabyTrackerStore, GoogleSheetsApi } from '../storage/googleSheetsStore';
 import { createEventsHandler } from './eventsApi';
+import { createNurseryHandler, MAX_NURSERY_BODY_BYTES, NURSERY_PATH } from './nurseryApi';
 import { createServiceAccountTokenSource, parseServiceAccountKey } from './serviceAccount';
 
 const MAX_BODY_BYTES = 8192;
@@ -31,15 +34,18 @@ function main() {
   }
 
   const key = parseServiceAccountKey(keyText);
-  const store = createGoogleSheetsBabyTrackerStore(new GoogleSheetsApi(createServiceAccountTokenSource(key), sheetId));
-  const handle = createEventsHandler({
-    apiToken,
-    onError: (error) => console.error('events-api:', error instanceof Error ? error.message : error),
-    store
-  });
+  const nurseryToken = process.env.NURSERY_API_TOKEN?.trim();
+  const sheets = new GoogleSheetsApi(createServiceAccountTokenSource(key), sheetId);
+  const store = createGoogleSheetsBabyTrackerStore(sheets);
+  const onError = (error: unknown) => console.error('events-api:', error instanceof Error ? error.message : error);
+  const events = createEventsHandler({ apiToken, onError, store });
+  // A separate token: the nursery phone can write only its own four tabs.
+  const nursery = nurseryToken ? createNurseryHandler({ apiToken: nurseryToken, onError, sheets }) : null;
 
   createServer((request, response) => {
-    serve(handle, request, response).catch((error) => {
+    const isNursery = new URL(request.url || '/', 'http://events-api').pathname.replace(/\/+$/, '') === NURSERY_PATH;
+    const handle = isNursery && nursery ? nursery : events;
+    serve(handle, isNursery ? MAX_NURSERY_BODY_BYTES : MAX_BODY_BYTES, request, response).catch((error) => {
       console.error('events-api:', error);
 
       if (!response.headersSent) {
@@ -47,11 +53,11 @@ function main() {
       }
     });
   }).listen(port, () => {
-    console.log(`events-api: listening on ${port} as ${key.client_email}`);
+    console.log(`events-api: listening on ${port} as ${key.client_email}${nursery ? ' · nursery on' : ''}`);
   });
 }
 
-async function serve(handle: (request: Request) => Promise<Response>, request: IncomingMessage, response: ServerResponse) {
+async function serve(handle: (request: Request) => Promise<Response>, maxBodyBytes: number, request: IncomingMessage, response: ServerResponse) {
   const chunks: Buffer[] = [];
   let size = 0;
 
@@ -59,12 +65,12 @@ async function serve(handle: (request: Request) => Promise<Response>, request: I
     size += (chunk as Buffer).length;
 
     // Keep draining so the 413 reaches the caller instead of a reset socket.
-    if (size <= MAX_BODY_BYTES) {
+    if (size <= maxBodyBytes) {
       chunks.push(chunk as Buffer);
     }
   }
 
-  if (size > MAX_BODY_BYTES) {
+  if (size > maxBodyBytes) {
     response.writeHead(413, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: 'too_large' }));
     return;
   }

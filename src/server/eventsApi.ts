@@ -92,7 +92,7 @@ export function createEventsHandler({ apiToken, now = () => new Date(), onError 
 }
 
 /** Compared as digests so the check takes the same time however much of the token matched. */
-async function isAuthorized(header: string | null, apiToken: string) {
+export async function isAuthorized(header: string | null, apiToken: string) {
   const presented = header?.match(/^Bearer\s+(.+)$/i)?.[1]?.trim() ?? '';
   const [left, right] = await Promise.all([digest(presented), digest(apiToken)]);
   let difference = 0;
