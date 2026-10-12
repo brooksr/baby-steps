@@ -635,7 +635,9 @@ structured JSON to the Pi; they never see the sheet. Natural-language parsing
 - `domain/eventRequest.ts` is the whole contract, and it is pure: request →
   `CreateCareEventInput`, with no column names in it, so the sheet schema can
   move without breaking a caller. **A new type is one entry in `builders`**
-  (and a test). `diaper`, `feed` and `sleep` ship.
+  (and a test). `bath`, `diaper`, `feed`, `mood`, `note`, `pump`, `sleep` and
+  `tummytime` (also `tummy`) ship — every child entry a voice could sensibly
+  carry; the rest (growth, meds, temperature) want a screen.
   - **It refuses rather than guesses**: an amount needs a unit (`oz`/`ounce`/
     `ounces` or `ml`) because "4" is a bottle in one and a sip in the other; a
     timestamp needs an offset because the Pi's zone is not the kitchen's; more
@@ -644,7 +646,17 @@ structured JSON to the Pi; they never see the sheet. Natural-language parsing
   - Amounts are stored in canonical ounces via `units.ts`. Bounds borrow the
     report cutoffs: a feed over 4h and a sleep over 16h are timers left running.
   - A feed with an amount is a bottle; with only `durationMinutes` it is
-    nursing. A sleep given as `durationMinutes` **ends** at `timestamp` (or now)
+    nursing. **A timed entry with no `timestamp` started that long ago** — "20
+    minutes of tummy time" is said when it ends — while a `timestamp` is always
+    the start. Mood takes `level` 1–5 or a word ("fussy", "happy"); a note takes
+    `text` (or `notes`); a pump needs an amount and unit, side `both` unless
+    said.
+  - **Starting an entry**: a feed (with `method`), pump, sleep or tummy time
+    sent with `"started": true` and no amount or length is saved as begun now,
+    to be finished in the app — a running sleep, a pump or tummy time of 0. The
+    app's timers are device-local, so the Pi cannot start one. The flag is
+    explicit on purpose: without it a missing value is still an error, since
+    the likelier cause is voice glue that dropped it. A sleep given as `durationMinutes` **ends** at `timestamp` (or now)
     — it is said on waking — unless `startedAt` is given; `startedAt` alone is a
     sleep still running. `start`/`end`/`startTime`/`endTime` are read too.
   - `source` is accepted and not stored — there is no column for it, and adding

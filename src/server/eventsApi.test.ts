@@ -95,7 +95,7 @@ describe('events API', () => {
     const health = await handle(new Request('http://pi/api/events/health'));
 
     expect(health.status).toBe(200);
-    expect(await health.json()).toEqual({ ok: true, types: ['diaper', 'feed', 'sleep'] });
+    expect(await health.json()).toEqual({ ok: true, types: ['bath', 'diaper', 'feed', 'mood', 'note', 'pump', 'sleep', 'tummytime'] });
     expect((await handle(new Request('http://pi/api/events'))).status).toBe(405);
     expect((await handle(post({}, 'tok', '/api/other'))).status).toBe(404);
   });

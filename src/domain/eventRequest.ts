@@ -1,4 +1,5 @@
 import { getActiveProfiles, getFirstName, isChild } from './family';
+import { getMoodScale } from './reference';
 import { formatVolume, getPreferredUnits, millilitersToOunces, ouncesToMilliliters } from './units';
 import type { BabyProfile, BottleContents, CreateCareEventInput, DiaperKind, DiaperPoopSize, FeedMethod, NursingSide } from './types';
 
@@ -15,6 +16,14 @@ import type { BabyProfile, BottleContents, CreateCareEventInput, DiaperKind, Dia
  * guessing, because a wrong guess lands in a log several people rely on.
  *
  * A new type is one entry in `builders`; everything else here is shared.
+ *
+ * **Starting an entry.** A feed, pump, sleep or tummy time can be logged as it
+ * begins and finished in the app. That takes an explicit `"started": true`:
+ * without it a missing amount or length is still an error, because the usual
+ * reason for one is voice glue that lost it, not someone mid-feed. A started
+ * entry is an ordinary row with the value blank — the app's own timers live on
+ * one device and cannot be started from here — so it reads as a sleep "in
+ * progress", or a pump or tummy time of 0 until someone edits it.
  */
 
 /** A bottle over this is a typo or a misheard unit, not a feed. */
@@ -23,6 +32,8 @@ export const MAX_FEED_OZ = 16;
 export const MAX_FEED_MINUTES = 4 * 60;
 /** Over this is a timer left running — the `parentReport` cutoff. */
 export const MAX_SLEEP_MINUTES = 16 * 60;
+/** Tummy time comes in minutes; past this it is a timer left running. */
+export const MAX_TUMMY_MINUTES = 2 * 60;
 /** Clock skew allowance for a timestamp a little ahead of ours. */
 export const MAX_FUTURE_MINUTES = 5;
 /** Further back than this is almost certainly a wrong date, not a late entry. */
@@ -72,6 +83,22 @@ const BOTTLE_CONTENTS: readonly BottleContents[] = ['breastmilk', 'formula', 'mi
 const NURSING_SIDES: readonly NursingSide[] = ['both', 'left', 'right'];
 const POOP_SIZES: readonly DiaperPoopSize[] = ['large', 'medium', 'small'];
 
+/**
+ * Mood by word as well as by number, because nobody says "mood three". The
+ * scale's own labels come from `mood-scale.csv`; the rest are what people
+ * actually say for the same level.
+ */
+const MOOD_WORDS: Record<string, number> = {
+  ...Object.fromEntries(getMoodScale().map((mood) => [mood.label.toLowerCase(), mood.level])),
+  alert: 2,
+  calm: 1,
+  cranky: 3,
+  crying: 4,
+  happy: 1,
+  settled: 1,
+  upset: 4
+};
+
 const builders = {
   diaper(body, at, now, errors) {
     const kind = pickWord(body, ['diaperType', 'kind'], DIAPER_KINDS, errors, 'diaperType', true);
@@ -94,7 +121,12 @@ const builders = {
     const method: FeedMethod = named ?? (amount === undefined && durationMinutes !== undefined ? 'nursing' : 'bottle');
 
     if (amount === undefined && durationMinutes === undefined && !errors.length) {
-      errors.push('A feed needs an amount (with a unit) or a durationMinutes.');
+      if (!isStarted(body)) {
+        errors.push('A feed needs an amount (with a unit) or a durationMinutes — or "started": true to fill it in later.');
+      } else if (!named) {
+        // Nothing else says which: a started feed has to name its method.
+        errors.push('A started feed needs a method (bottle or nursing).');
+      }
     }
 
     if (side && method !== 'nursing') {
@@ -111,9 +143,64 @@ const builders = {
       ...(durationMinutes !== undefined ? { durationMinutes } : {}),
       method,
       ...(side ? { side } : {}),
-      startedAt: iso(at ?? now),
+      startedAt: iso(startOf(at, now, durationMinutes)),
       type: 'feed'
     };
+  },
+
+  bath(_body, at, now) {
+    return { startedAt: iso(at ?? now), type: 'bath' };
+  },
+
+  /** Mood 1–5 (`mood-scale.csv`), as `level` or as a word such as "fussy". */
+  mood(body, at, now, errors) {
+    const raw = body.level ?? body.mood;
+    const word = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+    const level = has(MOOD_WORDS, word) ? MOOD_WORDS[word] : readNumber(raw);
+
+    if (level === undefined || !Number.isInteger(level) || level < 1 || level > 5) {
+      errors.push(`level must be 1–5 or one of: ${Object.keys(MOOD_WORDS).sort().join(', ')}.`);
+      return undefined;
+    }
+
+    return { level, startedAt: iso(at ?? now), type: 'mood' };
+  },
+
+  /** A note is its text — `notes`, or `text` for callers that think of it that way. */
+  note(body, at, now, errors) {
+    const text = typeof body.text === 'string' && body.text.trim() ? body.text : body.notes;
+
+    if (typeof text !== 'string' || !text.trim()) {
+      errors.push('A note needs its text (notes or text).');
+      return undefined;
+    }
+
+    if (text.length > MAX_NOTES_LENGTH) {
+      errors.push(`A note must be at most ${MAX_NOTES_LENGTH} characters.`);
+      return undefined;
+    }
+
+    return { notes: text.trim(), startedAt: iso(at ?? now), type: 'note' };
+  },
+
+  /** Pumped milk: an amount with its unit, and the side (both unless said). */
+  pump(body, at, now, errors) {
+    const amount = readAmountOz(body, errors);
+    const side = pickWord(body, ['side'], asMap(NURSING_SIDES), errors, 'side') ?? 'both';
+
+    if (amount === undefined) {
+      if (!errors.length && isStarted(body)) {
+        return { amountOz: 0, side, startedAt: iso(at ?? now), type: 'pump' };
+      }
+
+      if (!errors.length) {
+        errors.push('A pump needs an amount with a unit (oz or ml) — or "started": true to fill it in later.');
+      }
+
+      return undefined;
+    }
+
+    return { amountOz: amount, side, startedAt: iso(at ?? now), type: 'pump' };
   },
 
   /**
@@ -142,16 +229,46 @@ const builders = {
     }
 
     if (!start) {
-      errors.push('A sleep needs a durationMinutes or a startedAt.');
+      // Started now (or at `timestamp`), still going.
+      if (isStarted(body)) {
+        return { startedAt: iso(at ?? now), type: 'sleep' };
+      }
+
+      errors.push('A sleep needs a durationMinutes or a startedAt — or "started": true to fill it in later.');
       return undefined;
     }
 
     return end ? checkSpan(start, end, now, errors) : { startedAt: iso(start), type: 'sleep' };
+  },
+
+  tummytime(body, at, now, errors) {
+    const durationMinutes = readMinutes(body, 'durationMinutes', MAX_TUMMY_MINUTES, errors);
+
+    if (durationMinutes === undefined) {
+      if (!errors.length && isStarted(body)) {
+        return { durationMinutes: 0, startedAt: iso(at ?? now), type: 'tummytime' };
+      }
+
+      if (!errors.length) {
+        errors.push('Tummy time needs a durationMinutes — or "started": true to fill it in later.');
+      }
+
+      return undefined;
+    }
+
+    return { durationMinutes, startedAt: iso(startOf(at, now, durationMinutes)), type: 'tummytime' };
   }
 } satisfies Record<string, Builder>;
 
 export type SupportedEventType = keyof typeof builders;
 export const SUPPORTED_EVENT_TYPES = Object.keys(builders).sort() as SupportedEventType[];
+
+/** Other names callers use for a type — the app's own id stays canonical. */
+const TYPE_ALIASES: Record<string, SupportedEventType> = {
+  tummy: 'tummytime',
+  'tummy time': 'tummytime',
+  tummy_time: 'tummytime'
+};
 
 /** Validate and normalize one request into an entry, or say every reason it cannot be one. */
 export function parseEventRequest(body: unknown, now = new Date()): ParseResult<EventInput> {
@@ -160,7 +277,8 @@ export function parseEventRequest(body: unknown, now = new Date()): ParseResult<
   }
 
   const record = body as Body;
-  const type = typeof record.type === 'string' ? record.type.trim().toLowerCase() : '';
+  const named = typeof record.type === 'string' ? record.type.trim().toLowerCase() : '';
+  const type = has(TYPE_ALIASES, named) ? TYPE_ALIASES[named] : named;
 
   if (!has(builders, type)) {
     return { errors: [`type must be one of: ${SUPPORTED_EVENT_TYPES.join(', ')}.`], ok: false };
@@ -168,7 +286,8 @@ export function parseEventRequest(body: unknown, now = new Date()): ParseResult<
 
   const errors: string[] = [];
   const at = readTimestamp(record, ['timestamp'], now, errors);
-  const notes = readNotes(record, errors);
+  // A note carries its text as the entry itself, not as an extra.
+  const notes = type === 'note' ? undefined : readNotes(record, errors);
   const event = builders[type as SupportedEventType](record, at, now, errors);
 
   if (errors.length || !event) {
@@ -220,10 +339,34 @@ export function describeLoggedEvent(event: EventInput, child: BabyProfile): stri
     case 'diaper':
       return `Logged a ${event.kind} diaper for ${name} at ${time}.`;
     case 'feed': {
+      if (event.amountOz === undefined && event.durationMinutes === undefined) {
+        return `Started ${event.method === 'nursing' ? 'nursing' : 'a bottle'} for ${name} at ${time}. Add the ${event.method === 'nursing' ? 'length' : 'amount'} in BabySteps when it's done.`;
+      }
+
       const amount = event.amountOz !== undefined ? `${formatVolume(event.amountOz, getPreferredUnits(child).system)} ` : '';
       const length = event.durationMinutes !== undefined ? ` for ${event.durationMinutes} minutes` : '';
       return `Logged a ${amount}${event.method === 'nursing' ? 'nursing feed' : 'bottle'}${length} for ${name} at ${time}.`;
     }
+    case 'bath':
+      return `Logged a bath for ${name} at ${time}.`;
+    case 'mood': {
+      const label = getMoodScale().find((mood) => mood.level === event.level)?.label ?? `level ${event.level}`;
+      return `Logged ${name}'s mood as ${label.toLowerCase()} at ${time}.`;
+    }
+    case 'note':
+      return `Saved a note for ${name} at ${time}.`;
+    case 'pump':
+      if (event.amountOz === 0) {
+        return `Started pumping at ${time}. Add the amount in BabySteps when it's done.`;
+      }
+
+      return `Logged ${formatVolume(event.amountOz, getPreferredUnits(child).system)} pumped${event.side === 'both' ? '' : ` on the ${event.side} side`} at ${time}.`;
+    case 'tummytime':
+      if (event.durationMinutes === 0) {
+        return `Started tummy time for ${name} at ${time}. Add the length in BabySteps when it's done.`;
+      }
+
+      return `Logged ${event.durationMinutes} minutes of tummy time for ${name}, starting ${time}.`;
     case 'sleep':
       return event.endedAt
         ? `Logged ${formatSpokenMinutes(event.startedAt, event.endedAt)} of sleep for ${name}, from ${time} to ${formatSpokenTime(event.endedAt, child.timezone)}.`
@@ -275,6 +418,20 @@ function formatSpokenTime(value: string, timeZone: string) {
 /** Own keys only — a request naming `constructor` is not a type. (`Object.hasOwn` is past this build's ES2020 lib.) */
 function has(record: object, key: string) {
   return Object.prototype.hasOwnProperty.call(record, key);
+}
+
+/** `"started": true` (or the string, from templating) — see the module comment. */
+function isStarted(body: Body) {
+  return body.started === true || body.started === 'true';
+}
+
+/**
+ * When a timed entry began. A `timestamp` is the start; without one the entry is
+ * being reported as it ends — "20 minutes of tummy time" is said afterwards —
+ * so it began that long ago.
+ */
+function startOf(at: Date | undefined, now: Date, durationMinutes: number | undefined) {
+  return at ?? new Date(now.getTime() - (durationMinutes ?? 0) * MS_PER_MINUTE);
 }
 
 function iso(date: Date) {
