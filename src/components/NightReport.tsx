@@ -1,17 +1,21 @@
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import {
+  getBabyDay,
   getBabyNight,
   getBabyNightsReport,
   getCurrentNightKey,
   NIGHT_START_HOUR,
   SETTLE_MINUTES,
   shiftNightKey,
+  type BabyDay,
   type BabyNight,
+  type HeardCry,
   type NightStat,
   type NightWake,
   type SleepStretch
 } from '../domain/babyNights';
+import { describeCryContext, getCryContext, isCryMarked, toCryMood, type MarkedCry } from '../domain/cryContext';
 import type { DateRange } from '../domain/dateRange';
 import { formatClock, formatDuration, getLocalDateKey } from '../domain/dates';
 import type { NurseryData } from '../domain/nurserySensor';
@@ -29,10 +33,13 @@ interface NightReportProps {
   onLogSleep?: (sleep: UnloggedSleep) => void;
   /** Logs every estimated stretch of the night as it stands. */
   onLogSleeps?: (sleeps: UnloggedSleep[]) => Promise<void>;
+  /** Records heard crying as Crying in Mood. Absent, the crying is only shown. */
+  onMarkCries?: (cries: MarkedCry[]) => Promise<void>;
   now?: Date;
 }
 
 export type UnloggedSleep = SleepStretch['unlogged'][number];
+
 
 const timeOf = (iso: string) => new Date(iso).getTime();
 
@@ -103,23 +110,46 @@ function describeSleep(sleep: UnloggedSleep) {
   return sleep.endedAt ? `${formatClock(sleep.startedAt)}–${formatClock(sleep.endedAt)}` : `from ${formatClock(sleep.startedAt)}, still asleep`;
 }
 
+interface TrackMark {
+  startedAt: string;
+  endedAt: string;
+}
+
+interface TrackProps {
+  /** The track's accessible name: what it shows, read aloud. */
+  label: string;
+  startedAt: string;
+  endedAt: string;
+  /** `day` draws awake as the ground and sleep as the marks, the other way round from a night. */
+  variant: 'day' | 'night';
+  sleeps: SleepStretch[];
+  /** Time awake drawn as breaks in the night. */
+  awake: TrackMark[];
+  items: Array<{ startedAt: string; type: CareEventType }>;
+  heard: HeardCry[];
+  /** Times under the track, below the sleep starts: the night's wakes. */
+  wakeLabels?: Array<{ startedAt: string; title: string }>;
+  /** Spans that can be logged as sleep, laid over the track as buttons. */
+  targets: Array<{ name: string; part: UnloggedSleep }>;
+  onLog?: (sleep: UnloggedSleep) => void;
+  selectedCry: string | null;
+  onSelectCry?: (startedAt: string) => void;
+}
+
 /**
- * One night on a track from going down to getting up: sleep as bars (solid when
- * logged, hatched when worked out from the gaps), time awake as the breaks, each
- * logged entry as a dot in its own color, wake times under the track, and the
- * sensor's heard crying as ticks above it.
+ * A night or a day on one track: sleep as bars (solid when logged, hatched when
+ * worked out from the gaps), each with its length in the middle and its start
+ * underneath; time awake as the breaks; each logged entry as a dot in its own
+ * color; and the sensor's heard crying as ticks above, each one tappable.
  */
-function NightTrack({ night, onLogSleep }: { night: BabyNight; onLogSleep?: (sleep: UnloggedSleep) => void }) {
-  const start = timeOf(night.startedAt);
-  const length = timeOf(night.endedAt) - start;
+function Track({ awake, endedAt, heard, items, label, onLog, onSelectCry, selectedCry, sleeps, startedAt, targets, variant, wakeLabels = [] }: TrackProps) {
+  const start = timeOf(startedAt);
+  const length = Math.max(1, timeOf(endedAt) - start);
   const share = (iso: string) => Math.min(1, Math.max(0, (timeOf(iso) - start) / length));
   const position = (iso: string) => `${share(iso) * 100}%`;
   const width = (from: string, to: string) => `max(2px, ${Math.max(0, ((timeOf(to) - timeOf(from)) / length) * 100)}%)`;
   const ticks = [0, 0.25, 0.5, 0.75, 1].map((part) => new Date(start + part * length).toISOString());
-  const wakes = [...night.wakes, ...night.edges].sort((left, right) => left.startedAt.localeCompare(right.startedAt));
-  const end = (iso: string | null) => iso ?? night.endedAt;
-  const wakeLabels = night.wakes.map((wake) => ({ at: share(wake.startedAt), key: wake.startedAt, text: formatClock(wake.startedAt), title: describeWake(wake) }));
-  const sleepLabels = night.sleeps.map((stretch) => ({
+  const sleepLabels = sleeps.map((stretch) => ({
     at: share(stretch.startedAt),
     key: stretch.startedAt,
     text: formatClock(stretch.startedAt),
@@ -127,36 +157,39 @@ function NightTrack({ night, onLogSleep }: { night: BabyNight; onLogSleep?: (sle
   }));
 
   return (
-    <div className="night-track-wrap">
-      <div className="night-heard-row" aria-hidden="true">
-        {night.heard.map((cry) => (
-          <i
-            className={`night-heard${cry.withWake ? '' : ' possible'}`}
-            key={cry.startedAt}
-            style={{ left: position(cry.startedAt), width: width(cry.startedAt, cry.endedAt) }}
-          />
-        ))}
+    <div className={`night-track-wrap ${variant}`}>
+      <div className="night-heard-row">
+        {heard.map((cry) => {
+          const style = { left: position(cry.startedAt), width: width(cry.startedAt, cry.endedAt) };
+          const className = `night-heard${cry.withWake ? '' : ' possible'}${selectedCry === cry.startedAt ? ' selected' : ''}`;
+          return onSelectCry ? (
+            <button
+              aria-label={`Crying heard ${formatClock(cry.startedAt)}`}
+              aria-pressed={selectedCry === cry.startedAt}
+              className={className}
+              key={cry.startedAt}
+              style={style}
+              type="button"
+              onClick={() => onSelectCry(cry.startedAt)}
+            />
+          ) : (
+            <i aria-hidden="true" className={className} key={cry.startedAt} style={style} />
+          );
+        })}
       </div>
       <div className="night-track-stack">
-      <div
-        className="night-track"
-        role="img"
-        aria-label={`${formatNightLabel(night.dateKey)}: ${minutes(night.sleepMinutes)} asleep, ${plural(night.wakes.length, 'wake')}${
-          night.wakes.length > 0 ? `: ${night.wakes.map(describeWake).join('; ')}` : ''
-        }`}
-      >
-        {night.sleeps.map((stretch) => (
-          <i
-            className={`night-sleep ${stretch.source}`}
-            key={stretch.startedAt}
-            style={{ left: position(stretch.startedAt), width: width(stretch.startedAt, stretch.endedAt) }}
-          />
-        ))}
-        {wakes.map((wake) => (
-          <i className="night-wake" key={wake.startedAt} style={{ left: position(wake.startedAt), width: width(wake.startedAt, wake.resumedAt) }} />
-        ))}
-        {wakes.flatMap((wake) =>
-          wake.items.map((item) => (
+        <div className={`night-track ${variant}`} role="img" aria-label={label}>
+          {sleeps.map((stretch) => (
+            <i
+              className={`night-sleep ${stretch.source}`}
+              key={stretch.startedAt}
+              style={{ left: position(stretch.startedAt), width: width(stretch.startedAt, stretch.endedAt) }}
+            />
+          ))}
+          {awake.map((mark) => (
+            <i className="night-wake" key={mark.startedAt} style={{ left: position(mark.startedAt), width: width(mark.startedAt, mark.endedAt) }} />
+          ))}
+          {items.map((item) => (
             <i
               className="night-entry"
               data-event={item.type}
@@ -164,46 +197,197 @@ function NightTrack({ night, onLogSleep }: { night: BabyNight; onLogSleep?: (sle
               style={{ left: position(item.startedAt) }}
               title={`${formatClock(item.startedAt)} ${careEventLabels[item.type]}`}
             />
-          ))
-        )}
-      </div>
-      {/* Above the track's picture: each bar's length, and the estimated parts as buttons to log. */}
-      <div className="night-track-layer">
-        {night.sleeps
-          .filter((stretch) => share(stretch.endedAt) - share(stretch.startedAt) >= DURATION_MIN_SHARE)
-          .map((stretch) => (
-            <span
-              aria-hidden="true"
-              className="night-sleep-length"
-              key={stretch.startedAt}
-              style={{ left: position(stretch.startedAt), width: width(stretch.startedAt, stretch.endedAt) }}
-            >
-              <b>{minutes(stretch.minutes)}</b>
-            </span>
           ))}
-        {onLogSleep &&
-          night.sleeps.flatMap((stretch) =>
-            stretch.unlogged.map((part) => (
+        </div>
+        {/* Above the track's picture: each bar's length, and what can be logged as buttons. */}
+        <div className="night-track-layer">
+          {sleeps
+            .filter((stretch) => share(stretch.endedAt) - share(stretch.startedAt) >= DURATION_MIN_SHARE)
+            .map((stretch) => (
+              <span
+                aria-hidden="true"
+                className="night-sleep-length"
+                key={stretch.startedAt}
+                style={{ left: position(stretch.startedAt), width: width(stretch.startedAt, stretch.endedAt) }}
+              >
+                <b>{minutes(stretch.minutes)}</b>
+              </span>
+            ))}
+          {onLog &&
+            targets.map(({ name, part }) => (
               <button
-                aria-label={`Log estimated sleep ${describeSleep(part)}`}
-                className="night-sleep-log"
+                aria-label={name}
+                className={variant === 'day' ? 'night-opening' : 'night-sleep-log'}
                 key={part.startedAt}
-                style={{ left: position(part.startedAt), width: width(part.startedAt, end(part.endedAt)) }}
-                title={`Log sleep ${describeSleep(part)}`}
+                style={{ left: position(part.startedAt), width: width(part.startedAt, part.endedAt ?? endedAt) }}
+                title={name}
                 type="button"
-                onClick={() => onLogSleep(part)}
+                onClick={() => onLog(part)}
               />
-            ))
-          )}
-      </div>
+            ))}
+        </div>
       </div>
       <LabelRow className="night-sleep-labels" labels={sleepLabels} />
-      <LabelRow className="night-wake-labels" labels={wakeLabels} />
+      <LabelRow
+        className="night-wake-labels"
+        labels={wakeLabels.map((wake) => ({ at: share(wake.startedAt), key: wake.startedAt, text: formatClock(wake.startedAt), title: wake.title }))}
+      />
       <div className="night-axis" aria-hidden="true">
         {ticks.map((tick) => (
           <span key={tick}>{formatClock(tick)}</span>
         ))}
       </div>
+    </div>
+  );
+}
+
+function NightTrack({ night, ...rest }: { night: BabyNight; onLog?: (sleep: UnloggedSleep) => void; onSelectCry?: (startedAt: string) => void; selectedCry: string | null }) {
+  const wakes = [...night.wakes, ...night.edges].sort((left, right) => left.startedAt.localeCompare(right.startedAt));
+
+  return (
+    <Track
+      {...rest}
+      awake={wakes.map((wake) => ({ endedAt: wake.resumedAt, startedAt: wake.startedAt }))}
+      endedAt={night.endedAt}
+      heard={night.heard}
+      items={wakes.flatMap((wake) => wake.items)}
+      label={`${formatNightLabel(night.dateKey)}: ${minutes(night.sleepMinutes)} asleep, ${plural(night.wakes.length, 'wake')}${
+        night.wakes.length > 0 ? `: ${night.wakes.map(describeWake).join('; ')}` : ''
+      }`}
+      sleeps={night.sleeps}
+      startedAt={night.startedAt}
+      targets={night.sleeps.flatMap((stretch) => stretch.unlogged.map((part) => ({ name: `Log estimated sleep ${describeSleep(part)}`, part })))}
+      variant="night"
+      wakeLabels={night.wakes.map((wake) => ({ startedAt: wake.startedAt, title: describeWake(wake) }))}
+    />
+  );
+}
+
+function describeNap(opening: UnloggedSleep) {
+  return opening.endedAt ? `${formatClock(opening.startedAt)}–${formatClock(opening.endedAt)}` : `from ${formatClock(opening.startedAt)}`;
+}
+
+function DayTrack({ day, ...rest }: { day: BabyDay; onLog?: (sleep: UnloggedSleep) => void; onSelectCry?: (startedAt: string) => void; selectedCry: string | null }) {
+  return (
+    <Track
+      {...rest}
+      awake={[]}
+      endedAt={day.endedAt}
+      heard={day.heard}
+      items={day.items}
+      label={`${formatNightLabel(day.dateKey)} day: ${plural(day.naps.length, 'nap')}${day.naps.length > 0 ? `, ${minutes(day.napMinutes)}` : ''}${
+        day.naps.length > 0 ? `: ${day.naps.map((nap) => `${formatClock(nap.startedAt)} for ${minutes(nap.minutes)}`).join('; ')}` : ''
+      }`}
+      sleeps={day.naps}
+      startedAt={day.startedAt}
+      targets={day.openings.map((part) => ({ name: `Log a nap ${describeNap(part)}`, part }))}
+      variant="day"
+    />
+  );
+}
+
+function formatCryLength(cry: HeardCry) {
+  const seconds = Math.max(1, Math.round((timeOf(cry.endedAt) - timeOf(cry.startedAt)) / 1000));
+  return seconds < 60 ? `${seconds}s` : minutes(seconds / 60);
+}
+
+interface CryPanelProps {
+  cries: HeardCry[];
+  events: CareEvent[];
+  onMark?: (cries: MarkedCry[]) => Promise<void>;
+  onSelect: (startedAt: string) => void;
+  selected: string | null;
+}
+
+/**
+ * Every bout the sensor heard across the night and the day, each one a chip:
+ * tap for what the log says around it, and mark one or all of them as Crying in
+ * Mood. The context is the log's, never a cause — see `domain/cryContext.ts`.
+ */
+function CryPanel({ cries, events, onMark, onSelect, selected }: CryPanelProps) {
+  const [marking, setMarking] = useState(false);
+
+  if (cries.length === 0) {
+    return null;
+  }
+
+  const unmarked = cries.filter((cry) => !isCryMarked(cry, events));
+  const current = cries.find((cry) => cry.startedAt === selected);
+  const context = current ? describeCryContext(getCryContext(events, current.startedAt)) : [];
+
+  async function mark(toMark: HeardCry[]) {
+    setMarking(true);
+
+    try {
+      await onMark?.(toMark.map((cry) => toCryMood(cry, events)));
+    } finally {
+      setMarking(false);
+    }
+  }
+
+  return (
+    <div className="cry-panel">
+      <div className="cry-panel-head">
+        <strong>Crying heard</strong>
+        {onMark && unmarked.length > 0 && (
+          <button className="secondary-button" disabled={marking} type="button" onClick={() => void mark(unmarked)}>
+            {marking ? 'Marking…' : unmarked.length === cries.length ? `Mark all ${unmarked.length} in Mood` : `Mark ${unmarked.length} more in Mood`}
+          </button>
+        )}
+      </div>
+      <div className="cry-chips">
+        {cries.map((cry) => {
+          const marked = isCryMarked(cry, events);
+          return (
+            <button
+              aria-pressed={cry.startedAt === selected}
+              className={`cry-chip${marked ? ' marked' : ''}${cry.withWake ? '' : ' possible'}`}
+              key={cry.startedAt}
+              type="button"
+              onClick={() => onSelect(cry.startedAt)}
+            >
+              {formatClock(cry.startedAt)} · {formatCryLength(cry)}
+              {marked && <Check aria-label="in Mood" />}
+            </button>
+          );
+        })}
+      </div>
+      {current && (
+        <div className="cry-detail">
+          <p>
+            <strong>
+              {formatClock(current.startedAt)}–{formatClock(current.endedAt)}
+            </strong>
+            {' · '}
+            {plural(current.episodes, 'episode')}
+            {current.withWake ? ' · with a logged wake' : ' · nothing logged near it'}
+          </p>
+          {context.length > 0 ? (
+            <ul className="cry-clues">
+              {context.map((phrase) => (
+                <li className={phrase.due ? 'due' : undefined} key={phrase.text}>
+                  {phrase.text}
+                  {phrase.due && <small> — past the usual gap</small>}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="night-note">Nothing logged before it to go on.</p>
+          )}
+          {onMark &&
+            (isCryMarked(current, events) ? (
+              <p className="night-note">In Mood as crying.</p>
+            ) : (
+              <button className="secondary-button" disabled={marking} type="button" onClick={() => void mark([current])}>
+                Mark in Mood
+              </button>
+            ))}
+        </div>
+      )}
+      <p className="night-note">
+        The sensor hears that a baby cried, not why. These are what was logged around it: pain, illness, a room too warm or cold,
+        overstimulation or wanting company leave nothing in a log, so the baby is the one to check.
+      </p>
     </div>
   );
 }
@@ -241,11 +425,17 @@ function entryTypes(night: BabyNight): CareEventType[] {
  * nights of the selected Reports period. See `domain/babyNights.ts` for how a
  * night is read.
  */
-export function NightReport({ averageRange, events, loadNursery, now: fixedNow, onLogSleep, onLogSleeps, scopeLabel }: NightReportProps) {
+export function NightReport({ averageRange, events, loadNursery, now: fixedNow, onLogSleep, onLogSleeps, onMarkCries, scopeLabel }: NightReportProps) {
   const now = fixedNow ?? new Date();
   const [nursery, setNursery] = useState<NurseryData | null>(null);
   const [logging, setLogging] = useState(false);
-  const [nightKey, setNightKey] = useState(() => getDefaultNightKey(now));
+  const [nightKey, setNightKeyState] = useState(() => getDefaultNightKey(now));
+  const [selectedCry, setSelectedCry] = useState<string | null>(null);
+  const setNightKey = (key: string) => {
+    setNightKeyState(key);
+    setSelectedCry(null);
+  };
+  const selectCry = (startedAt: string) => setSelectedCry((current) => (current === startedAt ? null : startedAt));
 
   useEffect(() => {
     let current = true;
@@ -267,6 +457,8 @@ export function NightReport({ averageRange, events, loadNursery, now: fixedNow, 
   const earliestEvent = events.reduce<string | null>((earliest, event) => (!earliest || event.startedAt < earliest ? event.startedAt : earliest), null);
   const earliestKey = earliestEvent ? shiftNightKey(getLocalDateKey(earliestEvent), -1) : latestKey;
   const night = getBabyNight(events, nightKey, nursery, now);
+  const day = getBabyDay(events, nightKey, nursery, now);
+  const dayTracked = !day.upcoming && (day.items.length > 0 || day.naps.length > 0);
   const report = averageRange ? getBabyNightsReport(events, nursery, averageRange, now) : null;
   // A stretch still going is left to the form: logged in bulk it would be a
   // sleep still running when the baby may be up.
@@ -285,8 +477,8 @@ export function NightReport({ averageRange, events, loadNursery, now: fixedNow, 
   return (
     <section className="section-block night-report" data-event="sleep">
       <div className="section-heading">
-        <h2>Nights</h2>
-        <span>7 PM – 7 AM</span>
+        <h2>Night &amp; Day</h2>
+        <span>7 PM – 7 AM – 7 PM</span>
       </div>
 
       <div className="night-nav">
@@ -318,7 +510,7 @@ export function NightReport({ averageRange, events, loadNursery, now: fixedNow, 
         <p className="empty-state compact">Nothing logged around this night.</p>
       ) : (
         <>
-          <NightTrack night={night} onLogSleep={onLogSleep} />
+          <NightTrack night={night} onLog={onLogSleep} onSelectCry={selectCry} selectedCry={selectedCry} />
           <div className="night-legend" aria-hidden="true">
             <span><i className="night-sleep logged" />Logged sleep</span>
             <span><i className="night-sleep estimated" />Estimated</span>
@@ -327,6 +519,7 @@ export function NightReport({ averageRange, events, loadNursery, now: fixedNow, 
               <span key={type}><i className="night-entry" data-event={type} />{careEventLabels[type]}</span>
             ))}
             {nursery && <span><i className="night-heard" />Crying heard</span>}
+            {onLogSleep && dayTracked && day.openings.length > 0 && <span><i className="night-opening" />Room for a nap</span>}
           </div>
 
           {onLogSleeps && toLog.length > 0 && (
@@ -362,6 +555,29 @@ export function NightReport({ averageRange, events, loadNursery, now: fixedNow, 
           </div>
         </>
       )}
+
+      <div className="section-heading night-span-heading">
+        <h3>Day</h3>
+        <span>{formatNightLabel(day.dateKey)}</span>
+      </div>
+      {day.upcoming ? (
+        <p className="empty-state compact">Starts when the night ends.</p>
+      ) : !dayTracked ? (
+        <p className="empty-state compact">Nothing logged this day{day.inProgress ? ' yet' : ''}.</p>
+      ) : (
+        <>
+          <DayTrack day={day} onLog={onLogSleep} onSelectCry={selectCry} selectedCry={selectedCry} />
+          <p className="night-note">
+            {day.naps.length === 0
+              ? 'No naps logged'
+              : `${plural(day.naps.length, 'nap')} · ${minutes(day.napMinutes)} in all · longest ${minutes(day.longestNapMinutes)}`}
+            {day.inProgress ? ' so far' : ''}
+            {onLogSleep && day.openings.length > 0 ? ' · tap a dashed gap to log a nap' : ''}
+          </p>
+        </>
+      )}
+
+      <CryPanel cries={[...night.heard, ...day.heard]} events={events} onMark={onMarkCries} onSelect={selectCry} selected={selectedCry} />
 
       <SensorLine night={night} nursery={nursery} />
 

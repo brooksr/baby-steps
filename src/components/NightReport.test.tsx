@@ -94,6 +94,48 @@ describe('NightReport', () => {
     expect(await screen.findByRole('button', { name: 'Log 3 estimated sleeps' })).toBeEnabled();
   });
 
+  it('shows the day after the night, with its naps and room to log one', () => {
+    const onLogSleep = vi.fn();
+    const day = [...events, feed('2026-10-13T08:00'), sleep('2026-10-13T09:30', '2026-10-13T11:00'), feed('2026-10-13T11:10')];
+    render(<NightReport averageRange={week} events={day} now={now} onLogSleep={onLogSleep} scopeLabel="this week" />);
+
+    expect(screen.getByRole('heading', { name: 'Night & Day' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: /day: 1 nap, 1h 30m/ })).toBeInTheDocument();
+    expect(screen.getByText(/1 nap · 1h 30m in all · longest 1h 30m/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: `Log a nap from ${formatClock(at('2026-10-13T11:45'))}` }));
+    expect(onLogSleep).toHaveBeenCalledWith({ endedAt: null, startedAt: at('2026-10-13T11:45') });
+  });
+
+  it('opens a heard cry for the log’s context and marks it, or all of them, in Mood', async () => {
+    const onMarkCries = vi.fn(async () => undefined);
+    render(<NightReport averageRange={week} events={events} loadNursery={async () => nursery} now={now} onMarkCries={onMarkCries} scopeLabel="this week" />);
+
+    const chip = await screen.findByRole('button', { name: `${formatClock(at('2026-10-13T02:30'))} · 1m` });
+    fireEvent.click(chip);
+    expect(chip).toHaveAttribute('aria-pressed', 'true');
+    // Picked from the chip or the tick, it is the same cry.
+    expect(screen.getByRole('button', { name: `Crying heard ${formatClock(at('2026-10-13T02:30'))}` })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText(/nothing logged near it/)).toBeInTheDocument();
+    expect(screen.getByText(/^fed 1h 17m before/)).toBeInTheDocument();
+    expect(screen.getByText(/The sensor hears that a baby cried, not why/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mark in Mood' }));
+    expect(onMarkCries).toHaveBeenCalledWith([
+      { notes: expect.stringMatching(/^Crying heard by the nursery sensor, .* · fed 1h 17m before/), startedAt: at('2026-10-13T02:30') }
+    ]);
+    expect(await screen.findByRole('button', { name: 'Mark all 1 in Mood' })).toBeEnabled();
+  });
+
+  it('shows a cry already in Mood as marked', async () => {
+    const mood = { ...base, id: 'mood_1', level: 4, startedAt: at('2026-10-13T02:31'), type: 'mood' } as CareEvent;
+    render(<NightReport averageRange={week} events={[...events, mood]} loadNursery={async () => nursery} now={now} onMarkCries={vi.fn()} scopeLabel="this week" />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /· 1m in Mood/ }));
+    expect(screen.getByText('In Mood as crying.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Mark/ })).not.toBeInTheDocument();
+  });
+
   it('is read-only without a way to log', () => {
     render(<NightReport averageRange={week} events={events} now={now} scopeLabel="this week" />);
 

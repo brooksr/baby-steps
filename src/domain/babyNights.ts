@@ -458,6 +458,78 @@ export function getBabyNight(events: CareEvent[], dateKey: string, nursery?: Nur
   return night;
 }
 
+export interface BabyDay {
+  /** The calendar date of the day — the morning after the night it follows. */
+  dateKey: string;
+  /** From that night's getting up to the next night's going down: 7am–7pm unless a logged sleep moved an end. */
+  startedAt: string;
+  endedAt: string;
+  /** Not begun yet: the night before is still going. */
+  upcoming: boolean;
+  inProgress: boolean;
+  /** Logged naps, clipped to the day. A day's sleep is never estimated: a baby is awake between feeds. */
+  naps: SleepStretch[];
+  /** Each care entry, for drawing on the day's track. */
+  items: Array<{ startedAt: string; type: CareEventType }>;
+  /**
+   * The stretches nothing was logged in, long enough to have been a nap — offered
+   * to log one, never drawn as sleep. `endedAt` is null for one still going.
+   */
+  openings: Array<{ endedAt: string | null; startedAt: string }>;
+  napMinutes: number;
+  longestNapMinutes: number;
+  heard: HeardCry[];
+}
+
+/** The 12 hours after a night: its naps as logged, its entries, and room to log a nap. */
+export function getBabyDay(events: CareEvent[], nightKey: string, nursery?: NurseryData | null, now = new Date()): BabyDay {
+  const nowMs = now.getTime();
+  const span: Span = {
+    end: new Date(getBabyNight(events, shiftNightKey(nightKey, 1), null, now).startedAt).getTime(),
+    start: new Date(getBabyNight(events, nightKey, null, now).endedAt).getTime()
+  };
+  const until = Math.min(span.end, nowMs);
+  const inProgress = nowMs >= span.start && nowMs < span.end;
+  const minStretch = MIN_STRETCH_MINUTES * MINUTE_MS;
+  const naps = getSleepSpans(events, nowMs)
+    .map((sleep) => ({ end: Math.min(sleep.end, until), start: Math.max(sleep.start, span.start) }))
+    .filter((nap) => nap.end > nap.start);
+  const entries = events
+    .filter((event) => WAKE_TYPES.has(event.type) || event.type === 'mood' || event.type === 'tummytime' || event.type === 'bath')
+    .map((event) => {
+      const start = new Date(event.startedAt).getTime();
+      return { end: start + Math.min(getEventDurationMinutes(event), MAX_FEED_MINUTES) * MINUTE_MS, start, type: event.type };
+    })
+    .filter((entry) => entry.start >= span.start && entry.start < until)
+    .sort((left, right) => left.start - right.start);
+  // Busy: every entry plus settling after it, and every nap logged.
+  const busy = [...entries.map((entry) => ({ end: entry.end + SETTLE_MINUTES * MINUTE_MS, start: entry.start })), ...naps];
+  const openings = until > span.start ? subtractSpans({ end: until, start: span.start }, busy) : [];
+  const heard = until > span.start ? getHeardCries(nursery, { end: until, start: span.start }) : [];
+  const stretches: SleepStretch[] = naps.map((nap) => ({ endedAt: isoOf(nap.end), minutes: minutesOf(nap), source: 'logged', startedAt: isoOf(nap.start), unlogged: [] }));
+
+  return {
+    dateKey: shiftNightKey(nightKey, 1),
+    endedAt: isoOf(span.end),
+    heard: heard.map((cry) => {
+      const start = new Date(cry.startedAt).getTime();
+      const end = new Date(cry.endedAt).getTime();
+      const match = HEARD_MATCH_MINUTES * MINUTE_MS;
+      return { ...cry, withWake: entries.some((entry) => end >= entry.start - match && start <= entry.end + match) };
+    }),
+    inProgress,
+    items: entries.map((entry) => ({ startedAt: isoOf(entry.start), type: entry.type })),
+    longestNapMinutes: stretches.reduce((longest, nap) => Math.max(longest, nap.minutes), 0),
+    napMinutes: stretches.reduce((total, nap) => total + nap.minutes, 0),
+    naps: stretches,
+    openings: openings
+      .filter((opening) => opening.end - opening.start >= minStretch)
+      .map((opening) => ({ endedAt: inProgress && opening.end >= until ? null : isoOf(opening.end), startedAt: isoOf(opening.start) })),
+    startedAt: isoOf(span.start),
+    upcoming: nowMs < span.start
+  };
+}
+
 export interface NightStat {
   average: number;
   max: number;

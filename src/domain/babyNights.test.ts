@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getBabyNight, getBabyNightsReport, getCurrentNightKey, getRecentNightsRange, shiftNightKey } from './babyNights';
+import { getBabyDay, getBabyNight, getBabyNightsReport, getCurrentNightKey, getRecentNightsRange, shiftNightKey } from './babyNights';
 import type { NurseryData } from './nurserySensor';
 import type { CareEvent } from './types';
 
@@ -249,5 +249,39 @@ describe('night keys', () => {
   it('steps by calendar day across a month end', () => {
     expect(shiftNightKey('2026-10-31', 1)).toBe('2026-11-01');
     expect(shiftNightKey('2026-11-01', -1)).toBe('2026-10-31');
+  });
+});
+
+describe('the day after a night', () => {
+  const day = [
+    ...loggedNight,
+    feed('2026-10-13T08:00'),
+    sleep('2026-10-13T09:30', '2026-10-13T11:00'),
+    feed('2026-10-13T11:10'),
+    feed('2026-10-13T14:00')
+  ];
+
+  it('runs from getting up to going down, with logged naps and room to log one', () => {
+    const today = getBabyDay(day, '2026-10-12', nursery, afternoon);
+
+    expect(today.dateKey).toBe('2026-10-13');
+    expect([clock(today.startedAt), clock(today.endedAt)]).toEqual(['07:00', '19:00']);
+    expect(today.inProgress).toBe(true);
+    expect(today.naps.map((nap) => [clock(nap.startedAt), nap.minutes, nap.source])).toEqual([['09:30', 90, 'logged']]);
+    expect(today.napMinutes).toBe(90);
+    // Gaps are offered, never drawn as sleep. 14:35 to now is not yet long enough.
+    const openings = (of: typeof today) => of.openings.map((opening) => [clock(opening.startedAt), opening.endedAt && clock(opening.endedAt)]);
+    expect(openings(today)).toEqual([
+      ['07:00', '08:00'],
+      ['08:35', '09:30'],
+      ['11:45', '14:00']
+    ]);
+    // An hour on, it is — and still going, so it would log as a nap still running.
+    expect(openings(getBabyDay(day, '2026-10-12', null, new Date('2026-10-13T16:00'))).slice(-1)[0]).toEqual(['14:35', null]);
+    expect(today.items.map((item) => clock(item.startedAt))).toEqual(['08:00', '11:10', '14:00']);
+  });
+
+  it('has not begun while the night before is still going', () => {
+    expect(getBabyDay(day, '2026-10-12', null, new Date('2026-10-13T03:00')).upcoming).toBe(true);
   });
 });

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { formatDuration, getLocalDateKey, isSameLocalDate } from '../domain/dates';
 import { getRecentNightsRange } from '../domain/babyNights';
 import { getCheckupSpan } from '../domain/checkup';
+import type { MarkedCry } from '../domain/cryContext';
 import { filterEventsByRange, formatRangeLabel, getPresetRange, isDateKeyInRange, type DateRange } from '../domain/dateRange';
 import { getFeedToDiaperLags } from '../domain/diapers';
 import { getDayMetricStats, getFirstYearAnalytics, type FirstYearPoint, type MetricStats } from '../domain/firstYear';
@@ -62,6 +63,8 @@ interface ReportsProps {
   onLogSleep?: (sleep: UnloggedSleep) => void;
   /** Logs a night's estimated stretches as sleep entries. */
   onLogSleeps?: (sleeps: UnloggedSleep[]) => Promise<void>;
+  /** Records heard crying as Crying in Mood. */
+  onMarkCries?: (cries: MarkedCry[]) => Promise<void>;
 }
 
 function convertStats(stats: MetricStats, convert: (value: number) => number): MetricStats {
@@ -230,7 +233,7 @@ function periodLabel(points: FirstYearPoint[]): string {
   return first === last ? formatDayLabel(first) : `${formatDayLabel(first)} – ${formatDayLabel(last)}`;
 }
 
-export function Reports({ events, loadNursery, onLogSleep, onLogSleeps, profile, profiles = [] }: ReportsProps) {
+export function Reports({ events, loadNursery, onLogSleep, onLogSleeps, onMarkCries, profile, profiles = [] }: ReportsProps) {
   const [period, setPeriod] = useState<ReportPeriod>('day');
   const [dateKey, setDateKey] = useState(() => getLocalDateKey(new Date()));
   const [range, setRange] = useState<DateRange>(() => getPresetRange('30d'));
@@ -465,6 +468,7 @@ export function Reports({ events, loadNursery, onLogSleep, onLogSleeps, profile,
         loadNursery={loadNursery}
         onLogSleep={onLogSleep}
         onLogSleeps={onLogSleeps}
+        onMarkCries={onMarkCries}
         scopeLabel={periodScopeLabel(period)}
       />
 

@@ -20,6 +20,7 @@ import { Todos } from './components/Todos';
 import { CAREGIVER_EVENT_TYPES, getAccess } from './domain/access';
 import { getActiveProfiles, getCaregiverAccounts, isCaregiverAccount, isChild, isParent, getStoredActiveProfileId, storeActiveProfileId, storeEmergencyChild, type NewProfileInput } from './domain/family';
 import { DEFAULT_SLEEP_WINDOW, planAttribution, planParentSleeps, type Shift, type ShiftPlan, type ShiftResult } from './domain/nightShift';
+import { CRYING_MOOD_LEVEL, type MarkedCry } from './domain/cryContext';
 import { getLocalDateKey } from './domain/dates';
 import { getFirstYearEvents } from './domain/firstYear';
 import { snapshotSignature } from './domain/snapshot';
@@ -500,6 +501,17 @@ function App() {
     await refresh();
   }
 
+  /** Heard crying, recorded as Crying in Mood — what the sensor heard becomes a care record only when someone says so. */
+  async function handleMarkCries(cries: MarkedCry[]) {
+    mutationRef.current += 1;
+
+    for (const cry of cries) {
+      await trackerStore.addEvent({ babyId: activeChildId, level: CRYING_MOOD_LEVEL, notes: cry.notes, startedAt: cry.startedAt, type: 'mood' });
+    }
+
+    await refresh();
+  }
+
   async function handleDeleteEvent(id: string) {
     mutationRef.current += 1;
     await trackerStore.deleteEvent(id);
@@ -913,6 +925,7 @@ function App() {
             loadNursery={trackerStore.readNurseryData}
             onLogSleep={openSleepDialog}
             onLogSleeps={handleLogSleeps}
+            onMarkCries={handleMarkCries}
             profile={profile}
             profiles={profiles}
           />

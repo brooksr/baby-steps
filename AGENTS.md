@@ -54,6 +54,8 @@ change done.
     over a feeding day that runs 5am to 5am and only over days whose feed count
     was an ordinary one.
   - `domain/cadence.ts` — gentle feed/bath rhythm nudges.
+  - `domain/cryContext.ts` — what the log says around a bout of heard crying
+    (see "Night & Day"), and the Mood entry marking one becomes.
   - `domain/whatToExpect.ts` — picks the Home "What to expect" copy for one
     profile at one moment: the pregnancy by gestational week before the birth,
     the day/week/month window after it.
@@ -909,8 +911,9 @@ stays on the phone.
   is deliberately all-time and says so on the card. The all-time Longest sleep
   card is gone: Nights shows the longest sleep of the night and the longest
   stretch averaged over the period, and a third figure only repeated them.
-- **Nights** (`domain/babyNights.ts` + `components/NightReport.tsx`) — a baby's
-  night, 7pm–7am keyed by the evening, stepped through one night at a time, with
+- **Night & Day** (`domain/babyNights.ts` + `components/NightReport.tsx`) — a
+  baby's night, 7pm–7am keyed by the evening, with the day after it underneath,
+  stepped through one night at a time, with
   averages (night sleep, wakes/night, longest stretch, naps/day) over the
   **finished** nights of the Reports period: Week/Month/Year are the last 7/30/365
   nights by the calendar (`getRecentNightsRange`), Custom and Check-Up their
@@ -957,6 +960,26 @@ stays on the phone.
     coverage figure is the phone's own noon-to-noon day.
   - `NURSERY_SCHEMAS` lives in `domain/nurserySensor.ts`, shared by the Pi's
     parser and this reader.
+  - **The day** (`getBabyDay`) runs from that night's getting up to the next
+    night's going down, so the two tracks tile. Its sleep is **never
+    estimated** — a baby is awake between daytime feeds — so naps are drawn only
+    as logged. The stretches with nothing logged (entries plus settling, 30
+    minutes or more) are `openings`: drawn as dashed outlines and tapped to log a
+    nap, never drawn as sleep.
+  - **Heard crying can become Mood.** Every bout across the night and the day
+    is a chip (and its tick is a button): tap one for the log's context, mark it
+    or all of them as Crying (`CRYING_MOOD_LEVEL`, 4). A crying-or-worse mood
+    entry within 5 minutes already marks a bout. Marking is the only way the
+    sensor's output becomes a care record, and it is someone's choice.
+  - **The sensor cannot say why a baby cried.** The phone's model is YAMNet,
+    with a single "baby cry" class, and no audio is kept to re-ask. Do not add
+    a hungry/tired/pain classifier on top of it. `getCryContext` reads the log
+    instead: time since the last feed and change against this baby's median
+    recent gap (`due` past it, nothing under 4 gaps), time awake since a logged
+    sleep, and any temperature or medicine in the 6 hours before. Those are
+    facts, not a cause, and the card says pain, illness, room temperature,
+    overstimulation and wanting company leave nothing in a log. Do not name a
+    cause, and never anything that reads as a diagnosis.
 - **Date range filters** (`domain/dateRange.ts` + `components/DateRangeFilter.tsx`)
   — presets plus From/To on the Log, and as a **Custom** period on Reports.
   Custom and Check-Up are the Reports periods that filter by calendar day;

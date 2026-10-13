@@ -1852,8 +1852,34 @@ button {
 
 .night-heard-row {
   position: relative;
-  height: 8px;
+  height: 10px;
   margin-bottom: 3px;
+}
+
+/* A tick is a button once crying can be picked: same mark, a bigger target. */
+.night-heard-row button {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  min-width: 6px;
+  padding: 0;
+  cursor: pointer;
+  border: 0;
+}
+
+.night-heard.selected {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+
+/* A day is awake by default: the ground is the panel and naps are the marks. */
+.night-track.day {
+  background: var(--panel-blue);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.night-track-wrap.day {
+  margin-top: 4px;
 }
 
 .night-track {
@@ -2001,6 +2027,112 @@ button {
 .night-sleep-log:focus-visible {
   outline: 2px solid var(--ink);
   outline-offset: 1px;
+}
+
+/* Room in the day with nothing logged: offered for a nap, never drawn as one. */
+.night-opening {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  padding: 0;
+  cursor: pointer;
+  background: transparent;
+  border: 1.5px dashed color-mix(in srgb, var(--event-tint, var(--blue-400)) 55%, transparent);
+  border-radius: 6px;
+  pointer-events: auto;
+}
+
+.night-opening:hover {
+  background: color-mix(in srgb, var(--event-tint, var(--blue-400)) 14%, transparent);
+}
+
+.night-opening:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+
+.night-legend .night-opening {
+  position: static;
+  display: inline-block;
+}
+
+.cry-panel {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0 10px;
+  padding: 12px;
+  background: var(--panel-blue);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.cry-panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cry-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cry-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  padding: 4px 10px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 800;
+  cursor: pointer;
+  background: var(--panel);
+  border: 1.5px solid var(--danger);
+  border-radius: 999px;
+}
+
+.cry-chip.possible {
+  border-style: dashed;
+}
+
+.cry-chip[aria-pressed='true'] {
+  color: var(--panel);
+  background: var(--danger);
+}
+
+.cry-chip svg {
+  width: 14px;
+  height: 14px;
+}
+
+.cry-detail {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+  font-size: 0.85rem;
+}
+
+.cry-detail p {
+  margin: 0;
+}
+
+.cry-clues {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.cry-clues li.due {
+  font-weight: 800;
+}
+
+.cry-clues small {
+  color: var(--muted);
+  font-weight: 700;
 }
 
 .night-log-row {
