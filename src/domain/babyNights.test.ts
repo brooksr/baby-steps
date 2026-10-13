@@ -83,11 +83,20 @@ describe('a baby’s night', () => {
     expect(night.estimated).toBe(true);
   });
 
-  it('lays heard crying over the night without changing a single number', () => {
+  it('lays heard crying over the night, cutting estimated sleep but never a wake or a logged sleep', () => {
     const plain = getBabyNight(loggedNight, '2026-10-12', null, afternoon);
     const heard = getBabyNight(loggedNight, '2026-10-12', nursery, afternoon);
 
-    expect(heard.sleepMinutes).toBe(plain.sleepMinutes);
+    // 01:12 cry trims the stretch before the 01:13 feed; the 02:30 one ends the
+    // 01:48 stretch, and the 22 minutes after it settles are too short to be sleep.
+    expect(heard.sleeps.map((stretch) => [clock(stretch.startedAt), clock(stretch.endedAt), stretch.source])).toEqual([
+      ['19:00', '21:50', 'logged'],
+      ['22:30', '01:12', 'estimated'],
+      ['01:48', '02:30', 'estimated'],
+      ['03:43', '05:32', 'estimated'],
+      ['06:07', '07:00', 'estimated']
+    ]);
+    expect(heard.sleepMinutes).toBe(plain.sleepMinutes - 1 - 38);
     expect(heard.wakes).toHaveLength(plain.wakes.length);
     expect(heard.wakes.map((wake) => wake.heard)).toEqual([false, true, false, false]);
     // Two close episodes are one bout; speech is not crying.
@@ -96,6 +105,18 @@ describe('a baby’s night', () => {
       ['02:30', 1, false]
     ]);
     expect(heard.sensor).toEqual({ coveragePercent: 98.3, cryEpisodes: 3 });
+  });
+
+  it('leaves logged sleep as written when the sensor heard crying in it', () => {
+    const inBed: NurseryData = {
+      episodes: [{ endedAt: at('2026-10-12T20:05'), label: 'baby_cry', maxScore: 0.9, startedAt: at('2026-10-12T20:00') }],
+      nights: nursery.nights
+    };
+    const plain = getBabyNight(loggedNight, '2026-10-12', null, afternoon);
+    const heard = getBabyNight(loggedNight, '2026-10-12', inBed, afternoon);
+
+    expect(heard.sleeps).toEqual(plain.sleeps);
+    expect(heard.heard.map((cry) => [clock(cry.startedAt), cry.withWake])).toEqual([['20:00', false]]);
   });
 
   it('treats entries at either end of the night as going down and getting up, not wakes', () => {
@@ -141,6 +162,10 @@ describe('a baby’s night', () => {
 
     expect(clock(night.wakes[0].resumedAt)).toBe('01:25');
     expect(night.sleeps.find((stretch) => clock(stretch.startedAt) === '01:25')?.source).toBe('mixed');
+    // Logging it writes only what the sleep entry does not already cover.
+    expect(night.sleeps.find((stretch) => clock(stretch.startedAt) === '01:25')?.unlogged.map((part) => [clock(part.startedAt), part.endedAt && clock(part.endedAt)])).toEqual([
+      ['05:00', '07:00']
+    ]);
   });
 
   it('runs a night still under way up to now', () => {
@@ -152,6 +177,15 @@ describe('a baby’s night', () => {
     expect(night.sleeps.map((stretch) => [clock(stretch.startedAt), clock(stretch.endedAt)])).toEqual([
       ['19:30', '01:00'],
       ['01:35', '02:30']
+    ]);
+    // A sleep still running already covers both.
+    expect(night.sleeps.flatMap((stretch) => stretch.unlogged)).toEqual([]);
+    // With none, the stretch under way would log as a sleep still running, not one that just ended.
+    const unlogged = getBabyNight([feed('2026-10-12T21:00'), feed('2026-10-13T01:00')], '2026-10-12', null, new Date('2026-10-13T02:30'));
+    expect(unlogged.sleeps.map((stretch) => stretch.unlogged.map((part) => [clock(part.startedAt), part.endedAt && clock(part.endedAt)]))).toEqual([
+      [['19:00', '21:00']],
+      [['21:35', '01:00']],
+      [['01:35', null]]
     ]);
     // Twenty-five minutes back down is not yet a stretch.
     expect(getBabyNight(events, '2026-10-12', null, new Date('2026-10-13T02:00')).sleeps).toHaveLength(1);

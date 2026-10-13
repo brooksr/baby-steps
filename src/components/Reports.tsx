@@ -16,7 +16,7 @@ import { FeedClock } from './FeedClock';
 import { FeedOrder } from './FeedOrder';
 import { GrowthStandards } from './GrowthStandards';
 import { NewbornStatus } from './NewbornStatus';
-import { NightReport } from './NightReport';
+import { NightReport, type UnloggedSleep } from './NightReport';
 import { ReportExplorer } from './ReportExplorer';
 import { Timeline } from './Timeline';
 
@@ -58,6 +58,10 @@ interface ReportsProps {
   profiles?: BabyProfile[];
   /** The nursery sensor's tabs, for the Nights section's heard-crying layer. */
   loadNursery?: () => Promise<NurseryData | null>;
+  /** Opens the sleep form on one estimated stretch of a night. */
+  onLogSleep?: (sleep: UnloggedSleep) => void;
+  /** Logs a night's estimated stretches as sleep entries. */
+  onLogSleeps?: (sleeps: UnloggedSleep[]) => Promise<void>;
 }
 
 function convertStats(stats: MetricStats, convert: (value: number) => number): MetricStats {
@@ -226,7 +230,7 @@ function periodLabel(points: FirstYearPoint[]): string {
   return first === last ? formatDayLabel(first) : `${formatDayLabel(first)} – ${formatDayLabel(last)}`;
 }
 
-export function Reports({ events, loadNursery, profile, profiles = [] }: ReportsProps) {
+export function Reports({ events, loadNursery, onLogSleep, onLogSleeps, profile, profiles = [] }: ReportsProps) {
   const [period, setPeriod] = useState<ReportPeriod>('day');
   const [dateKey, setDateKey] = useState(() => getLocalDateKey(new Date()));
   const [range, setRange] = useState<DateRange>(() => getPresetRange('30d'));
@@ -455,7 +459,14 @@ export function Reports({ events, loadNursery, profile, profiles = [] }: Reports
         )}
       </section>
 
-      <NightReport averageRange={nightRange} events={events} loadNursery={loadNursery} scopeLabel={periodScopeLabel(period)} />
+      <NightReport
+        averageRange={nightRange}
+        events={events}
+        loadNursery={loadNursery}
+        onLogSleep={onLogSleep}
+        onLogSleeps={onLogSleeps}
+        scopeLabel={periodScopeLabel(period)}
+      />
 
       <section className="metric-grid report-grid" aria-label="Insights">
         <article className="metric-card" data-event="feed">

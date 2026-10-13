@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { getRecentNightsRange } from '../domain/babyNights';
 import { formatClock } from '../domain/dates';
 import type { NurseryData } from '../domain/nurserySensor';
@@ -69,6 +69,35 @@ describe('NightReport', () => {
 
     expect(await screen.findByText(/listening 98% of noon to noon/)).toHaveTextContent('1 with nothing logged, outlined');
     expect(document.querySelector('.night-heard.possible')).not.toBeNull();
+  });
+
+  it('labels each bar with its length and start, and logs estimated sleep one bar or all at once', async () => {
+    const onLogSleep = vi.fn();
+    const onLogSleeps = vi.fn(async () => undefined);
+    render(<NightReport averageRange={week} events={events} now={now} onLogSleep={onLogSleep} onLogSleeps={onLogSleeps} scopeLabel="this week" />);
+
+    // The logged bedtime stretch is labelled too, but only estimated ones are buttons.
+    expect(document.querySelector('.night-sleep-length')).toHaveTextContent('2h 50m');
+    expect(document.querySelector('.night-sleep-labels')).toHaveTextContent(formatClock(at('2026-10-12T22:30')));
+    const bars = screen.getAllByRole('button', { name: /^Log estimated sleep/ });
+    expect(bars).toHaveLength(3);
+
+    fireEvent.click(bars[0]);
+    expect(onLogSleep).toHaveBeenCalledWith({ endedAt: at('2026-10-13T01:13'), startedAt: at('2026-10-12T22:30') });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Log 3 estimated sleeps' }));
+    expect(onLogSleeps).toHaveBeenCalledWith([
+      { endedAt: at('2026-10-13T01:13'), startedAt: at('2026-10-12T22:30') },
+      { endedAt: at('2026-10-13T03:08'), startedAt: at('2026-10-13T01:48') },
+      { endedAt: at('2026-10-13T07:00'), startedAt: at('2026-10-13T03:43') }
+    ]);
+    expect(await screen.findByRole('button', { name: 'Log 3 estimated sleeps' })).toBeEnabled();
+  });
+
+  it('is read-only without a way to log', () => {
+    render(<NightReport averageRange={week} events={events} now={now} scopeLabel="this week" />);
+
+    expect(screen.queryByRole('button', { name: /estimated sleep/ })).not.toBeInTheDocument();
   });
 
   it('says so when nothing was logged around a night', () => {

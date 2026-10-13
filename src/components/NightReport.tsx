@@ -9,7 +9,8 @@ import {
   shiftNightKey,
   type BabyNight,
   type NightStat,
-  type NightWake
+  type NightWake,
+  type SleepStretch
 } from '../domain/babyNights';
 import type { DateRange } from '../domain/dateRange';
 import { formatClock, formatDuration, getLocalDateKey } from '../domain/dates';
@@ -24,8 +25,14 @@ interface NightReportProps {
   scopeLabel: string;
   /** Reads the nursery sensor's tabs; absent or null means no sensor layer. */
   loadNursery?: () => Promise<NurseryData | null>;
+  /** Opens the sleep form on one estimated stretch. Absent, the track is read-only. */
+  onLogSleep?: (sleep: UnloggedSleep) => void;
+  /** Logs every estimated stretch of the night as it stands. */
+  onLogSleeps?: (sleeps: UnloggedSleep[]) => Promise<void>;
   now?: Date;
 }
+
+export type UnloggedSleep = SleepStretch['unlogged'][number];
 
 const timeOf = (iso: string) => new Date(iso).getTime();
 
@@ -52,6 +59,49 @@ function getDefaultNightKey(now: Date) {
 
 /** Below this share of the track apart, two wake labels would overlap, so the second drops a row. */
 const LABEL_GAP = 0.16;
+/** A bar narrower than this share of the track has no room for its length. */
+const DURATION_MIN_SHARE = 0.09;
+
+interface TrackLabel {
+  at: number;
+  key: string;
+  text: string;
+  title?: string;
+}
+
+/** Labels under the track: a second row for one too close to the last, and the ends hung inward. */
+function layoutLabels(labels: TrackLabel[]) {
+  const rowEnds = [-1, -1];
+
+  return labels.map((label) => {
+    const row = label.at - rowEnds[0] >= LABEL_GAP ? 0 : 1;
+    rowEnds[row] = label.at;
+    const align = label.at < 0.08 ? 'start' : label.at > 0.92 ? 'end' : 'middle';
+    return { ...label, align, row };
+  });
+}
+
+function LabelRow({ className, labels }: { className: string; labels: TrackLabel[] }) {
+  if (labels.length === 0) {
+    return null;
+  }
+
+  const placed = layoutLabels(labels);
+
+  return (
+    <div className={`night-labels ${className}${placed.some((label) => label.row === 1) ? ' two-rows' : ''}`} aria-hidden="true">
+      {placed.map(({ align, at, key, row, text, title }) => (
+        <span className={`${align}${row === 1 ? ' lower' : ''}`} key={key} style={{ left: `${at * 100}%` }} title={title}>
+          {text}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function describeSleep(sleep: UnloggedSleep) {
+  return sleep.endedAt ? `${formatClock(sleep.startedAt)}–${formatClock(sleep.endedAt)}` : `from ${formatClock(sleep.startedAt)}, still asleep`;
+}
 
 /**
  * One night on a track from going down to getting up: sleep as bars (solid when
@@ -59,7 +109,7 @@ const LABEL_GAP = 0.16;
  * logged entry as a dot in its own color, wake times under the track, and the
  * sensor's heard crying as ticks above it.
  */
-function NightTrack({ night }: { night: BabyNight }) {
+function NightTrack({ night, onLogSleep }: { night: BabyNight; onLogSleep?: (sleep: UnloggedSleep) => void }) {
   const start = timeOf(night.startedAt);
   const length = timeOf(night.endedAt) - start;
   const share = (iso: string) => Math.min(1, Math.max(0, (timeOf(iso) - start) / length));
@@ -67,15 +117,14 @@ function NightTrack({ night }: { night: BabyNight }) {
   const width = (from: string, to: string) => `max(2px, ${Math.max(0, ((timeOf(to) - timeOf(from)) / length) * 100)}%)`;
   const ticks = [0, 0.25, 0.5, 0.75, 1].map((part) => new Date(start + part * length).toISOString());
   const wakes = [...night.wakes, ...night.edges].sort((left, right) => left.startedAt.localeCompare(right.startedAt));
-  const rowEnds = [-1, -1];
-  const labels = night.wakes.map((wake) => {
-    const at = share(wake.startedAt);
-    const row = at - rowEnds[0] >= LABEL_GAP ? 0 : 1;
-    rowEnds[row] = at;
-    // Labels at either end hang inward rather than off the card.
-    const align = at < 0.08 ? 'start' : at > 0.92 ? 'end' : 'middle';
-    return { align, at, row, wake };
-  });
+  const end = (iso: string | null) => iso ?? night.endedAt;
+  const wakeLabels = night.wakes.map((wake) => ({ at: share(wake.startedAt), key: wake.startedAt, text: formatClock(wake.startedAt), title: describeWake(wake) }));
+  const sleepLabels = night.sleeps.map((stretch) => ({
+    at: share(stretch.startedAt),
+    key: stretch.startedAt,
+    text: formatClock(stretch.startedAt),
+    title: `Asleep ${formatClock(stretch.startedAt)}, ${minutes(stretch.minutes)}`
+  }));
 
   return (
     <div className="night-track-wrap">
@@ -88,6 +137,7 @@ function NightTrack({ night }: { night: BabyNight }) {
           />
         ))}
       </div>
+      <div className="night-track-stack">
       <div
         className="night-track"
         role="img"
@@ -117,15 +167,38 @@ function NightTrack({ night }: { night: BabyNight }) {
           ))
         )}
       </div>
-      {labels.length > 0 && (
-        <div className={`night-wake-labels${labels.some((label) => label.row === 1) ? ' two-rows' : ''}`} aria-hidden="true">
-          {labels.map(({ align, at, row, wake }) => (
-            <span className={`${align}${row === 1 ? ' lower' : ''}`} key={wake.startedAt} style={{ left: `${at * 100}%` }} title={describeWake(wake)}>
-              {formatClock(wake.startedAt)}
+      {/* Above the track's picture: each bar's length, and the estimated parts as buttons to log. */}
+      <div className="night-track-layer">
+        {night.sleeps
+          .filter((stretch) => share(stretch.endedAt) - share(stretch.startedAt) >= DURATION_MIN_SHARE)
+          .map((stretch) => (
+            <span
+              aria-hidden="true"
+              className="night-sleep-length"
+              key={stretch.startedAt}
+              style={{ left: position(stretch.startedAt), width: width(stretch.startedAt, stretch.endedAt) }}
+            >
+              <b>{minutes(stretch.minutes)}</b>
             </span>
           ))}
-        </div>
-      )}
+        {onLogSleep &&
+          night.sleeps.flatMap((stretch) =>
+            stretch.unlogged.map((part) => (
+              <button
+                aria-label={`Log estimated sleep ${describeSleep(part)}`}
+                className="night-sleep-log"
+                key={part.startedAt}
+                style={{ left: position(part.startedAt), width: width(part.startedAt, end(part.endedAt)) }}
+                title={`Log sleep ${describeSleep(part)}`}
+                type="button"
+                onClick={() => onLogSleep(part)}
+              />
+            ))
+          )}
+      </div>
+      </div>
+      <LabelRow className="night-sleep-labels" labels={sleepLabels} />
+      <LabelRow className="night-wake-labels" labels={wakeLabels} />
       <div className="night-axis" aria-hidden="true">
         {ticks.map((tick) => (
           <span key={tick}>{formatClock(tick)}</span>
@@ -168,9 +241,10 @@ function entryTypes(night: BabyNight): CareEventType[] {
  * nights of the selected Reports period. See `domain/babyNights.ts` for how a
  * night is read.
  */
-export function NightReport({ averageRange, events, loadNursery, now: fixedNow, scopeLabel }: NightReportProps) {
+export function NightReport({ averageRange, events, loadNursery, now: fixedNow, onLogSleep, onLogSleeps, scopeLabel }: NightReportProps) {
   const now = fixedNow ?? new Date();
   const [nursery, setNursery] = useState<NurseryData | null>(null);
+  const [logging, setLogging] = useState(false);
   const [nightKey, setNightKey] = useState(() => getDefaultNightKey(now));
 
   useEffect(() => {
@@ -194,6 +268,19 @@ export function NightReport({ averageRange, events, loadNursery, now: fixedNow, 
   const earliestKey = earliestEvent ? shiftNightKey(getLocalDateKey(earliestEvent), -1) : latestKey;
   const night = getBabyNight(events, nightKey, nursery, now);
   const report = averageRange ? getBabyNightsReport(events, nursery, averageRange, now) : null;
+  // A stretch still going is left to the form: logged in bulk it would be a
+  // sleep still running when the baby may be up.
+  const toLog = night.sleeps.flatMap((stretch) => stretch.unlogged).filter((part) => part.endedAt);
+
+  async function logAll() {
+    setLogging(true);
+
+    try {
+      await onLogSleeps?.(toLog);
+    } finally {
+      setLogging(false);
+    }
+  }
 
   return (
     <section className="section-block night-report" data-event="sleep">
@@ -231,7 +318,7 @@ export function NightReport({ averageRange, events, loadNursery, now: fixedNow, 
         <p className="empty-state compact">Nothing logged around this night.</p>
       ) : (
         <>
-          <NightTrack night={night} />
+          <NightTrack night={night} onLogSleep={onLogSleep} />
           <div className="night-legend" aria-hidden="true">
             <span><i className="night-sleep logged" />Logged sleep</span>
             <span><i className="night-sleep estimated" />Estimated</span>
@@ -241,6 +328,15 @@ export function NightReport({ averageRange, events, loadNursery, now: fixedNow, 
             ))}
             {nursery && <span><i className="night-heard" />Crying heard</span>}
           </div>
+
+          {onLogSleeps && toLog.length > 0 && (
+            <div className="night-log-row">
+              <button className="secondary-button" disabled={logging} type="button" onClick={() => void logAll()}>
+                {logging ? 'Logging…' : `Log ${plural(toLog.length, 'estimated sleep')}`}
+              </button>
+              <small>or tap a hatched bar to log just that one</small>
+            </div>
+          )}
 
           <div className="metric-grid report-grid" aria-label="This night">
             <article className="metric-card" data-event="sleep">
@@ -313,8 +409,8 @@ export function NightReport({ averageRange, events, loadNursery, now: fixedNow, 
 
       <p className="night-note">
         Wakes are night feeds, changes and meds logged within 30 minutes of each other. Sleep not logged as a sleep entry is
-        estimated: the time between wakes, less {SETTLE_MINUTES} minutes to settle. The sensor only hears what reaches the phone, so
-        its crying marks are suggestions and never change these numbers.
+        estimated: the time between wakes, less {SETTLE_MINUTES} minutes to settle. Crying the sensor heard is taken out of estimated
+        sleep the same way, but it never adds a wake or changes a logged sleep: the sensor only hears what reaches the phone.
       </p>
     </section>
   );

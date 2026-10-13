@@ -933,15 +933,28 @@ stays on the phone.
   - **Sleep windows are logged where logged and estimated everywhere else**, and
     the track draws the two differently (solid vs hatched). An estimate must
     never pass for a record — every number says which it is.
+  - **An estimate can be made a record.** Each stretch carries `unlogged`, the
+    parts no sleep entry covers (30 minutes or more), so logging a mixed stretch
+    never writes over sleep already logged. Tapping a hatched bar opens the sleep
+    form on that part (`presetTimes`, with no timer to start); **Log N estimated
+    sleeps** writes the night's finished parts at once. A part still going opens
+    with no end (a sleep still running) and is left out of the bulk write — the
+    baby may be up. Each bar shows its length in the middle when there is room,
+    and its start time on a row under the track, above the wake times.
   - A night nobody logged anything around is untracked and left out of the
     averages rather than read as a perfect night. The night under way is never
     averaged in.
-  - **The nursery sensor is a layer, never an input.** `readNurseryData()` reads
+  - **The nursery sensor is a layer, not a record.** `readNurseryData()` reads
     the Nightly Summaries and Sound Episodes tabs (not part of `snapshot`, so the
     poll does not pay for it) and heard crying draws as ticks above the track:
     matched to a logged wake, or outlined as a *possible* wake with nothing
-    logged. It changes no number — how much a phone hears depends on where it
-    was left. Its coverage figure is the phone's own noon-to-noon day.
+    logged. It never adds a wake and never touches a logged sleep — how much a
+    phone hears depends on where it was left. **It does cut estimated sleep**:
+    an estimate is a guess too, and drawing hatched sleep straight through
+    crying the phone heard is the estimate contradicting the only evidence
+    there is. A bout comes out of estimated time plus `SETTLE_MINUTES` after
+    it, like a wake, and a piece left under 30 minutes is not sleep. Its
+    coverage figure is the phone's own noon-to-noon day.
   - `NURSERY_SCHEMAS` lives in `domain/nurserySensor.ts`, shared by the Pi's
     parser and this reader.
 - **Date range filters** (`domain/dateRange.ts` + `components/DateRangeFilter.tsx`)

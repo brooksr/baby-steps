@@ -8,6 +8,7 @@ import { Learn } from './components/Learn';
 import { Log } from './components/Log';
 import { FamilySetup } from './components/FamilySetup';
 import { LoginSplash } from './components/LoginSplash';
+import type { UnloggedSleep } from './components/NightReport';
 import { QuickAddDialog } from './components/QuickAddDialog';
 import { Reports } from './components/Reports';
 import { SettingsPanel } from './components/SettingsPanel';
@@ -114,6 +115,8 @@ function App() {
   const [logTypeFilter, setLogTypeFilter] = useState<CareEventType | null>(null);
   const [dialogType, setDialogType] = useState<CareEventType | null>(null);
   const [editEvent, setEditEvent] = useState<CareEvent | null>(null);
+  // An estimated sleep picked off the Nights track, opening the form on its times.
+  const [dialogTimes, setDialogTimes] = useState<UnloggedSleep | null>(null);
   const [loading, setLoading] = useState(false);
   const [bootPhase, setBootPhase] = useState<BootPhase>(() => (hasStoredGoogleGrant() ? 'restoring' : 'signin'));
   const [sessionExpired, setSessionExpired] = useState(false);
@@ -456,6 +459,24 @@ function App() {
   function closeDialog() {
     setDialogType(null);
     setEditEvent(null);
+    setDialogTimes(null);
+  }
+
+  function openSleepDialog(sleep: UnloggedSleep) {
+    setEditEvent(null);
+    setDialogTimes(sleep);
+    setDialogType('sleep');
+  }
+
+  /** A night's estimated stretches, written as the sleep entries they stand for. */
+  async function handleLogSleeps(sleeps: UnloggedSleep[]) {
+    mutationRef.current += 1;
+
+    for (const sleep of sleeps) {
+      await trackerStore.addEvent({ babyId: activeChildId, endedAt: sleep.endedAt ?? undefined, startedAt: sleep.startedAt, type: 'sleep' });
+    }
+
+    await refresh();
   }
 
   async function handleSaveEvent(input: CreateCareEventInput) {
@@ -887,7 +908,14 @@ function App() {
         (parentMode ? (
           <ParentReports childEvents={childEvents} events={events} profile={profile} profiles={profiles} />
         ) : (
-          <Reports events={events} loadNursery={trackerStore.readNurseryData} profile={profile} profiles={profiles} />
+          <Reports
+            events={events}
+            loadNursery={trackerStore.readNurseryData}
+            onLogSleep={openSleepDialog}
+            onLogSleeps={handleLogSleeps}
+            profile={profile}
+            profiles={profiles}
+          />
         ))}
 
       {view === 'care' && (
@@ -987,6 +1015,7 @@ function App() {
         onSave={handleSaveEvent}
         onTimerStart={handleTimerStart}
         onTimerStop={handleTimerStop}
+        presetTimes={dialogTimes}
         profile={profile}
         profiles={profiles}
       />

@@ -17,8 +17,11 @@ import type { CareEvent, CareEventType } from './types';
  *   (the night minus each wake and `SETTLE_MINUTES` to settle back down), and
  *   every surface says which it is.
  * - **Heard crying** from the nursery sensor is laid over the top as a
- *   suggestion. It never adds a wake or takes away sleep: how much a phone hears
- *   depends on where it was left, and a model's guess is not a care record.
+ *   suggestion. It never adds a wake and never touches logged sleep: how much a
+ *   phone hears depends on where it was left, and a model's guess is not a care
+ *   record. But an *estimate* is a guess too, and crying is evidence against it,
+ *   so a bout cuts estimated sleep (plus `SETTLE_MINUTES` after it) rather than
+ *   the track drawing sleep straight through what the phone heard.
  *
  * Nights are keyed by the evening they start, like a parent's in
  * `parentReport.ts`, so one night is one row rather than two halves of a date.
@@ -82,6 +85,12 @@ export interface SleepStretch {
   minutes: number;
   /** Logged as a sleep entry, worked out from the gaps between wakes, or some of each. */
   source: StretchSource;
+  /**
+   * The parts of it no sleep entry covers, long enough to be sleep — what logging
+   * this stretch would write. `endedAt` is null for one still going: logged, it
+   * is a sleep still running, not one that ended a moment ago.
+   */
+  unlogged: Array<{ endedAt: string | null; startedAt: string }>;
 }
 
 export interface NightWake {
@@ -206,6 +215,24 @@ function getSleepSpans(events: CareEvent[], now: number): Span[] {
 
 function overlapMs(span: Span, spans: Span[]) {
   return spans.reduce((total, other) => total + Math.max(0, Math.min(span.end, other.end) - Math.max(span.start, other.start)), 0);
+}
+
+/** `span` with every one of `cuts` taken out of it, in order. */
+function subtractSpans(span: Span, cuts: Span[]): Span[] {
+  let pieces: Span[] = [span];
+
+  for (const cut of cuts) {
+    pieces = pieces.flatMap((piece) =>
+      cut.end <= piece.start || cut.start >= piece.end
+        ? [piece]
+        : [
+            { end: cut.start, start: piece.start },
+            { end: piece.end, start: cut.end }
+          ].filter((part) => part.end > part.start)
+    );
+  }
+
+  return pieces;
 }
 
 function toWake(cluster: Cluster, heard: HeardCry[]): NightWake {
@@ -393,12 +420,22 @@ export function getBabyNight(events: CareEvent[], dateKey: string, nursery?: Nur
 
   bounds.push({ end: after ? after.start : until, start: cursor });
 
+  // Heard crying is not sleep, and settling after it is not either — but only
+  // where the sleep was estimated. Logged sleep is a record; it stays as written.
+  const cuts = heard
+    .map((cry) => ({ end: Math.min(until, new Date(cry.endedAt).getTime() + SETTLE_MINUTES * MINUTE_MS), start: new Date(cry.startedAt).getTime() }))
+    .flatMap((cut) => sleepSpans.reduce<Span[]>((parts, sleep) => parts.flatMap((part) => subtractSpans(part, [sleep])), [cut]));
+
   night.sleeps = bounds
+    .flatMap((bound) => subtractSpans(bound, cuts))
     .filter((bound) => bound.end - bound.start >= minStretch)
     .map((bound) => {
       const share = overlapMs(bound, sleepSpans) / (bound.end - bound.start);
       const source: StretchSource = share >= LOGGED_SHARE ? 'logged' : share > 0 ? 'mixed' : 'estimated';
-      return { endedAt: isoOf(bound.end), minutes: minutesOf(bound), source, startedAt: isoOf(bound.start) };
+      const unlogged = subtractSpans(bound, sleepSpans)
+        .filter((part) => part.end - part.start >= minStretch)
+        .map((part) => ({ endedAt: inProgress && part.end >= until ? null : isoOf(part.end), startedAt: isoOf(part.start) }));
+      return { endedAt: isoOf(bound.end), minutes: minutesOf(bound), source, startedAt: isoOf(bound.start), unlogged };
     });
   night.wakes = wakes.map((wake) => toWake(wake, heard));
   night.edges = [before, after].filter((edge): edge is Cluster => Boolean(edge)).map((edge) => toWake(edge, heard));

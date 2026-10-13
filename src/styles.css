@@ -1909,9 +1909,9 @@ button {
   border-radius: 50%;
 }
 
-/* When each wake began, under the track. A label too close to the one before
-   it drops to a second row rather than printing over it. */
-.night-wake-labels {
+/* When each sleep and each wake began, under the track. A label too close to
+   the one before it drops to a second row rather than printing over it. */
+.night-labels {
   position: relative;
   height: 16px;
   margin-top: 4px;
@@ -1920,27 +1920,101 @@ button {
   font-weight: 800;
 }
 
-.night-wake-labels.two-rows {
+.night-labels.two-rows {
   height: 32px;
 }
 
-.night-wake-labels span {
+.night-labels span {
   position: absolute;
   top: 0;
   white-space: nowrap;
   transform: translateX(-50%);
 }
 
-.night-wake-labels span.lower {
+.night-labels span.lower {
   top: 16px;
 }
 
-.night-wake-labels span.start {
+.night-labels span.start {
   transform: none;
 }
 
-.night-wake-labels span.end {
+.night-labels span.end {
   transform: translateX(-100%);
+}
+
+/* Sleep starts sit right under their bars, in the sleep color, so they read
+   apart from the wake times below them. */
+.night-sleep-labels {
+  color: var(--event-tint, var(--blue-400));
+}
+
+/* The track's picture, with each bar's length and the log buttons laid over it.
+   The layer sits outside the track's clipping so a focus ring is not cut off. */
+.night-track-stack {
+  position: relative;
+}
+
+.night-track-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.night-sleep-length {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* A pill, so the length reads over the hatching. */
+.night-sleep-length b {
+  padding: 1px 5px;
+  color: var(--ink);
+  font-size: 0.68rem;
+  font-weight: 800;
+  white-space: nowrap;
+  background: var(--panel);
+  border-radius: 6px;
+}
+
+.night-sleep-log {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  padding: 0;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  pointer-events: auto;
+}
+
+.night-sleep-log:hover {
+  background: color-mix(in srgb, var(--panel) 30%, transparent);
+}
+
+.night-sleep-log:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+
+.night-log-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin-bottom: 12px;
+}
+
+.night-log-row small {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
 }
 
 .night-axis {

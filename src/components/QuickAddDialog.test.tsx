@@ -13,6 +13,23 @@ describe('QuickAddDialog', () => {
     localStorage.clear();
   });
 
+  // An estimated sleep tapped on the Nights track opens on that stretch's times,
+  // with no timer to start: it already happened.
+  it('opens a sleep on preset times', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const startedAt = new Date('2026-10-12T22:30').toISOString();
+    const endedAt = new Date('2026-10-13T01:13').toISOString();
+
+    render(
+      <QuickAddDialog activeTimers={{}} eventType="sleep" onClose={vi.fn()} onSave={onSave} onTimerStart={vi.fn()} onTimerStop={vi.fn()} presetTimes={{ endedAt, startedAt }} />
+    );
+
+    expect(screen.queryByRole('button', { name: /start timer/i })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /save/i }));
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ endedAt, startedAt, type: 'sleep' }));
+  });
+
   // A parent's own input. The free-text box says what it was; the tags say what
   // it counts as, and the tags are the half a later association pass can group.
   it('submits an input with its food-group tags', async () => {

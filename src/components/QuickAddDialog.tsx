@@ -42,6 +42,8 @@ interface QuickAddDialogProps {
   loggedBy?: string;
   /** Optional subtype already named by the button that opened the dialog. */
   presetKind?: IntakeKind | OutputKind | null;
+  /** Times to open a new entry on — an estimated sleep picked off the Nights track. A null end is still going. */
+  presetTimes?: { endedAt: string | null; startedAt: string } | null;
   onTimerStart: (type: TimerType) => void;
   onTimerStop: (type: TimerType) => void;
   profile?: BabyProfile;
@@ -72,7 +74,7 @@ function defaultBottleAmount(bottleAmountOz: number | undefined, unitSystem: Mea
     : roundedInputValue(toUnitVolume(2, unitSystem), 0);
 }
 
-export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, foodNames = [], loggedBy, onClose, onSave, onTimerStart, onTimerStop, presetKind, profile, profiles = [] }: QuickAddDialogProps) {
+export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, foodNames = [], loggedBy, onClose, onSave, onTimerStart, onTimerStop, presetKind, presetTimes, profile, profiles = [] }: QuickAddDialogProps) {
   const preferredUnits = getPreferredUnits(profile);
   const unitSystem = preferredUnits.system;
   const [startedAt, setStartedAt] = useState(() => toDateTimeInputValue(new Date().toISOString()));
@@ -141,8 +143,9 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, fo
 
     const timer = !editEvent && isTimerType(eventType) ? activeTimersRef.current[eventType] : undefined;
 
-    setStartedAt(toDateTimeInputValue(editEvent?.startedAt ?? timer?.startedAt ?? new Date().toISOString()));
-    setEndedAt(editEvent?.endedAt ? toDateTimeInputValue(editEvent.endedAt) : '');
+    const preset = editEvent ? undefined : presetTimes;
+    setStartedAt(toDateTimeInputValue(editEvent?.startedAt ?? preset?.startedAt ?? timer?.startedAt ?? new Date().toISOString()));
+    setEndedAt(editEvent?.endedAt ? toDateTimeInputValue(editEvent.endedAt) : preset?.endedAt ? toDateTimeInputValue(preset.endedAt) : '');
     setNotes(editEvent?.notes ?? '');
     // An edit keeps whoever was recorded — including nobody. A new entry opens
     // on this device's caregiver.
@@ -269,7 +272,7 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, fo
       default:
         break;
     }
-  }, [eventType, editEvent, preferredUnits.weightDisplay, presetKind, profile?.careInfo?.bottleAmountOz, unitSystem]);
+  }, [eventType, editEvent, preferredUnits.weightDisplay, presetKind, presetTimes, profile?.careInfo?.bottleAmountOz, unitSystem]);
 
   // The parents, then anyone with a caregiver sign-in — a parent can record
   // that the grandparent did the 3pm feed.
@@ -596,7 +599,7 @@ export function QuickAddDialog({ activeTimers, editEvent, eventType: addType, fo
             <input type="datetime-local" value={startedAt} onChange={(event) => setStartedAt(event.target.value)} required />
           </label>
 
-          {isTimerType(eventType) && !editing && (
+          {isTimerType(eventType) && !editing && !presetTimes && (
             <div className="timer-row">
               {timerRunning ? (
                 <>
