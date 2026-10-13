@@ -103,7 +103,7 @@ The current Vite base path is `/baby-steps/`. If the repository or hosting path 
 
 ## Raspberry Pi build and one-time sign-in
 
-The same workflow's `pi` job builds for a self-hosted copy served from the site root, and publishes it as a rolling GitHub release (`pi-latest` from `main`, `pi-broker` from the `pi-token-broker` branch) that the host pulls.
+The same workflow's `pi` job builds for a self-hosted copy served from the site root, and publishes it as a rolling GitHub release (`pi-latest`, built from `main`) that the host pulls.
 
 On a static site, Google sign-in lasts about an hour: the browser-only flow never issues a refresh token. The Pi build adds a small stateless **token broker** (`server/token-broker.mjs`, Node 24, no dependencies) at `/api/token/`, which holds the OAuth client secret and lets each device keep a refresh token, so signing in is a one-time event per device. To run it:
 

@@ -2,7 +2,7 @@ name: Deploy static content to Pages
 
 on:
   push:
-    branches: ['main', 'pi-token-broker']
+    branches: ['main']
   workflow_dispatch:
 
 permissions:
@@ -54,8 +54,6 @@ jobs:
   # The same build served from the site root, for the Raspberry Pi. The Pi polls
   # this rolling release and installs each new asset (see the rpi project's
   # scripts/babysteps/), so nothing has to reach into the home network.
-  # main publishes "pi-latest"; the token-broker branch publishes "pi-broker",
-  # so trying it on the Pi never touches what main ships.
   # The Pi build signs in through the broker it serves at /api/token (one-time
   # sign-in); the broker script rides along as a release asset, and so does the
   # events API.
@@ -64,7 +62,7 @@ jobs:
     permissions:
       contents: write
     env:
-      PI_TAG: ${{ github.ref_name == 'main' && 'pi-latest' || 'pi-broker' }}
+      PI_TAG: pi-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v7

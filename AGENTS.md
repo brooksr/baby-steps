@@ -617,9 +617,9 @@ still the database. It only answers origins in `ALLOWED_ORIGINS`.
   an iframe; Google will not render sign-in in a frame and the frame's storage
   is partitioned from the top-level site's, so `isFramed()` keeps the old flow
   there.
-- CI publishes `main` to the `pi-latest` release and the `pi-token-broker`
-  branch to `pi-broker`; the release also carries `token-broker.mjs`, which the
-  Pi's `update.sh` installs and restarts on change. Deployment scripts live in
+- CI publishes `main` to the `pi-latest` release; the release also carries
+  `token-broker.mjs`, which the Pi's `update.sh` installs and restarts on
+  change. Deployment scripts live in
   the separate `rpi` project (`scripts/babysteps/`).
 
 ### Logging from outside the app (`POST /api/events`)
