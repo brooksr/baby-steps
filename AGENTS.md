@@ -902,17 +902,24 @@ stays on the phone.
   pediatrician — never more than that.
 - **Reports page order** — the period control sits directly above the first
   thing it changes. Everything above it (First Year, recent trends, growth
-  standards, Nights — which has its own night picker and 7/14/30-night span) is
-  period-independent; everything below (Insights, Feed clock, Feed
-  order, and the day/period summary) reads from the selected period. The control
+  standards) is period-independent; everything below (Nights, Insights, Feed
+  clock, Feed order, and the day/period summary) reads from the selected period. The control
   block carries the Custom date picker and the Check-Up summary with it, since
-  those are part of choosing a period rather than results of one. Two Insights
-  cards are deliberately all-time (Longest sleep, Weight gain) and say so on the
-  card.
+  those are part of choosing a period rather than results of one. Weight gain
+  is deliberately all-time and says so on the card. The all-time Longest sleep
+  card is gone: Nights shows the longest sleep of the night and the longest
+  stretch averaged over the period, and a third figure only repeated them.
 - **Nights** (`domain/babyNights.ts` + `components/NightReport.tsx`) — a baby's
   night, 7pm–7am keyed by the evening, stepped through one night at a time, with
-  averages (night sleep, wakes/night, longest stretch, naps/day) over the last
-  7, 14 or 30 **finished** nights. Night feeds get logged; night sleep mostly
+  averages (night sleep, wakes/night, longest stretch, naps/day) over the
+  **finished** nights of the Reports period: Week/Month/Year are the last 7/30/365
+  nights by the calendar (`getRecentNightsRange`), Custom and Check-Up their
+  ranges, and Day shows the one night with no averages.
+  - **Everything logged is on the track, not in a table**: sleep as bars (solid
+    logged, hatched estimated), time awake as gaps, each entry as a dot in its
+    event color, wake times underneath (a label too close to the one before drops
+    a row), heard crying as ticks above. The track's accessible name reads every
+    wake out. Night feeds get logged; night sleep mostly
   does not, so the night is read from what interrupts it:
   - **Wakes** are feeds, changes, meds and temperatures within 30 minutes of
     each other. A logged sleep that ended just before one is when it began, and

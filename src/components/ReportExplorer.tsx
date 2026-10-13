@@ -16,7 +16,9 @@ interface ReportExplorerProps {
 
 function explanationFor(title: string) {
   const exact: Record<string, string> = {
+    'Asleep': 'Sleep across the night shown, 7pm to 7am. Logged sleep is used as written; elsewhere it is estimated as the time between wakes, less 15 minutes to settle.',
     'Avg feed gap': 'The mean time between consecutive feeds in the selected period. Gaps longer than eight hours are treated as overnight breaks and left out.',
+    'Bedtime': 'The start of the first logged sleep of the night. Without one, the night is measured from 7pm and entries before 9pm count as the bedtime routine.',
     'Bottle': 'Milk recorded from bottle feeds on the selected day. Nursing volume is not estimated.',
     'Cycle day': 'Days are counted from the first logged day of the current period.',
     'Cycle length': 'Measured start to start across recent counted cycles. Very short or long gaps are shown in history but excluded from predictions.',
@@ -24,10 +26,11 @@ function explanationFor(title: string) {
     'Feeds': 'The number of feeds recorded in the selected period, including nursing and bottles.',
     'In bed': 'Average elapsed time from going to bed to getting up. Rest is lower because recorded wake-ups and settling time are subtracted.',
     'Inputs': 'Food and drinks logged in the selected period. Structured tags make entries comparable later; free text remains useful context.',
-    'Longest sleep': 'The longest completed sleep entry in the full log, not only the currently selected period.',
+    'Longest sleep': 'The longest unbroken stretch of sleep in the night shown, logged or estimated.',
     'Longest stretch': 'The average longest uninterrupted rest stretch per night. The supporting best value is the strongest single night in the period.',
     'Meds': 'Medication entries marked as given on the selected day.',
     'Night duty': 'Baby-care entries attributed to this parent between 10pm and 6am. Unattributed entries are not assigned to either parent.',
+    'Night sleep': 'Average sleep per finished night in the selected period, 7pm to 7am. Nights with nothing logged are left out rather than counted as perfect nights.',
     'Nights logged': 'Nights with a usable parent sleep entry in the selected period.',
     'Nursing': 'Total recorded nursing time on the selected day. Sessions without a duration do not add minutes.',
     'Nursing L/R': 'The share of single-side nursing sessions recorded on the left and right. Sessions marked both are not forced onto either side.',
@@ -35,9 +38,11 @@ function explanationFor(title: string) {
     'Period length': 'Average number of logged bleeding days in recent periods. Missed logging can make this look shorter.',
     'Pumped': 'Milk volume recorded from pumping sessions on the selected day.',
     'Ready to compare': 'The share of outputs with an input logged during the prior comparison window. This measures data coverage, not causation.',
+    'Wake-ups/night': 'Average recorded care interruptions during parent sleep. Nearby baby-care entries are grouped into one wake-up.',
+    'Wakes': 'Night feeds, changes and meds logged within 30 minutes of each other count as one wake. Going down and getting up for the day are not wakes, and crying the sensor heard never adds one.',
+    'Wakes/night': 'Average wakes per finished night in the selected period, from logged night care entries.',
     'Weight gain': 'The weekly rate between consecutive weight measurements. Closely spaced readings can vary with timing, feeding, and scale conditions.',
-    'Wet': 'Wet changes recorded on the selected day. A change marked both wet and dirty contributes to both details.',
-    'Wake-ups/night': 'Average recorded care interruptions during parent sleep. Nearby baby-care entries are grouped into one wake-up.'
+    'Wet': 'Wet changes recorded on the selected day. A change marked both wet and dirty contributes to both details.'
   };
 
   if (exact[title]) {

@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { formatDuration, getLocalDateKey, isSameLocalDate, minutesBetween } from '../domain/dates';
+import { formatDuration, getLocalDateKey, isSameLocalDate } from '../domain/dates';
+import { getRecentNightsRange } from '../domain/babyNights';
 import { getCheckupSpan } from '../domain/checkup';
 import { filterEventsByRange, formatRangeLabel, getPresetRange, isDateKeyInRange, type DateRange } from '../domain/dateRange';
 import { getFeedToDiaperLags } from '../domain/diapers';
@@ -158,12 +159,6 @@ function diaperPoints(points: FirstYearPoint[]): ChartPoint[] {
 }
 
 const DIAPER_PART_LABELS = ['wet', 'dirty'];
-
-function longestSleepMinutes(events: CareEvent[]): number {
-  return events
-    .filter((e) => e.type === 'sleep' && e.endedAt)
-    .reduce((max, e) => Math.max(max, minutesBetween(e.startedAt, e.endedAt)), 0);
-}
 
 /** Mean, shortest and longest wait between feeds. Zeroed when nothing pairs up. */
 function feedGapStats(events: CareEvent[]): MetricStats {
@@ -338,7 +333,6 @@ export function Reports({ events, loadNursery, profile, profiles = [] }: Reports
           return dk >= periodStartKey && dk <= periodEndKey;
         });
 
-  const longestSleep = longestSleepMinutes(events); // all-time best
   const feedGap = feedGapStats(periodRawEvents);
   const diaperLags = getFeedToDiaperLags(periodRawEvents);
   const balance = nursingBalance(periodRawEvents);
@@ -359,6 +353,17 @@ export function Reports({ events, loadNursery, profile, profiles = [] }: Reports
     : period === 'checkup'
       ? (checkup ? 'Nothing logged since the last measurement.' : null)
       : 'Nothing logged yet.';
+
+  // The nights the Nights averages cover. Week, Month and Year count back over
+  // finished nights by the calendar — a night with nothing logged is a gap, not
+  // a skipped day — and Day has no averages, only the night it shows.
+  const nightRange = period === 'day'
+    ? null
+    : period === 'custom'
+      ? range
+      : period === 'checkup'
+        ? checkup?.range ?? null
+        : getRecentNightsRange(events, period === 'week' ? 7 : period === 'month' ? 30 : 365);
 
   const progressLabel = profile.birthDate ? `${analytics.daysElapsed} of 365 days` : 'Birth not logged';
 
@@ -395,8 +400,6 @@ export function Reports({ events, loadNursery, profile, profiles = [] }: Reports
       </section>
 
       <GrowthStandards events={events} profile={profile} />
-
-      <NightReport events={events} loadNursery={loadNursery} />
 
       <section className="section-block">
         <div className="section-heading wrap">
@@ -452,12 +455,9 @@ export function Reports({ events, loadNursery, profile, profiles = [] }: Reports
         )}
       </section>
 
+      <NightReport averageRange={nightRange} events={events} loadNursery={loadNursery} scopeLabel={periodScopeLabel(period)} />
+
       <section className="metric-grid report-grid" aria-label="Insights">
-        <article className="metric-card" data-event="sleep">
-          <span>Longest sleep</span>
-          <strong>{longestSleep > 0 ? formatDuration(longestSleep) : '—'}</strong>
-          <small>all time</small>
-        </article>
         <article className="metric-card" data-event="feed">
           <span>Avg feed gap</span>
           <strong>{feedGap.average > 0 ? formatDuration(Math.round(feedGap.average)) : '—'}</strong>

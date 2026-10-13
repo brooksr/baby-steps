@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getBabyNight, getBabyNightsReport, getCurrentNightKey, shiftNightKey } from './babyNights';
+import { getBabyNight, getBabyNightsReport, getCurrentNightKey, getRecentNightsRange, shiftNightKey } from './babyNights';
 import type { NurseryData } from './nurserySensor';
 import type { CareEvent } from './types';
 
@@ -64,6 +64,10 @@ describe('a baby’s night', () => {
       ['01:13', '01:48', 1],
       ['03:08', '03:43', 1],
       ['05:32', '06:07', 2]
+    ]);
+    expect(night.wakes[0].items.map((item) => [clock(item.startedAt), item.type])).toEqual([
+      ['21:52', 'diaper'],
+      ['21:55', 'feed']
     ]);
     // A pump is the parent's, not a wake.
     expect(night.wakes.flatMap((wake) => wake.types)).not.toContain('pump');
@@ -173,17 +177,27 @@ describe('nights over a span', () => {
       // Tonight is under way, and must not be averaged in.
       feed('2026-10-13T19:30')
     ];
-    const report = getBabyNightsReport(events, null, 7, new Date('2026-10-13T21:00'));
+    const now = new Date('2026-10-13T21:00');
+    const report = getBabyNightsReport(events, null, getRecentNightsRange(events, 7, now), now);
 
     expect(report.nights.map((night) => night.dateKey)).toEqual(['2026-10-11', '2026-10-12']);
     expect(report.wakes).toEqual({ average: 3, max: 4, min: 2 });
     expect(report.longestStretchMinutes?.max).toBe(Math.max(...report.nights.map((night) => night.longestStretchMinutes)));
     expect(report.napMinutes).toEqual({ average: 150, max: 150, min: 150 });
     expect(report.estimatedNights).toBe(2);
+    expect(report.span).toBe(7);
+  });
+
+  it('takes a calendar range, stopping at the last finished night', () => {
+    const events = [feed('2026-10-11T23:00'), ...loggedNight];
+
+    expect(getBabyNightsReport(events, null, { from: '2026-10-12', to: '2026-10-20' }, afternoon).nights.map((night) => night.dateKey)).toEqual(['2026-10-12']);
+    // An open start begins at the first entry rather than at the dawn of time.
+    expect(getBabyNightsReport(events, null, { from: '', to: '' }, afternoon).span).toBe(3);
   });
 
   it('has no averages without a tracked night', () => {
-    const report = getBabyNightsReport([], null, 7, afternoon);
+    const report = getBabyNightsReport([], null, getRecentNightsRange([], 7, afternoon), afternoon);
 
     expect(report.nights).toEqual([]);
     expect(report.sleepMinutes).toBeNull();

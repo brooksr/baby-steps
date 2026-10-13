@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
+import { getRecentNightsRange } from '../domain/babyNights';
 import { formatClock } from '../domain/dates';
 import type { NurseryData } from '../domain/nurserySensor';
 import type { CareEvent } from '../domain/types';
@@ -26,48 +27,54 @@ const nursery: NurseryData = {
 
 const now = new Date('2026-10-13T15:00');
 
+const week = getRecentNightsRange(events, 7, now);
+
 describe('NightReport', () => {
-  it('opens on last night with its wakes and bedtime', () => {
-    render(<NightReport events={events} now={now} />);
+  it('opens on last night with its wakes on the track and its bedtime', () => {
+    render(<NightReport averageRange={week} events={events} now={now} scopeLabel="this week" />);
 
     expect(screen.getByText('Last night')).toBeInTheDocument();
-    const wakes = within(screen.getByRole('list', { name: 'Wakes' }));
-    expect(wakes.getAllByRole('listitem')).toHaveLength(3);
-    expect(wakes.getByText(formatClock(at('2026-10-12T21:50')))).toBeInTheDocument();
+    const track = screen.getByRole('img', { name: /3 wakes/ });
+    expect(track).toHaveAccessibleName(expect.stringContaining(`${formatClock(at('2026-10-12T21:50'))}, Feeding`));
+    // One dot per logged entry, in the entry's own color.
+    expect(track.querySelectorAll('.night-entry[data-event="feed"]')).toHaveLength(3);
+    expect(screen.queryByRole('list')).not.toBeInTheDocument();
     // Scoped to the card: the track's axis starts at the same clock time.
     expect(within(screen.getByText('Bedtime').closest('article') as HTMLElement).getByText(formatClock(at('2026-10-12T19:00')))).toBeInTheDocument();
   });
 
   it('steps back to an earlier night and stops at the newest', () => {
-    render(<NightReport events={events} now={now} />);
+    render(<NightReport averageRange={week} events={events} now={now} scopeLabel="this week" />);
 
     expect(screen.getByRole('button', { name: 'Next night' })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: 'Previous night' }));
     expect(screen.getByText('Night of')).toBeInTheDocument();
-    expect(within(screen.getByRole('list', { name: 'Wakes' })).getAllByRole('listitem')).toHaveLength(2);
+    expect(screen.getByRole('img', { name: /2 wakes/ })).toBeInTheDocument();
   });
 
-  it('averages over the chosen span of nights', () => {
-    render(<NightReport events={events} now={now} />);
+  it('averages over the Reports period, and over nothing on Day', () => {
+    const { rerender } = render(<NightReport averageRange={week} events={events} now={now} scopeLabel="this week" />);
 
-    const averages = within(screen.getByLabelText('Averages over the last 7 nights'));
+    const averages = within(screen.getByLabelText('Night averages this week'));
     expect(averages.getByText('Wakes/night')).toBeInTheDocument();
     expect(averages.getByText('2.5')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '30 nights' }));
-    expect(screen.getByLabelText('Averages over the last 30 nights')).toBeInTheDocument();
+    expect(screen.getByText('2 of 7 nights logged · 2 with sleep estimated')).toBeInTheDocument();
+
+    rerender(<NightReport averageRange={null} events={events} now={now} scopeLabel="today" />);
+    expect(screen.queryByText('Averages')).not.toBeInTheDocument();
   });
 
   it('shows what the sensor heard as a suggestion once it loads', async () => {
-    render(<NightReport events={events} loadNursery={async () => nursery} now={now} />);
+    render(<NightReport averageRange={week} events={events} loadNursery={async () => nursery} now={now} scopeLabel="this week" />);
 
-    expect(await screen.findByText(/listening 98% of noon to noon/)).toBeInTheDocument();
-    expect(screen.getByText(/Possible wake with nothing logged: /)).toHaveTextContent(formatClock(at('2026-10-13T02:30')));
+    expect(await screen.findByText(/listening 98% of noon to noon/)).toHaveTextContent('1 with nothing logged, outlined');
+    expect(document.querySelector('.night-heard.possible')).not.toBeNull();
   });
 
   it('says so when nothing was logged around a night', () => {
-    render(<NightReport events={[]} now={now} />);
+    render(<NightReport averageRange={getRecentNightsRange([], 7, now)} events={[]} now={now} scopeLabel="this week" />);
 
     expect(screen.getByText('Nothing logged around this night.')).toBeInTheDocument();
-    expect(screen.getByText('No finished night logged in the last 7.')).toBeInTheDocument();
+    expect(screen.getByText('No finished night logged this week.')).toBeInTheDocument();
   });
 });

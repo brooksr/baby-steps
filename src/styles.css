@@ -1897,10 +1897,56 @@ button {
   box-shadow: inset 0 0 0 1.5px var(--danger);
 }
 
+/* Each logged entry, in its own event color, where it happened on the night. */
+.night-track .night-entry {
+  top: 50%;
+  bottom: auto;
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  background: var(--event-tint);
+  border: 1.5px solid var(--panel);
+  border-radius: 50%;
+}
+
+/* When each wake began, under the track. A label too close to the one before
+   it drops to a second row rather than printing over it. */
+.night-wake-labels {
+  position: relative;
+  height: 16px;
+  margin-top: 4px;
+  color: var(--ink);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.night-wake-labels.two-rows {
+  height: 32px;
+}
+
+.night-wake-labels span {
+  position: absolute;
+  top: 0;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+.night-wake-labels span.lower {
+  top: 16px;
+}
+
+.night-wake-labels span.start {
+  transform: none;
+}
+
+.night-wake-labels span.end {
+  transform: translateX(-100%);
+}
+
 .night-axis {
   display: flex;
   justify-content: space-between;
-  margin-top: 6px;
+  margin-top: 4px;
   color: var(--muted);
   font-size: 0.72rem;
   font-weight: 700;
@@ -1935,51 +1981,16 @@ button {
   opacity: 1;
 }
 
-.night-wakes {
-  display: grid;
-  gap: 6px;
-  margin: 12px 0;
-  padding: 0;
-  list-style: none;
-}
-
-.night-wakes li {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  padding: 8px 10px;
-  background: var(--event-fill, var(--blue-50));
-  border-radius: 8px;
-}
-
-.night-wakes strong {
-  min-width: 4.5em;
-  color: var(--ink);
-}
-
-.night-wakes span {
-  flex: 1;
-  font-size: 0.88rem;
-  font-weight: 700;
-}
-
-.night-wakes small {
-  color: var(--muted);
-  font-size: 0.78rem;
-  font-weight: 700;
-  white-space: nowrap;
+.night-legend .night-entry {
+  width: 9px;
+  height: 9px;
+  background: var(--event-tint);
+  border-radius: 50%;
 }
 
 .night-span-heading {
   flex-wrap: wrap;
   margin-top: 18px;
-}
-
-/* One row of three under the heading, the way the Reports period control sits. */
-.night-span-control {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  flex: 1 0 100%;
 }
 
 .night-report .report-grid {

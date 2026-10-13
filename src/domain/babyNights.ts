@@ -1,3 +1,4 @@
+import type { DateRange } from './dateRange';
 import { getLocalDateKey } from './dates';
 import type { NurseryData } from './nurserySensor';
 import { getEventDurationMinutes } from './summary';
@@ -92,6 +93,8 @@ export interface NightWake {
   /** Entries in the wake. */
   entries: number;
   types: CareEventType[];
+  /** Each entry, for drawing on the night's track. */
+  items: Array<{ startedAt: string; type: CareEventType }>;
   /** The sensor heard crying around it. */
   heard: boolean;
 }
@@ -137,6 +140,7 @@ interface Span {
 
 interface Cluster extends Span {
   entries: number;
+  items: Array<{ start: number; type: CareEventType }>;
   resume: number;
   types: Set<CareEventType>;
 }
@@ -213,6 +217,7 @@ function toWake(cluster: Cluster, heard: HeardCry[]): NightWake {
     endedAt: isoOf(cluster.end),
     entries: cluster.entries,
     heard: heard.some(near),
+    items: cluster.items.map((item) => ({ startedAt: isoOf(item.start), type: item.type })),
     resumedAt: isoOf(cluster.resume),
     startedAt: isoOf(cluster.start),
     types: [...cluster.types].sort()
@@ -322,9 +327,10 @@ export function getBabyNight(events: CareEvent[], dateKey: string, nursery?: Nur
     if (last && entry.start <= last.end + WAKE_CLUSTER_MINUTES * MINUTE_MS) {
       last.end = Math.max(last.end, entry.end);
       last.entries += 1;
+      last.items.push({ start: entry.start, type: entry.type });
       last.types.add(entry.type);
     } else {
-      clusters.push({ end: entry.end, entries: 1, resume: entry.end, start: entry.start, types: new Set([entry.type]) });
+      clusters.push({ end: entry.end, entries: 1, items: [{ start: entry.start, type: entry.type }], resume: entry.end, start: entry.start, types: new Set([entry.type]) });
     }
   }
 
@@ -348,6 +354,7 @@ export function getBabyNight(events: CareEvent[], dateKey: string, nursery?: Nur
       last.end = Math.max(last.end, cluster.end);
       last.resume = Math.max(last.resume, cluster.resume);
       last.entries += cluster.entries;
+      last.items.push(...cluster.items);
       cluster.types.forEach((type) => last.types.add(type));
     } else {
       wakes.push(cluster);
@@ -362,7 +369,14 @@ export function getBabyNight(events: CareEvent[], dateKey: string, nursery?: Nur
   while (!bedSpan && wakes[0] && wakes[0].start < window.start + EVENING_SETTLE_HOURS * HOUR_MS) {
     const next = wakes.shift() as Cluster;
     before = before
-      ? { ...before, end: Math.max(before.end, next.end), entries: before.entries + next.entries, resume: next.resume, types: new Set([...before.types, ...next.types]) }
+      ? {
+          ...before,
+          end: Math.max(before.end, next.end),
+          entries: before.entries + next.entries,
+          items: [...before.items, ...next.items],
+          resume: next.resume,
+          types: new Set([...before.types, ...next.types])
+        }
       : next;
   }
   // Mid-night, a wake that is still going is a wake. Only a finished night has a morning.
@@ -416,7 +430,7 @@ export interface NightStat {
 export interface BabyNightsReport {
   /** The finished nights counted, oldest first. Nights nothing was logged around are left out. */
   nights: BabyNight[];
-  /** How many nights the span covered, tracked or not. */
+  /** How many nights the range covered, tracked or not. */
   span: number;
   sleepMinutes: NightStat | null;
   wakes: NightStat | null;
@@ -440,22 +454,55 @@ function stat(values: number[]): NightStat | null {
 }
 
 /** Logged sleep inside the day before a night: 7am to 7pm on its evening's date. */
-function getNapMinutes(events: CareEvent[], dateKey: string, now: number) {
-  const window = getWindow(shiftNightKey(dateKey, -1));
-  const day = { end: getWindow(dateKey).start, start: window.end };
-  return Math.round(overlapMs(day, getSleepSpans(events, now)) / MINUTE_MS);
+function getNapMinutes(sleepSpans: Span[], dateKey: string) {
+  const day = { end: getWindow(dateKey).start, start: getWindow(shiftNightKey(dateKey, -1)).end };
+  return Math.round(overlapMs(day, sleepSpans) / MINUTE_MS);
+}
+
+/** The most recent night that has finished — the night under way never is. */
+export function getLastFinishedNightKey(events: CareEvent[], now = new Date()) {
+  const current = getCurrentNightKey(now);
+  return getBabyNight(events, current, null, now).inProgress ? shiftNightKey(current, -1) : current;
+}
+
+/** The last `count` finished nights as a range of evening dates, for the Week/Month/Year periods. */
+export function getRecentNightsRange(events: CareEvent[], count: number, now = new Date()): DateRange {
+  const to = getLastFinishedNightKey(events, now);
+  return { from: shiftNightKey(to, 1 - count), to };
 }
 
 /**
- * The last `span` finished nights. The night under way is never averaged in —
- * half a night would drag every figure down until morning.
+ * The finished nights whose evening falls in `range`. An open start begins at
+ * the first logged entry; an open or future end stops at the last finished
+ * night, since half a night would drag every figure down until morning.
  */
-export function getBabyNightsReport(events: CareEvent[], nursery: NurseryData | null | undefined, span: number, now = new Date()): BabyNightsReport {
-  const current = getCurrentNightKey(now);
-  const lastFinished = getBabyNight(events, current, nursery, now).inProgress ? shiftNightKey(current, -1) : current;
-  const keys = Array.from({ length: span }, (_, index) => shiftNightKey(lastFinished, index - span + 1));
-  const nights = keys.map((key) => getBabyNight(events, key, nursery, now)).filter((night) => night.tracked && !night.inProgress);
-  const naps = keys.map((key) => getNapMinutes(events, key, now.getTime())).filter((minutes) => minutes > 0);
+export function getBabyNightsReport(events: CareEvent[], nursery: NurseryData | null | undefined, range: DateRange, now = new Date()): BabyNightsReport {
+  const lastFinished = getLastFinishedNightKey(events, now);
+  const earliest = events.reduce<string | null>((first, event) => (!first || event.startedAt < first ? event.startedAt : first), null);
+  const [low, high] = range.from && range.to && range.from > range.to ? [range.to, range.from] : [range.from, range.to];
+  const from = low || (earliest ? shiftNightKey(getLocalDateKey(earliest), -1) : lastFinished);
+  const to = high && high < lastFinished ? high : lastFinished;
+  const keys: string[] = [];
+
+  for (let key = from; key <= to; key = shiftNightKey(key, 1)) {
+    keys.push(key);
+  }
+
+  // Each night only needs the entries around it, so a year of nights does not
+  // walk the whole log 365 times over.
+  const sorted = [...events].sort((left, right) => left.startedAt.localeCompare(right.startedAt));
+  const nights = keys
+    .map((key) => {
+      const window = getWindow(key);
+      const nearby = sorted.filter((event) => {
+        const time = new Date(event.startedAt).getTime();
+        return time >= window.start - MAX_SLEEP_MINUTES * MINUTE_MS && time < window.end + MAX_SLEEP_MINUTES * MINUTE_MS;
+      });
+      return getBabyNight(nearby, key, nursery, now);
+    })
+    .filter((night) => night.tracked && !night.inProgress);
+  const sleepSpans = getSleepSpans(events, now.getTime());
+  const naps = keys.map((key) => getNapMinutes(sleepSpans, key)).filter((minutes) => minutes > 0);
 
   return {
     estimatedNights: nights.filter((night) => night.estimated).length,
@@ -463,7 +510,7 @@ export function getBabyNightsReport(events: CareEvent[], nursery: NurseryData | 
     napMinutes: stat(naps),
     nights,
     sleepMinutes: stat(nights.map((night) => night.sleepMinutes)),
-    span,
+    span: keys.length,
     wakes: stat(nights.map((night) => night.wakes.length))
   };
 }
