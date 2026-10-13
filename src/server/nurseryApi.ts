@@ -1,4 +1,7 @@
+import { NURSERY_SCHEMAS } from '../domain/nurserySensor';
 import { isAuthorized } from './eventsApi';
+
+export { NURSERY_SCHEMAS };
 
 /**
  * `POST /api/nursery` — numeric summaries from the nursery sensor phone
@@ -16,25 +19,6 @@ import { isAuthorized } from './eventsApi';
 export const NURSERY_PATH = '/api/nursery';
 export const NURSERY_SCHEMA_VERSION = 2;
 export const MAX_NURSERY_BODY_BYTES = 180_000;
-
-export const NURSERY_SCHEMAS = {
-  night: {
-    columns: ['sourceDeviceId', 'nightOf', 'timezone', 'windowStartUtc', 'windowEndUtc', 'status', 'observedThroughUtc', 'expectedMs', 'capturedMs', 'validMs', 'coveragePercent', 'sessions', 'soundLevelDbfs', 'peakDbfs', 'cryEpisodes', 'cryMs', 'longestCryMs', 'speechEpisodes', 'speechMs', 'snoringEpisodes', 'snoringMs', 'coughEpisodes', 'ambientNoiseMs'],
-    tab: 'Nursery Nightly Summaries'
-  },
-  episode: {
-    columns: ['sourceDeviceId', 'sessionId', 'episodeId', 'label', 'startUtc', 'endUtc', 'durationMs', 'maxScore', 'source'],
-    tab: 'Nursery Sound Episodes'
-  },
-  interval: {
-    columns: ['sourceDeviceId', 'sessionId', 'startUtc', 'endUtc', 'durationMs', 'validMs', 'coveragePercent', 'soundLevelDbfs', 'peakDbfs', 'clippedWindows'],
-    tab: 'Nursery Sound Levels'
-  },
-  session: {
-    columns: ['sourceDeviceId', 'sessionId', 'startUtc', 'endUtc', 'status', 'elapsedMs', 'validMs', 'coveragePercent', 'capturedMs', 'silencedMs', 'observedThroughUtc', 'soundLevelDbfs', 'peakDbfs', 'error', 'model', 'modelSha256', 'modelError', 'modelStatus', 'predictions', 'droppedWindows', 'meanInferenceMs', 'maxInferenceMs', 'appVersion', 'timezone', 'sleepState', 'movementState'],
-    tab: 'Nursery Sessions'
-  }
-} as const;
 
 type Kind = keyof typeof NURSERY_SCHEMAS;
 type Cell = string | number | null;

@@ -697,6 +697,8 @@ stays on the phone.
   records. Suggested events built from them (a likely cry, a quiet window that
   might be sleep) belong in the app and must read as suggestions. The phone
   makes no sleep, mood or movement claim; the parser refuses one.
+- Reports → **Nights** reads the Nightly Summaries and Sound Episodes tabs
+  back as a heard-crying layer (see "Nights" below).
 - The contract is versioned (`schemaVersion` 2) and mirrored in the phone's
   `NightRepository.kt` and `oneplus/integration/google-apps-script/Code.js`.
   Change all three together. A bad record refuses the whole batch with a
@@ -900,12 +902,41 @@ stays on the phone.
   pediatrician — never more than that.
 - **Reports page order** — the period control sits directly above the first
   thing it changes. Everything above it (First Year, recent trends, growth
-  standards) is period-independent; everything below (Insights, Feed clock, Feed
+  standards, Nights — which has its own night picker and 7/14/30-night span) is
+  period-independent; everything below (Insights, Feed clock, Feed
   order, and the day/period summary) reads from the selected period. The control
   block carries the Custom date picker and the Check-Up summary with it, since
   those are part of choosing a period rather than results of one. Two Insights
   cards are deliberately all-time (Longest sleep, Weight gain) and say so on the
   card.
+- **Nights** (`domain/babyNights.ts` + `components/NightReport.tsx`) — a baby's
+  night, 7pm–7am keyed by the evening, stepped through one night at a time, with
+  averages (night sleep, wakes/night, longest stretch, naps/day) over the last
+  7, 14 or 30 **finished** nights. Night feeds get logged; night sleep mostly
+  does not, so the night is read from what interrupts it:
+  - **Wakes** are feeds, changes, meds and temperatures within 30 minutes of
+    each other. A logged sleep that ended just before one is when it began, and
+    one starting within an hour after is when the baby went back down; otherwise
+    `SETTLE_MINUTES` (15) is charged. Two wakes under `MIN_STRETCH_MINUTES` (30)
+    apart are one wake. Pumping is the parent's and never a wake.
+  - **Going down and getting up are not wakes.** Entries within 30 minutes of
+    either end are `edges`, and with no bedtime logged everything before 9pm is
+    the bedtime routine. A logged sleep starting 4pm–11pm that runs into the
+    window *is* bedtime and opens the night, earlier or later than 7pm.
+  - **Sleep windows are logged where logged and estimated everywhere else**, and
+    the track draws the two differently (solid vs hatched). An estimate must
+    never pass for a record — every number says which it is.
+  - A night nobody logged anything around is untracked and left out of the
+    averages rather than read as a perfect night. The night under way is never
+    averaged in.
+  - **The nursery sensor is a layer, never an input.** `readNurseryData()` reads
+    the Nightly Summaries and Sound Episodes tabs (not part of `snapshot`, so the
+    poll does not pay for it) and heard crying draws as ticks above the track:
+    matched to a logged wake, or outlined as a *possible* wake with nothing
+    logged. It changes no number — how much a phone hears depends on where it
+    was left. Its coverage figure is the phone's own noon-to-noon day.
+  - `NURSERY_SCHEMAS` lives in `domain/nurserySensor.ts`, shared by the Pi's
+    parser and this reader.
 - **Date range filters** (`domain/dateRange.ts` + `components/DateRangeFilter.tsx`)
   — presets plus From/To on the Log, and as a **Custom** period on Reports.
   Custom and Check-Up are the Reports periods that filter by calendar day;

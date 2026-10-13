@@ -5,6 +5,7 @@ import { filterEventsByRange, formatRangeLabel, getPresetRange, isDateKeyInRange
 import { getFeedToDiaperLags } from '../domain/diapers';
 import { getDayMetricStats, getFirstYearAnalytics, type FirstYearPoint, type MetricStats } from '../domain/firstYear';
 import { getDailySummary } from '../domain/summary';
+import type { NurseryData } from '../domain/nurserySensor';
 import type { BabyProfile, CareEvent, FeedEvent, MeasurementSystem } from '../domain/types';
 import { formatLength, formatVolume, formatWeight, getPreferredUnits, ouncesToKilograms, toUnitVolume } from '../domain/units';
 import { DateRangeFilter } from './DateRangeFilter';
@@ -14,6 +15,7 @@ import { FeedClock } from './FeedClock';
 import { FeedOrder } from './FeedOrder';
 import { GrowthStandards } from './GrowthStandards';
 import { NewbornStatus } from './NewbornStatus';
+import { NightReport } from './NightReport';
 import { ReportExplorer } from './ReportExplorer';
 import { Timeline } from './Timeline';
 
@@ -53,6 +55,8 @@ interface ReportsProps {
   profile: BabyProfile;
   /** Everyone tracked, so an entry can name the parent who logged it. */
   profiles?: BabyProfile[];
+  /** The nursery sensor's tabs, for the Nights section's heard-crying layer. */
+  loadNursery?: () => Promise<NurseryData | null>;
 }
 
 function convertStats(stats: MetricStats, convert: (value: number) => number): MetricStats {
@@ -227,7 +231,7 @@ function periodLabel(points: FirstYearPoint[]): string {
   return first === last ? formatDayLabel(first) : `${formatDayLabel(first)} – ${formatDayLabel(last)}`;
 }
 
-export function Reports({ events, profile, profiles = [] }: ReportsProps) {
+export function Reports({ events, loadNursery, profile, profiles = [] }: ReportsProps) {
   const [period, setPeriod] = useState<ReportPeriod>('day');
   const [dateKey, setDateKey] = useState(() => getLocalDateKey(new Date()));
   const [range, setRange] = useState<DateRange>(() => getPresetRange('30d'));
@@ -391,6 +395,8 @@ export function Reports({ events, profile, profiles = [] }: ReportsProps) {
       </section>
 
       <GrowthStandards events={events} profile={profile} />
+
+      <NightReport events={events} loadNursery={loadNursery} />
 
       <section className="section-block">
         <div className="section-heading wrap">

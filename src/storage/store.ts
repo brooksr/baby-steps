@@ -2,6 +2,7 @@ import Dexie, { type Table } from 'dexie';
 import { createFamilyProfile, getActiveProfiles, isArchived, isCaregiverAccount, isChild, isParent, sortProfiles, type NewProfileInput } from '../domain/family';
 import { createDefaultBabyProfile } from '../domain/dates';
 import { migrateStoredEvents, type StoredCareEvent } from '../domain/legacyEvents';
+import type { NurseryData } from '../domain/nurserySensor';
 import { DEFAULT_SHOPPING_CATEGORY, findItemByName, getCatalogSeed } from '../domain/shopping';
 import { type BabyProfile, type CareEvent, type CareEventType, type CreateCareEventInput, type ShoppingItem, type TaskItem, type TrackerExport, type TrackerSnapshot } from '../domain/types';
 
@@ -84,6 +85,13 @@ export interface BabyTrackerStore {
   clear(): Promise<void>;
   connect?(interactive?: boolean): Promise<void>;
   getStatus?(): StoreStatus;
+  /**
+   * The nursery sensor's nightly summaries and sound episodes, read from the
+   * family sheet. Null when there are none to read — offline, local-only, or a
+   * sheet the sensor has never written to. Never part of `snapshot`: it is a
+   * report's extra, and the poll should not pay for it every 45 seconds.
+   */
+  readNurseryData?(): Promise<NurseryData | null>;
   close(): void;
 }
 

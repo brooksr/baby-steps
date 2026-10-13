@@ -326,6 +326,14 @@ export function createHybridBabyTrackerStore(): BabyTrackerStore & {
     listTasks(): Promise<TaskItem[]> {
       return trySheet(() => currentStore().listTasks(), () => localStore.listTasks());
     },
+    async readNurseryData() {
+      // A report's extra: unreachable means "nothing to show", never an error screen.
+      try {
+        return (await sheetStore?.readNurseryData?.()) ?? null;
+      } catch {
+        return null;
+      }
+    },
     removeShoppingItem(id: string) {
       return trySheet(() => currentStore().removeShoppingItem(id), () => localStore.removeShoppingItem(id));
     },

@@ -887,7 +887,7 @@ function App() {
         (parentMode ? (
           <ParentReports childEvents={childEvents} events={events} profile={profile} profiles={profiles} />
         ) : (
-          <Reports events={events} profile={profile} profiles={profiles} />
+          <Reports events={events} loadNursery={trackerStore.readNurseryData} profile={profile} profiles={profiles} />
         ))}
 
       {view === 'care' && (

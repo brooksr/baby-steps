@@ -1,6 +1,7 @@
 import { createFamilyProfile, getActiveProfiles, getProfileKind, isArchived, isCaregiverAccount, isChild, isParent, normalizeEmail, sortProfiles, type NewProfileInput } from '../domain/family';
 import { createDefaultBabyProfile } from '../domain/dates';
 import { parseIntakeTags, serializeIntakeTags } from '../domain/intakeOutput';
+import { NURSERY_READ_TABS, readNurseryValues, type NurseryData } from '../domain/nurserySensor';
 import { DEFAULT_SHOPPING_CATEGORY, getCatalogSeed, isShoppingCategory, normalizeItemName } from '../domain/shopping';
 import { migrateStoredEvent, migrateStoredEvents, type StoredCareEventType } from '../domain/legacyEvents';
 import { DEFAULT_PROFILE_ID, type BabyGender, type BabyProfile, type BottleContents, type CareInfo, type CareEvent, type CreateCareEventInput, type FeedMethod, type IntakeKind, type IntakePortion, type MensesFlow, type NursingSide, type OutputKind, type ShoppingCategory, type ShoppingItem, type ShoppingStatus, type TaskItem, type TaskStatus, type ParentRole, type PreferredUnits, type ProfileKind, type TrackerExport, type TrackerSnapshot } from '../domain/types';
@@ -1294,6 +1295,21 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
   }
 
   /**
+   * The nursery sensor's tabs, when the sheet has them. Checked first: a
+   * batchGet naming a tab that does not exist fails the whole read.
+   */
+  async function readNurseryData(): Promise<NurseryData | null> {
+    const titles = await api.listSheetTitles();
+
+    if (!NURSERY_READ_TABS.every((tab) => titles.includes(tab))) {
+      return null;
+    }
+
+    const [nightValues, episodeValues] = await api.batchGetValues(NURSERY_READ_TABS.map((tab) => `'${tab}'!A:Z`));
+    return readNurseryValues(nightValues, episodeValues);
+  }
+
+  /**
    * Writes one child's row, found by id. A patch for a child this sheet has
    * never seen appends rather than overwriting whoever is on the first row.
    */
@@ -1559,6 +1575,7 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
     listProfiles,
     listShoppingItems,
     listTasks,
+    readNurseryData,
     removeShoppingItem,
     removeTask,
     restoreProfile,
