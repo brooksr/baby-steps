@@ -7,7 +7,7 @@
 //   BABYSTEPS_SHEET_ID              the family's spreadsheet id
 //   EVENTS_API_TOKEN                the bearer token callers must send
 //   NURSERY_API_TOKEN               optional: the nursery sensor phone's own
-//     bearer token for POST /api/nursery; that route is off without it
+//     bearer token for POST and GET /api/nursery; that route is off without it
 //   GOOGLE_SERVICE_ACCOUNT_FILE     path to the service account's JSON key
 //     (or GOOGLE_SERVICE_ACCOUNT_JSON, the key itself)
 //   PORT                            default 8788
@@ -16,7 +16,7 @@ import { readFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createGoogleSheetsBabyTrackerStore, GoogleSheetsApi } from '../storage/googleSheetsStore';
 import { createEventsHandler } from './eventsApi';
-import { createNurseryHandler, MAX_NURSERY_BODY_BYTES, NURSERY_PATH } from './nurseryApi';
+import { createNurseryHandler, createNurseryStatusReader, MAX_NURSERY_BODY_BYTES, NURSERY_PATH } from './nurseryApi';
 import { createServiceAccountTokenSource, parseServiceAccountKey } from './serviceAccount';
 
 const MAX_BODY_BYTES = 8192;
@@ -39,8 +39,9 @@ function main() {
   const store = createGoogleSheetsBabyTrackerStore(sheets);
   const onError = (error: unknown) => console.error('events-api:', error instanceof Error ? error.message : error);
   const events = createEventsHandler({ apiToken, onError, store });
-  // A separate token: the nursery phone can write only its own four tabs.
-  const nursery = nurseryToken ? createNurseryHandler({ apiToken: nurseryToken, onError, sheets }) : null;
+  // A separate token: the nursery phone can write only its own four tabs, and
+  // read back just the last feed, change and cry for its lock screen.
+  const nursery = nurseryToken ? createNurseryHandler({ apiToken: nurseryToken, onError, readStatus: createNurseryStatusReader(store), sheets }) : null;
 
   createServer((request, response) => {
     const isNursery = new URL(request.url || '/', 'http://events-api').pathname.replace(/\/+$/, '') === NURSERY_PATH;

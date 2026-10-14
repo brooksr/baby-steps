@@ -1,4 +1,8 @@
+import { resolveChild } from '../domain/eventRequest';
+import { getActiveProfiles, getFirstName, isChild } from '../domain/family';
 import { NURSERY_SCHEMAS } from '../domain/nurserySensor';
+import type { CareEvent, DiaperEvent, FeedEvent } from '../domain/types';
+import type { BabyTrackerStore } from '../storage/store';
 import { isAuthorized } from './eventsApi';
 
 export { NURSERY_SCHEMAS };
@@ -9,6 +13,10 @@ export { NURSERY_SCHEMAS };
  * dedicated tabs on the family sheet. It never touches Events: these are
  * experimental sound measurements, not care records. Suggestions built from
  * them (a likely cry, a quiet window) belong in the app, labelled as such.
+ *
+ * `GET /api/nursery` is the one read the phone gets: the last feed, change and
+ * heard cry, for its lock screen. Same token, same exact path — nginx proxies
+ * only `= /api/nursery` here.
  *
  * The phone queues records durably and retries, so every write is an upsert
  * by `recordKey`: a retry after a lost reply updates rows rather than adding
@@ -155,20 +163,69 @@ export async function upsertNurseryRecords(sheets: NurserySheets, records: Nurse
   for (const [kind, rows] of appends) await sheets.appendValues(`${quote(NURSERY_SCHEMAS[kind].tab)}!A1`, rows);
 }
 
+/** What the phone's lock screen shows. Times are ISO; each is null when nothing is on file. */
+export interface NurseryStatus {
+  child: string | null;
+  lastFeed: { at: string; endedAt: string | null; method: FeedEvent['method']; amountOz: number | null; side: FeedEvent['side'] | null } | null;
+  lastDiaper: { at: string; kind: DiaperEvent['kind'] } | null;
+  /** The phone's own model guess, read back from the episode tab — not a logged entry. */
+  lastCry: { at: string; endedAt: string } | null;
+}
+
+const newestFirst = (a: { startedAt: string }, b: { startedAt: string }) => Date.parse(b.startedAt) - Date.parse(a.startedAt);
+
+/**
+ * The status read, against the app's own store. One child is the usual family;
+ * with siblings it is the first one in the switcher, since the phone names none.
+ */
+export function createNurseryStatusReader(store: Pick<BabyTrackerStore, 'listEvents' | 'listProfiles' | 'readNurseryData'>) {
+  return async function readStatus(): Promise<NurseryStatus> {
+    const profiles = await store.listProfiles();
+    const sole = resolveChild(profiles, undefined);
+    const child = sole.ok ? sole.value : getActiveProfiles(profiles).find(isChild);
+    const [events, nursery] = await Promise.all([
+      child ? store.listEvents({ babyId: child.id }) : Promise.resolve([] as CareEvent[]),
+      store.readNurseryData?.() ?? Promise.resolve(null)
+    ]);
+    const sorted = [...events].sort(newestFirst);
+    const feed = sorted.find((event): event is FeedEvent => event.type === 'feed');
+    const diaper = sorted.find((event): event is DiaperEvent => event.type === 'diaper');
+    const cry = (nursery?.episodes ?? []).filter((episode) => episode.label === 'baby_cry').sort(newestFirst)[0];
+
+    return {
+      child: child ? getFirstName(child) : null,
+      lastCry: cry ? { at: cry.startedAt, endedAt: cry.endedAt } : null,
+      lastDiaper: diaper ? { at: diaper.startedAt, kind: diaper.kind } : null,
+      lastFeed: feed ? { amountOz: feed.amountOz ?? null, at: feed.startedAt, endedAt: feed.endedAt ?? null, method: feed.method, side: feed.side ?? null } : null
+    };
+  };
+}
+
 export interface NurseryApiOptions {
   apiToken: string;
   onError?: (error: unknown) => void;
+  /** Answers `GET /api/nursery`; without it a GET is 405 like any other method. */
+  readStatus?: () => Promise<NurseryStatus>;
   sheets: NurserySheets;
 }
 
-export function createNurseryHandler({ apiToken, onError = () => {}, sheets }: NurseryApiOptions) {
+export function createNurseryHandler({ apiToken, onError = () => {}, readStatus, sheets }: NurseryApiOptions) {
   if (!apiToken) throw new Error('The nursery API needs an API token.');
   let queue: Promise<unknown> = Promise.resolve();
 
   return async function handle(request: Request): Promise<Response> {
     if (new URL(request.url).pathname.replace(/\/+$/, '') !== NURSERY_PATH) return json(404, { error: 'not_found', ok: false });
-    if (request.method !== 'POST') return json(405, { error: 'method_not_allowed', ok: false });
+    if (request.method !== 'POST' && !(request.method === 'GET' && readStatus)) return json(405, { error: 'method_not_allowed', ok: false });
     if (!(await isAuthorized(request.headers.get('authorization'), apiToken))) return json(401, { error: 'unauthorized', ok: false });
+
+    if (request.method === 'GET') {
+      try {
+        return json(200, { ...(await readStatus!()), ok: true });
+      } catch (error) {
+        onError(error);
+        return json(502, { error: 'sheet_unavailable', ok: false });
+      }
+    }
 
     let body: unknown;
     try {

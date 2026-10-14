@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
-import { createNurseryHandler, NURSERY_SCHEMAS, type NurserySheets } from './nurseryApi';
+import { createNurseryHandler, createNurseryStatusReader, NURSERY_SCHEMAS, type NurserySheets } from './nurseryApi';
+import type { BabyProfile, CareEvent } from '../domain/types';
 
 /** A spreadsheet as tab → rows, with A1 ranges good enough for what the upsert sends. */
 function fakeSheets(initial: Record<string, unknown[][]> = {}) {
@@ -155,5 +156,57 @@ describe('nursery API', () => {
     const { rows, send } = setup();
     await Promise.all([send([interval]), send([interval]), send([interval])]);
     expect(rows('Nursery Sound Levels')).toHaveLength(2);
+  });
+});
+
+describe('nursery status read', () => {
+  const baby = { id: 'baby-1', kind: 'child', name: 'June Doe' } as BabyProfile;
+  const event = (fields: Record<string, unknown>) => ({ babyId: 'baby-1', ...fields }) as unknown as CareEvent;
+  const store = {
+    listEvents: vi.fn(async () => [
+      event({ kind: 'wet', startedAt: '2026-10-13T08:30:00Z', type: 'diaper' }),
+      event({ amountOz: 4, method: 'bottle', startedAt: '2026-10-13T09:10:00Z', type: 'feed' }),
+      event({ kind: 'both', startedAt: '2026-10-13T07:00:00Z', type: 'diaper' }),
+      event({ method: 'nursing', side: 'left', startedAt: '2026-10-13T06:00:00Z', type: 'feed' }),
+      event({ level: 4, startedAt: '2026-10-13T09:40:00Z', type: 'mood' })
+    ]),
+    listProfiles: vi.fn(async () => [baby]),
+    readNurseryData: vi.fn(async () => ({
+      episodes: [
+        { endedAt: '2026-10-13T05:04:00Z', label: 'baby_cry', maxScore: 0.8, startedAt: '2026-10-13T05:02:00Z' },
+        { endedAt: '2026-10-13T09:50:30Z', label: 'speech', maxScore: 0.7, startedAt: '2026-10-13T09:50:00Z' },
+        { endedAt: '2026-10-13T08:21:00Z', label: 'baby_cry', maxScore: 0.6, startedAt: '2026-10-13T08:20:00Z' }
+      ],
+      nights: []
+    }))
+  };
+  const request = (token: string | null = TOKEN) => new Request('http://pi/api/nursery', { headers: token ? { Authorization: `Bearer ${token}` } : {}, method: 'GET' });
+
+  it('answers GET with the newest feed, change and heard cry', async () => {
+    const handle = createNurseryHandler({ apiToken: TOKEN, readStatus: createNurseryStatusReader(store), sheets: fakeSheets().sheets });
+    const response = await handle(request());
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      child: 'June',
+      lastCry: { at: '2026-10-13T08:20:00Z', endedAt: '2026-10-13T08:21:00Z' },
+      lastDiaper: { at: '2026-10-13T08:30:00Z', kind: 'wet' },
+      lastFeed: { amountOz: 4, at: '2026-10-13T09:10:00Z', endedAt: null, method: 'bottle', side: null },
+      ok: true
+    });
+  });
+
+  it('needs the token, and reports a sheet failure as 502', async () => {
+    const onError = vi.fn();
+    const failing = { ...store, listProfiles: vi.fn(async () => { throw new Error('quota'); }) };
+    const handle = createNurseryHandler({ apiToken: TOKEN, onError, readStatus: createNurseryStatusReader(failing), sheets: fakeSheets().sheets });
+    expect((await handle(request(null))).status).toBe(401);
+    expect(failing.listProfiles).not.toHaveBeenCalled();
+    expect((await handle(request())).status).toBe(502);
+    expect(onError).toHaveBeenCalled();
+  });
+
+  it('is 405 when no reader is wired', async () => {
+    const handle = createNurseryHandler({ apiToken: TOKEN, sheets: fakeSheets().sheets });
+    expect((await handle(request())).status).toBe(405);
   });
 });
