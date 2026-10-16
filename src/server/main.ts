@@ -8,12 +8,16 @@
 //   EVENTS_API_TOKEN                the bearer token callers must send
 //   NURSERY_API_TOKEN               optional: the nursery sensor phone's own
 //     bearer token for POST and GET /api/nursery; that route is off without it
+//   APP_API_TOKEN                   optional: the Android app's own bearer token
+//     for /api/events/app, which reads and edits the whole tracker; off without it
 //   GOOGLE_SERVICE_ACCOUNT_FILE     path to the service account's JSON key
 //     (or GOOGLE_SERVICE_ACCOUNT_JSON, the key itself)
 //   PORT                            default 8788
 
 import { readFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { gzipSync } from 'node:zlib';
+import { APP_PATH, createAppHandler, MAX_APP_BODY_BYTES } from './appApi';
 import { createGoogleSheetsBabyTrackerStore, GoogleSheetsApi } from '../storage/googleSheetsStore';
 import { createEventsHandler } from './eventsApi';
 import { createNurseryHandler, createNurseryStatusReader, MAX_NURSERY_BODY_BYTES, NURSERY_PATH } from './nurseryApi';
@@ -42,11 +46,17 @@ function main() {
   // A separate token: the nursery phone can write only its own four tabs, and
   // read back just the last feed, change and cry for its lock screen.
   const nursery = nurseryToken ? createNurseryHandler({ apiToken: nurseryToken, onError, readStatus: createNurseryStatusReader(store), sheets }) : null;
+  // A third token: the Android app edits and deletes, which nothing else here may.
+  const appToken = process.env.APP_API_TOKEN?.trim();
+  const app = appToken ? createAppHandler({ apiToken: appToken, onError, store }) : null;
 
   createServer((request, response) => {
-    const isNursery = new URL(request.url || '/', 'http://events-api').pathname.replace(/\/+$/, '') === NURSERY_PATH;
-    const handle = isNursery && nursery ? nursery : events;
-    serve(handle, isNursery ? MAX_NURSERY_BODY_BYTES : MAX_BODY_BYTES, request, response).catch((error) => {
+    const path = new URL(request.url || '/', 'http://events-api').pathname.replace(/\/+$/, '');
+    const isNursery = path === NURSERY_PATH;
+    const isApp = path === APP_PATH || path.startsWith(`${APP_PATH}/`);
+    const handle = isNursery && nursery ? nursery : isApp && app ? app : events;
+    const maxBody = isNursery ? MAX_NURSERY_BODY_BYTES : isApp ? MAX_APP_BODY_BYTES : MAX_BODY_BYTES;
+    serve(handle, maxBody, request, response).catch((error) => {
       console.error('events-api:', error);
 
       if (!response.headersSent) {
@@ -54,7 +64,7 @@ function main() {
       }
     });
   }).listen(port, () => {
-    console.log(`events-api: listening on ${port} as ${key.client_email}${nursery ? ' · nursery on' : ''}`);
+    console.log(`events-api: listening on ${port} as ${key.client_email}${nursery ? ' · nursery on' : ''}${app ? ' · app on' : ''}`);
   });
 }
 
@@ -85,8 +95,18 @@ async function serve(handle: (request: Request) => Promise<Response>, maxBodyByt
     })
   );
 
-  response.writeHead(result.status, Object.fromEntries(result.headers));
-  response.end(Buffer.from(await result.arrayBuffer()));
+  const headers = Object.fromEntries(result.headers);
+  const payload = Buffer.from(await result.arrayBuffer());
+
+  // The app's read is the whole log; compressed it is a tenth of the size over the Funnel.
+  if (payload.length > 4096 && /\bgzip\b/.test(String(request.headers['accept-encoding'] ?? ''))) {
+    response.writeHead(result.status, { ...headers, 'Content-Encoding': 'gzip', Vary: 'Accept-Encoding' });
+    response.end(gzipSync(payload));
+    return;
+  }
+
+  response.writeHead(result.status, headers);
+  response.end(payload);
 }
 
 main();

@@ -1176,7 +1176,9 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
       ...match?.item,
       ...input,
       createdAt: match?.item.createdAt ?? timestamp,
-      id: match?.item.id ?? createId('shop'),
+      // A caller that names its own id (the Android app, so a retried add finds
+      // the row it already wrote) keeps it; the web app never passes one.
+      id: match?.item.id ?? input.id ?? createId('shop'),
       syncState: 'synced',
       updatedAt: timestamp
     };
@@ -1214,7 +1216,7 @@ export function createGoogleSheetsBabyTrackerStore(api = new GoogleSheetsApi(() 
       ...match?.item,
       ...input,
       createdAt: match?.item.createdAt ?? timestamp,
-      id: match?.item.id ?? createId('task'),
+      id: match?.item.id ?? input.id ?? createId('task'),
       syncState: 'synced',
       updatedAt: timestamp
     };

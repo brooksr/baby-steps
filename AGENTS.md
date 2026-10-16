@@ -690,6 +690,29 @@ structured JSON to the Pi; they never see the sheet. Natural-language parsing
   saved. There is no retry de-duplication yet — a caller that retries a request
   that did land will log it twice.
 
+### The native Android app (`/api/events/app`)
+
+The oneplus Android app rebuilds this UI natively and has no Google sign-in, so
+it reads and writes the family sheet through the Pi (`server/appApi.ts`).
+
+- **Its own token, `APP_API_TOKEN`**, and the route is off without it. It can
+  edit and delete, so it is not the events token every voice assistant holds.
+  `rpi/scripts/babysteps/install.sh` generates it into `events.env`.
+- `GET /api/events/app` is `store.exportData()`: every profile, every entry and
+  both lists, gzipped (the whole log, a tenth of the size). The phone does the
+  per-person filtering itself. `GET /api/events/app/nursery` is
+  `readNurseryData()` for the Night & Day report.
+- `POST /api/events/app` with `{ op, ... }` runs one store call — `addEvent`,
+  `updateEvent`, `deleteEvent`, `addProfile`, `saveProfile` (must name an
+  `id`), `archiveProfile`, `restoreProfile`, `saveShoppingItem`,
+  `removeShoppingItem`, `saveTask`, `removeTask`. The phone names its own entry
+  ids, and an `addEvent` whose id is already on the sheet returns that row, so a
+  retry after a lost reply never writes twice. An edit to a row deleted
+  elsewhere is a 409, so the phone drops it instead of retrying forever.
+- It runs `store.initialize()` once per process before the first read or write,
+  the way the web app does at connect — that is what creates the list tabs on an
+  old sheet. Change the store's ops here and in the app's `PiApi.kt` together.
+
 ### Nursery sensor delivery (`POST /api/nursery`)
 
 The nursery sensor phone (the separate `oneplus` Android project) sends numeric
