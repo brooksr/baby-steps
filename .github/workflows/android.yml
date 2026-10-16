@@ -1,0 +1,61 @@
+name: Android verification
+
+on:
+  pull_request:
+  push:
+    branches: ['main']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+          cache-dependency-path: |
+            android/**/*.gradle.kts
+            android/gradle/wrapper/gradle-wrapper.properties
+
+      - name: Install Android SDK packages
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37.0" "build-tools;36.0.0"
+
+      - name: Unit tests, lint and debug APKs
+        working-directory: android
+        run: ./gradlew --no-daemon :app:testDebugUnitTest :wear:testDebugUnitTest :app:lintDebug :wear:lintDebug :app:assembleDebug :wear:assembleDebug
+
+      - name: Test optional Apps Script receiver
+        run: node android/integration/google-apps-script/receiver.test.mjs
+
+      - name: Upload test and lint reports
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: android-reports
+          path: |
+            android/app/build/reports/
+            android/wear/build/reports/
+          if-no-files-found: ignore
+
+      - name: Upload debug APKs
+        uses: actions/upload-artifact@v6
+        with:
+          name: android-debug-apks
+          path: |
+            android/app/build/outputs/apk/debug/*.apk
+            android/wear/build/outputs/apk/debug/*.apk

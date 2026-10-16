@@ -1,0 +1,13 @@
+.gradle/
+.kotlin/
+.idea/
+**/build/
+local.properties
+*.iml
+.DS_Store
+babysteps-session-*.json
+babysteps-session-*.csv
+overnight-backup/
+json2.json
+integration/google-apps-script/.clasp.json
+integration/google-apps-script/.env*

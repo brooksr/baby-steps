@@ -12,6 +12,31 @@ BabySteps is a private, offline-first progressive web app for tracking baby care
 
 BabySteps is a record-keeping aid, not medical advice or a diagnostic tool.
 
+## Babysteps app
+
+This repo also contains the tested native Android phone app and standalone
+Pixel Watch app in [`android/`](android/README.md), imported from `oneplus`
+commit `c60348b`. The phone includes the Nursery sound monitor and reaches the
+family log through the Pi; the watch logs care entries through its events API.
+Open `android/` in Android Studio. The PWA and Pi keep their existing paths.
+
+- [Monorepo plan and future development path](docs/MONOREPO.md)
+- [Phone architecture, offline writes, build and deployment](docs/BABYSTEPS_APP.md)
+- [Android setup, watch setup and device verification](android/README.md)
+
+Reference CSVs are shared at build time. Kotlin web compilation is possible,
+but needs a Multiplatform extraction and browser adapters; the development
+plan sets out the trial and parity checks before replacing the PWA.
+
+## Internal accounts and database roadmap
+
+The planned internal backend will use BabySteps accounts and SQLite, with
+passkeys as primary sign-in and Google as an optional linked identity. The
+[architecture and rollout plan](docs/INTERNAL_BACKEND.md) covers authentication,
+family permissions, offline sync, Sheets migration and Pi operations. Tested
+schema and authorization primitives live in `src/server/internal/`; the running
+app still uses its existing local/Google storage and sign-in paths.
+
 ## Technology
 
 - React 18, TypeScript, and Vite

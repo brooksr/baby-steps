@@ -1,0 +1,8 @@
+<resources>
+    <style name="Theme.NurserySensor" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:colorAccent">#7CC0F5</item>
+        <item name="android:windowBackground">#0F1620</item>
+    </style>
+</resources>

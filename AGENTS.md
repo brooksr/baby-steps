@@ -12,6 +12,45 @@ Pi and hold no data: the stateless token broker for one-time sign-in (see
 "One-time sign-in on the Pi") and the events API that lets voice assistants
 log an entry (see "Logging from outside the app").
 
+## Internal backend foundation (not enabled)
+
+Read [docs/INTERNAL_BACKEND.md](docs/INTERNAL_BACKEND.md) before work on internal
+accounts, authentication, SQLite or migration off Sheets. `src/server/internal/`
+contains tested schema/policy primitives, not production sign-in or store routing.
+Do not import Node/SQLite into browser code or silently enable it in the Pi API.
+Internal account/family ids are independent of emails/sheet ids. Google becomes
+an optional linked identity; keep its legacy path working during implementation.
+Server authorization requires verified sessions and live family memberships;
+never reuse `getAccess`'s offline full-view fallback as a server access check.
+Applied SQL migrations are immutable. Profile archiving and family isolation
+remain mandatory. Run `npm run test:internal` plus all ordinary required checks.
+The plan lists release gates, remaining schemas/services and migration/restore
+requirements; do not mark the backend ready on the strength of a schema alone.
+
+## Monorepo workflow
+
+The phone and Pixel Watch now live in `android/` (one Gradle build, `:app` and
+`:wear`). Read [docs/MONOREPO.md](docs/MONOREPO.md) before cross-platform work
+and [docs/BABYSTEPS_APP.md](docs/BABYSTEPS_APP.md) for the Kotlin port map,
+API contract, offline writes and next priorities. Historical `oneplus` code was
+imported at `c60348b`; make new changes here, not in that sibling repo.
+
+- Keep root web/Pi paths and deployment contracts stable.
+- Android builds/tests use canonical `src/data/reference/*.csv`; do not restore
+  copies under Android assets. Fonts/icons remain platform-specific assets.
+- Port changed domain rules and matching regression cases to Kotlin in the same
+  change, or explicitly document a deliberate parity gap.
+- Preserve application ids, storage keys and client-generated operation ids.
+  Old installed clients must keep working across Pi deployments.
+- Run `npm run android:test`, `npm run android:lint`, `npm run android:build`
+  for Android or shared-reference changes; `npm run test:receiver` for the legacy
+  receiver. Always run the web checks below too. API changes also need
+  `npm run build:server`.
+- Device installs restart the app; connected tests may erase data. Use an
+  emulator/test device and export real nights before connected tests.
+- Kotlin Multiplatform/browser migration is future work with explicit parity
+  gates in the plan; do not replace the PWA as incidental Android cleanup.
+
 ## Commands
 
 ```bash
@@ -676,7 +715,7 @@ structured JSON to the Pi; they never see the sheet. Natural-language parsing
 - **`GET /api/events/status`** (same token, `?child=` with the same rule as a
   write) is the one read: the last feed, diaper and sleep (`endedAt` null is a
   sleep still running), via `getCareStatus`. The Pixel Watch app
-  (`oneplus/wear`) polls it and logs through `POST /api/events`, timing a feed
+  (`android/wear`) polls it and logs through `POST /api/events`, timing a feed
   on the watch and sending it on stop with `timestamp` = its start.
 - **It signs in as a service account** (`server/serviceAccount.ts`, WebCrypto
   RS256, no dependencies), with the family sheet shared to its email as an
@@ -692,7 +731,7 @@ structured JSON to the Pi; they never see the sheet. Natural-language parsing
 
 ### The native Android app (`/api/events/app`)
 
-The oneplus Android app rebuilds this UI natively and has no Google sign-in, so
+The Android app in `android/app` rebuilds this UI natively and has no Google sign-in, so
 it reads and writes the family sheet through the Pi (`server/appApi.ts`).
 
 - **Its own token, `APP_API_TOKEN`**, and the route is off without it. It can
@@ -715,7 +754,7 @@ it reads and writes the family sheet through the Pi (`server/appApi.ts`).
 
 ### Nursery sensor delivery (`POST /api/nursery`)
 
-The nursery sensor phone (the separate `oneplus` Android project) sends numeric
+The nursery sensor phone (the `android/app` module) sends numeric
 sound summaries here every five minutes; `server/nurseryApi.ts` upserts them
 into four tabs of the family sheet: **Nursery Nightly Summaries** (one row per
 night, noon to noon, the report row), **Nursery Sound Episodes** (likely cry,
@@ -730,7 +769,7 @@ stays on the phone.
 - Reports → **Nights** reads the Nightly Summaries and Sound Episodes tabs
   back as a heard-crying layer (see "Nights" below).
 - The contract is versioned (`schemaVersion` 2) and mirrored in the phone's
-  `NightRepository.kt` and `oneplus/integration/google-apps-script/Code.js`.
+  `NightRepository.kt` and `android/integration/google-apps-script/Code.js`.
   Change all three together. A bad record refuses the whole batch with a
   reason (400); nothing is partially written.
 - **Every write is an upsert by `recordKey`** (column A): the phone queues

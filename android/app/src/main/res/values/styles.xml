@@ -1,0 +1,9 @@
+<resources>
+    <!-- The Babysteps page color, so launch shows no flash before Compose draws. -->
+    <style name="Theme.NurserySensor" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:colorAccent">#4F9FDD</item>
+        <item name="android:windowBackground">#EFF8FF</item>
+    </style>
+</resources>

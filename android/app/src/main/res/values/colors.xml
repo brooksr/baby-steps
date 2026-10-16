@@ -1,0 +1,4 @@
+<resources>
+    <!-- The Babysteps icon's cream, so the adaptive mask never shows a seam. -->
+    <color name="ic_launcher_background">#FEFCF8</color>
+</resources>

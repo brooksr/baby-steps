@@ -5,13 +5,18 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 0.0.0.0",
+    "android:build": "cd android && ./gradlew :app:assembleDebug :wear:assembleDebug",
+    "android:lint": "cd android && ./gradlew :app:lintDebug :wear:lintDebug",
+    "android:test": "cd android && ./gradlew :app:testDebugUnitTest :wear:testDebugUnitTest",
     "build": "tsc -b && vite build",
     "build:server": "vite build --config vite.server.config.ts",
+    "dev": "vite --host 0.0.0.0",
+    "lint": "eslint .",
     "preview": "vite preview --host 0.0.0.0",
     "test": "vitest run",
-    "test:watch": "vitest",
-    "lint": "eslint ."
+    "test:internal": "vitest run src/server/internal",
+    "test:receiver": "node android/integration/google-apps-script/receiver.test.mjs",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "dexie": "^4.0.11",

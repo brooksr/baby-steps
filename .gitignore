@@ -4,3 +4,6 @@ dist-server
 .env
 .env.local
 .DS_Store
+
+# Optional internal backend development data; never commit accounts or records.
+.babysteps/
