@@ -12,3 +12,4 @@ playwright-report/
 test-results/
 deployment/internal/internal.env
 dist-internal-web
+dist-internal-root

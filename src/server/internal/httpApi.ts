@@ -52,7 +52,12 @@ export function createInternalHandler(db: DatabaseSync, config: AuthConfig, cloc
       }
       const saved = cookies(request);
       const binding = saved[FLOW] ?? secret();
-      if (!saved[FLOW]) headers.append('Set-Cookie', cookie(FLOW, binding, 600));
+      // Only ceremony starts set/refresh this cookie. Unrelated parallel reads
+      // must not overwrite a new challenge binding, and an old cookie must not
+      // expire while the five-minute passkey/Google ceremony is in progress.
+      if (write && ['/api/v1/auth/register/options','/api/v1/auth/login/options','/api/v1/auth/google/options'].includes(path)) {
+        headers.append('Set-Cookie', cookie(FLOW, binding, 600));
+      }
       const bearer = request.headers.get('authorization');
       function principal(): VerifiedSession {
         if (bearer) {

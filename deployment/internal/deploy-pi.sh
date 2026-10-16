@@ -19,15 +19,22 @@ test -f dist-internal/internal-api.mjs
 test -f dist-internal-web/index.html
 package="$private/$release.tar.gz"
 tar --exclude=deployment/internal/internal.env -czf "$package" dist-internal dist-internal-web deployment/internal public/sw.js
+if [ -d dist-internal-root ]; then
+  tar -czf "$private/$release-root.tar.gz" dist-internal-root
+fi
 tar -czf "$private/$release-setup.tar.gz" -C "$private" backup-public.pem bootstrap-token.sha256
 ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" "umask 077; mkdir -p babysteps/internal/releases/$release"
 scp -q "$package" "$private/$release-setup.tar.gz" "$host:babysteps/internal/releases/$release/"
+if [ -f "$private/$release-root.tar.gz" ]; then
+  scp -q "$private/$release-root.tar.gz" "$host:babysteps/internal/releases/$release/"
+fi
 ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" bash -s -- "$release" <<'REMOTE'
 set -euo pipefail
 release="$1"
 cd "$HOME/babysteps/internal/releases/$release"
 tar -xzf "$release.tar.gz"
 tar -xzf "$release-setup.tar.gz"
+if [ -f "$release-root.tar.gz" ]; then tar -xzf "$release-root.tar.gz"; fi
 bash deployment/internal/pi-install.sh "$release"
 REMOTE
 printf '%s\n' "$release" > "$private/deployed-release"

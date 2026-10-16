@@ -16,6 +16,25 @@ afterEach(() => { db.close(); vi.unstubAllGlobals(); });
 function owner() { const token = auth.issueSession('account'); return { principal:auth.session(token.token,'browser',token.csrf),token }; }
 
 describe('internal accounts and HTTP boundary',() => {
+  it('sets the flow cookie only at ceremony starts and refreshes its lifetime',async () => {
+    const api = createInternalHandler(db,config,() => time);
+    const read = await api.handle(new Request(config.origin+'/api/v1/config'));
+    expect(read.headers.getSetCookie()).toEqual([]);
+    const start = (cookie?: string) => api.handle(new Request(config.origin+'/api/v1/auth/login/options',{
+      method:'POST',headers:{ 'Content-Type':'application/json',Origin:config.origin,...(cookie ? { Cookie:cookie } : {}) },body:'{}'
+    }));
+    const first = await start();
+    const flow = first.headers.getSetCookie().find(cookie => cookie.startsWith('__Host-babysteps-flow='))!;
+    expect(flow).toContain('Max-Age=600');
+    time += 599_000;
+    const next = await start(flow.split(';')[0]);
+    expect(next.headers.getSetCookie()).toContain(flow);
+    const challenge = await next.json() as { challengeId:string };
+    time += 120_000;
+    expect(() => api.auth.consume(challenge.challengeId,flow.split(';')[0].split('=')[1],'login')).not.toThrow();
+    const unrelated = await api.handle(new Request(config.origin+'/api/v1/config'));
+    expect(unrelated.headers.getSetCookie()).toEqual([]);
+  });
   it('allows only the first account through a private setup token with public signup closed',async () => {
     const fresh = openInternalDatabase(':memory:');
     try {

@@ -6,6 +6,9 @@ release="${1:?release id required}"
 root="$HOME/babysteps/internal"
 source="$root/releases/$release"
 www="$HOME/babysteps/www/internal"
+if [ -e "$root/cutover-complete" ] && [ ! -f "$source/dist-internal-root/index.html" ]; then
+  echo 'This Pi has cut over: include a fresh dist-internal-root build before upgrading.' >&2; exit 1
+fi
 mkdir -p "$root/backups" "$root/rollbacks" "$www/releases"
 chmod 700 "$root" "$root/backups" "$root/rollbacks"
 chmod 755 "$HOME/babysteps/www" "$www" "$www/releases"
@@ -83,6 +86,13 @@ if ! docker exec babysteps nginx -t; then
   restore_container; exit 1
 fi
 docker exec babysteps nginx -s reload
+if [ -e "$root/cutover-complete" ]; then
+  mkdir -p "$www/root-releases"
+  cp -R "$source/dist-internal-root" "$www/root-releases/$release"
+  chmod -R a+rX "$www/root-releases/$release"
+  ln -sfn "internal/root-releases/$release" "$HOME/babysteps/www/current.new"
+  mv -T "$HOME/babysteps/www/current.new" "$HOME/babysteps/www/current"
+fi
 "$root/backup.sh"
 cron='17 3 * * * $HOME/babysteps/internal/backup.sh >> $HOME/babysteps/internal/backup.log 2>&1'
 { crontab -l 2>/dev/null | grep -v 'babysteps/internal/backup.sh' || true; printf '%s\n' "$cron"; } | crontab -

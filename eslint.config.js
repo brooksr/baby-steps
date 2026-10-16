@@ -5,7 +5,7 @@ import reactRefresh from 'eslint-plugin-react-refresh';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['.babysteps/**', 'dist', 'dist-server', 'dist-internal', 'dist-internal-web', 'coverage', 'android/**'] },
+  { ignores: ['.babysteps/**', 'dist', 'dist-server', 'dist-internal', 'dist-internal-web', 'dist-internal-root', 'coverage', 'android/**'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
