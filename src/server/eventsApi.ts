@@ -1,4 +1,6 @@
 import { describeLoggedEvent, parseEventRequest, resolveChild, SUPPORTED_EVENT_TYPES } from '../domain/eventRequest';
+import { getFirstName } from '../domain/family';
+import type { CareEvent, DiaperEvent, FeedEvent, SleepEvent } from '../domain/types';
 import type { BabyTrackerStore } from '../storage/store';
 
 /**
@@ -11,12 +13,16 @@ import type { BabyTrackerStore } from '../storage/store';
  * indistinguishable from one logged on a phone, and the app picks it up on its
  * next poll.
  *
+ * `GET /api/events/status` is the one read: the last feed, change and sleep,
+ * for a watch or a glance. Same token, same child rule as a write.
+ *
  * **Every write needs the shared API token.** The Pi is reachable from the
  * internet through the Funnel, so the token — not the network — is what keeps
  * strangers out of the log.
  */
 
 export const EVENTS_PREFIX = '/api/events';
+export const STATUS_PATH = `${EVENTS_PREFIX}/status`;
 const MAX_BODY_BYTES = 8192;
 
 export interface EventsApiOptions {
@@ -24,7 +30,32 @@ export interface EventsApiOptions {
   apiToken: string;
   now?: () => Date;
   onError?: (error: unknown) => void;
-  store: Pick<BabyTrackerStore, 'addEvent' | 'listProfiles'>;
+  store: Pick<BabyTrackerStore, 'addEvent' | 'listEvents' | 'listProfiles'>;
+}
+
+/** What a watch shows. Times are ISO; each is null when nothing is on file. */
+export interface CareStatus {
+  child: string;
+  lastFeed: { at: string; endedAt: string | null; method: FeedEvent['method']; amountOz: number | null; durationMinutes: number | null; side: FeedEvent['side'] | null } | null;
+  lastDiaper: { at: string; kind: DiaperEvent['kind'] } | null;
+  /** The latest sleep; `endedAt` null is one still running. */
+  lastSleep: { at: string; endedAt: string | null } | null;
+}
+
+export function getCareStatus(child: string, events: CareEvent[]): CareStatus {
+  const sorted = [...events].sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt));
+  const feed = sorted.find((event): event is FeedEvent => event.type === 'feed');
+  const diaper = sorted.find((event): event is DiaperEvent => event.type === 'diaper');
+  const sleep = sorted.find((event): event is SleepEvent => event.type === 'sleep');
+
+  return {
+    child,
+    lastDiaper: diaper ? { at: diaper.startedAt, kind: diaper.kind } : null,
+    lastFeed: feed
+      ? { amountOz: feed.amountOz ?? null, at: feed.startedAt, durationMinutes: feed.durationMinutes ?? null, endedAt: feed.endedAt ?? null, method: feed.method, side: feed.side ?? null }
+      : null,
+    lastSleep: sleep ? { at: sleep.startedAt, endedAt: sleep.endedAt ?? null } : null
+  };
 }
 
 export function createEventsHandler({ apiToken, now = () => new Date(), onError = () => {}, store }: EventsApiOptions) {
@@ -38,6 +69,30 @@ export function createEventsHandler({ apiToken, now = () => new Date(), onError 
 
     if (path === `${EVENTS_PREFIX}/health` && request.method === 'GET') {
       return json(200, { ok: true, types: SUPPORTED_EVENT_TYPES });
+    }
+
+    if (path === STATUS_PATH) {
+      if (request.method !== 'GET') {
+        return json(405, { error: 'method_not_allowed' });
+      }
+
+      if (!(await isAuthorized(request.headers.get('authorization'), apiToken))) {
+        return json(401, { error: 'unauthorized' });
+      }
+
+      try {
+        const child = resolveChild(await store.listProfiles(), new URL(request.url).searchParams.get('child') ?? undefined);
+
+        if (!child.ok) {
+          return json(400, { error: 'unknown_child', errors: child.errors });
+        }
+
+        const events = await store.listEvents({ babyId: child.value.id });
+        return json(200, { ...getCareStatus(getFirstName(child.value), events), ok: true });
+      } catch (error) {
+        onError(error);
+        return json(502, { error: 'sheet_unavailable' });
+      }
     }
 
     if (path !== EVENTS_PREFIX) {

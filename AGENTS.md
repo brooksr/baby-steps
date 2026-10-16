@@ -673,6 +673,11 @@ structured JSON to the Pi; they never see the sheet. Natural-language parsing
 - **Every POST needs `Authorization: Bearer $EVENTS_API_TOKEN`.** The Pi is on
   the internet through the Funnel; the token, not the network, keeps strangers
   out of the log. `GET /api/events/health` is open and lists the types.
+- **`GET /api/events/status`** (same token, `?child=` with the same rule as a
+  write) is the one read: the last feed, diaper and sleep (`endedAt` null is a
+  sleep still running), via `getCareStatus`. The Pixel Watch app
+  (`oneplus/wear`) polls it and logs through `POST /api/events`, timing a feed
+  on the watch and sending it on stop with `timestamp` = its start.
 - **It signs in as a service account** (`server/serviceAccount.ts`, WebCrypto
   RS256, no dependencies), with the family sheet shared to its email as an
   editor. Unlike the broker this does hold a credential — but it belongs to no
