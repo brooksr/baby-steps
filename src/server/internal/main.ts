@@ -12,7 +12,7 @@ const rpId = process.env.BABYSTEPS_RP_ID;
 if (!path || !origin || !rpId) throw new Error('Set BABYSTEPS_DATABASE_PATH, BABYSTEPS_ORIGIN and BABYSTEPS_RP_ID.');
 mkdirSync(dirname(resolve(path)), { mode: 0o700, recursive: true });
 const database = openInternalDatabase(path);
-const api = createInternalHandler(database, { googleClientId: process.env.BABYSTEPS_GOOGLE_CLIENT_ID,
+const api = createInternalHandler(database, { bootstrapTokenHash: process.env.BABYSTEPS_BOOTSTRAP_TOKEN_HASH, googleClientId: process.env.BABYSTEPS_GOOGLE_CLIENT_ID,
   origin, registrationOpen: process.env.BABYSTEPS_REGISTRATION_OPEN === 'true', rpId });
 const server = createServer(async (request, response) => {
   let size = 0; const chunks: Buffer[] = [];

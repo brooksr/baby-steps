@@ -68,6 +68,7 @@ Runtime configuration:
 | `BABYSTEPS_DATABASE_PATH` | Required persistent SQLite path, outside static/release directories |
 | `BABYSTEPS_ORIGIN` | Required exact HTTPS origin for Origin/WebAuthn checks |
 | `BABYSTEPS_RP_ID` | Required passkey relying-party hostname |
+| `BABYSTEPS_BOOTSTRAP_TOKEN_HASH` | Optional SHA-256 hash of a private first-account setup token; usable only before any account exists |
 | `BABYSTEPS_REGISTRATION_OPEN` | `true` permits open signup; otherwise a valid invitation is required for a new account |
 | `BABYSTEPS_GOOGLE_CLIENT_ID` | Optional Google OIDC web client id; no Sheets/Drive scopes needed |
 | `HOST`, `PORT` | Default loopback `127.0.0.1:8790`; container sets host `0.0.0.0` behind a loopback-only published port |
@@ -99,7 +100,7 @@ The health endpoint returns ready only after opening/migrating the database.
 
 Verified on 2026-10-16 with synthetic accounts and records:
 
-- ESLint and all 611 tests across 69 Vitest files pass.
+- ESLint and all 612 tests across 69 Vitest files pass.
 - Legacy PWA, opt-in `/internal/` PWA, legacy Pi API and internal API/tool builds pass.
 - Browser acceptance passes with a virtual passkey: registration/login/recovery,
   offline queued writes, revision conflicts, caregiver isolation, SQLite online

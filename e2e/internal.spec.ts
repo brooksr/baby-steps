@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { test, expect, type Page } from '@playwright/test';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -15,7 +16,7 @@ test.beforeAll(async () => {
   const generated = spawnSync('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-keyout',key,'-out',cert,'-days','1','-subj','/CN=localhost'],{ stdio:'ignore' });
   if (generated.status) throw new Error('Could not generate ephemeral localhost certificate');
   const apiPort = await port(); const webPort = await port(); origin = `https://localhost:${webPort}`;
-  api = spawn(process.execPath,['dist-internal/internal-api.mjs'],{ env:{ ...process.env,BABYSTEPS_DATABASE_PATH:join(directory,'test.sqlite'),BABYSTEPS_ORIGIN:origin,BABYSTEPS_REGISTRATION_OPEN:'true',BABYSTEPS_RP_ID:'localhost',HOST:'127.0.0.1',PORT:String(apiPort) },stdio:['ignore','pipe','pipe'] });
+  api = spawn(process.execPath,['dist-internal/internal-api.mjs'],{ env:{ ...process.env,BABYSTEPS_DATABASE_PATH:join(directory,'test.sqlite'),BABYSTEPS_ORIGIN:origin,BABYSTEPS_BOOTSTRAP_TOKEN_HASH:createHash('sha256').update('test-only-setup').digest('hex'),BABYSTEPS_REGISTRATION_OPEN:'false',BABYSTEPS_RP_ID:'localhost',HOST:'127.0.0.1',PORT:String(apiPort) },stdio:['ignore','pipe','pipe'] });
   let log = ''; api.stderr!.on('data',(value) => { log += String(value); });
   for (let i=0;i<100;i++) { try { if ((await fetch(`http://127.0.0.1:${apiPort}/api/v1/health`)).ok) break; } catch { /* booting */ }
     if (api.exitCode !== null) throw new Error(log); await new Promise((resolve) => setTimeout(resolve,100)); }
@@ -36,10 +37,12 @@ async function request(page: Page,path: string,body?: unknown) {
   },{ body,path });
 }
 test('real passkey account, family, offline queue, caregiver boundary and recovery',async ({ page,browser }) => {
-  await authenticator(page); await page.goto(origin);
+  await authenticator(page); await page.goto(`${origin}/#setup=test-only-setup`);
   await page.getByRole('button',{ name:'Create a BabySteps account',exact:true }).click();
   await expect(page.getByRole('heading',{ name:'Keep your recovery codes' })).toBeVisible();
   const recovery = (await page.getByLabel('Recovery codes').inputValue()).split('\n');
+  expect((await request(page,'/config')).body.registrationOpen).toBe(false);
+  expect(await page.evaluate(async () => (await fetch('/api/v1/auth/register/options',{ method:'POST',credentials:'omit',headers:{ 'Content-Type':'application/json' },body:JSON.stringify({ setupToken:'test-only-setup' }) })).status)).toBe(403);
   await page.getByRole('button',{ name:'I saved them',exact:true }).click();
   await page.getByLabel('Your name',{ exact:true }).fill('Alex Example'); await page.getByLabel('Baby’s name (optional)').fill('Baby Example');
   await page.getByRole('button',{ name:'Start a family',exact:true }).click();
@@ -64,7 +67,7 @@ test('real passkey account, family, offline queue, caregiver boundary and recove
   const caregiver = { action:'save',collection:'profiles',expectedRevision:0,id:'sitter',operationId:'sitter',patch:{ kind:'caregiver',name:'Sitter Example',timezone:'America/Los_Angeles' } };
   expect((await request(page,`/families/${familyId}/mutations`,caregiver)).status).toBe(200);
   const invited = await request(page,`/families/${familyId}/invitations`,{ profileId:'sitter' }); expect(invited.status).toBe(200);
-  const context = await browser.newContext({ ignoreHTTPSErrors:true }); const sitter = await context.newPage(); await authenticator(sitter); await sitter.goto(origin);
+  const context = await browser.newContext({ ignoreHTTPSErrors:true }); const sitter = await context.newPage(); await authenticator(sitter); await sitter.goto(`${origin}/#invite=${invited.body.token}`);
   await sitter.getByRole('button',{ name:'Create a BabySteps account',exact:true }).click(); await expect(sitter.getByLabel('Recovery codes')).toBeVisible();
   expect((await request(sitter,'/invitations/accept',{ token:invited.body.token })).status).toBe(200);
   expect((await request(sitter,'/invitations/accept',{ token:invited.body.token })).status).toBe(404);

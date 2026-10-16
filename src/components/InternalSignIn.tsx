@@ -7,17 +7,19 @@ import { internalRequest } from '../storage/internalClient';
 export function InternalSignIn({ api, onSignedIn, onRecovery }: { api: string; onSignedIn: () => Promise<void>; onRecovery: (codes: string[], accountId: string) => void }) {
   const [configuration,setConfiguration] = useState<{ googleClientId?:string; registrationOpen:boolean }>();
   useEffect(() => { void internalRequest<{ googleClientId?:string; registrationOpen:boolean }>(api,'/config').then(setConfiguration).catch(() => {}); },[api]);
-  const invited = Boolean(new URLSearchParams(window.location.hash.slice(1)).get('invite'));
+  const setupToken = new URLSearchParams(window.location.hash.slice(1)).get('setup') ?? undefined;
+  const invited = Boolean(new URLSearchParams(window.location.hash.slice(1)).get('invite') || setupToken);
   const [error,setError] = useState(''); const [busy,setBusy] = useState(false);
   const [accountId,setAccountId] = useState(''); const [code,setCode] = useState('');
   const [recover,setRecover] = useState(false);
   async function run(action: () => Promise<void>) { setError(''); setBusy(true); try { await action(); } catch (e) { setError(e instanceof Error ? e.message : 'Sign-in failed'); } finally { setBusy(false); } }
   async function passkey(register: boolean) {
-    const result = register ? await internalRequest<{ challengeId: string; options: PublicKeyCredentialCreationOptionsJSON }>(api,'/auth/register/options',{ inviteToken:new URLSearchParams(window.location.hash.slice(1)).get('invite') ?? undefined }) :
+    const result = register ? await internalRequest<{ challengeId: string; options: PublicKeyCredentialCreationOptionsJSON }>(api,'/auth/register/options',{ setupToken,inviteToken:new URLSearchParams(window.location.hash.slice(1)).get('invite') ?? undefined }) :
       await internalRequest<{ challengeId: string; options: PublicKeyCredentialRequestOptionsJSON }>(api,'/auth/login/options',{});
     const response = register ? await startRegistration({ optionsJSON: result.options as PublicKeyCredentialCreationOptionsJSON }) :
       await startAuthentication({ optionsJSON: result.options as PublicKeyCredentialRequestOptionsJSON });
-    const signed = await internalRequest<{ accountId: string; recoveryCodes?: string[] }>(api,`/auth/${register ? 'register':'login'}/finish`,{ challengeId: result.challengeId,response,inviteToken:new URLSearchParams(window.location.hash.slice(1)).get('invite') ?? undefined });
+    const signed = await internalRequest<{ accountId: string; recoveryCodes?: string[] }>(api,`/auth/${register ? 'register':'login'}/finish`,{ challengeId: result.challengeId,response,setupToken,inviteToken:new URLSearchParams(window.location.hash.slice(1)).get('invite') ?? undefined });
+    if (setupToken) window.history.replaceState(null,'',window.location.pathname);
     if (signed.recoveryCodes) onRecovery(signed.recoveryCodes,signed.accountId);
     await onSignedIn();
   }

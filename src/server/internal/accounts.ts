@@ -11,6 +11,7 @@ import { boundedText, fail, text } from './validation';
 export const digest = (value: string) => createHash('sha256').update(value).digest('hex');
 export const secret = () => randomBytes(32).toString('base64url');
 export interface AuthConfig {
+  bootstrapTokenHash?: string;
   googleClientId?: string;
   origin: string;
   registrationOpen: boolean;
@@ -78,32 +79,35 @@ export function createAccountService(db: DatabaseSync, config: AuthConfig, clock
     for (const code of codes) db.prepare('INSERT INTO recovery_codes VALUES (?, ?, NULL)').run(accountId, digest(code));
     return codes;
   }
-  function checkSignup(principal?: VerifiedSession, inviteToken?: string) {
+  function checkSignup(principal?: VerifiedSession, inviteToken?: string, setupToken?: string) {
     if (principal || config.registrationOpen) return;
+    if (setupToken && config.bootstrapTokenHash && digest(setupToken) === config.bootstrapTokenHash &&
+      !db.prepare('SELECT 1 FROM accounts LIMIT 1').get()) return;
     if (!inviteToken || !db.prepare('SELECT 1 FROM invitations WHERE token_hash=? AND accepted_by IS NULL AND expires_at>?').get(digest(inviteToken),iso())) fail('forbidden');
   }
-  async function registrationOptions(binding: string, principal?: VerifiedSession, inviteToken?: string) {
-    checkSignup(principal,inviteToken);
+  async function registrationOptions(binding: string, principal?: VerifiedSession, inviteToken?: string, setupToken?: string) {
+    checkSignup(principal,inviteToken,setupToken);
     if (principal) recent(principal);
     const accountId = principal?.accountId ?? randomUUID();
     const existing = db.prepare('SELECT credential_id FROM passkeys WHERE account_id = ? AND revoked_at IS NULL').all(accountId);
     const options = await generateRegistrationOptions({ attestationType: 'none', authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
       excludeCredentials: existing.map((row) => ({ id: String(row.credential_id) })), rpID: config.rpId, rpName: 'BabySteps',
       supportedAlgorithmIDs: [-7, -257], userID: new TextEncoder().encode(accountId), userName: `BabySteps ${accountId.slice(0,8)}` });
-    const kind = principal ? 'add-passkey' : inviteToken ? `register:${digest(inviteToken)}` : 'register';
+    const kind = principal ? 'add-passkey' : inviteToken ? `register:${digest(inviteToken)}` : setupToken ? `setup:${digest(setupToken)}` : 'register';
     return { challengeId: challenge(kind, binding, options.challenge, accountId), options };
   }
-  async function registrationFinish(binding: string, challengeId: string, response: RegistrationResponseJSON, principal?: VerifiedSession, inviteToken?: string) {
+  async function registrationFinish(binding: string, challengeId: string, response: RegistrationResponseJSON, principal?: VerifiedSession, inviteToken?: string, setupToken?: string) {
     if (principal) recent(principal);
-    const saved = consume(challengeId, binding, principal ? 'add-passkey' : inviteToken ? `register:${digest(inviteToken)}` : 'register');
+    const saved = consume(challengeId, binding, principal ? 'add-passkey' : inviteToken ? `register:${digest(inviteToken)}` : setupToken ? `setup:${digest(setupToken)}` : 'register');
     if (principal && saved.account_id !== principal.accountId) fail('forbidden');
-    checkSignup(principal,inviteToken);
+    checkSignup(principal,inviteToken,setupToken);
     const result = await verifyRegistrationResponse({ expectedChallenge: String(saved.challenge), expectedOrigin: config.origin,
       expectedRPID: config.rpId, requireUserVerification: true, response });
     if (!result.verified || !result.registrationInfo) fail('unauthorized');
     const credential = result.registrationInfo.credential;
     return atomic(() => {
       const accountId = String(saved.account_id);
+      checkSignup(principal,inviteToken,setupToken);
       if (!principal) db.prepare('INSERT INTO accounts VALUES (?, ?, NULL)').run(accountId, iso());
       else recent(principal);
       db.prepare('INSERT INTO passkeys VALUES (?, ?, ?, ?, ?, ?, NULL)').run(credential.id, accountId, credential.publicKey, credential.counter, JSON.stringify(credential.transports ?? []), iso());

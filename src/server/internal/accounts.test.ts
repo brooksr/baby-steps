@@ -3,7 +3,7 @@ import { exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NURSERY_SCHEMAS } from '../../domain/nurserySensor';
 import { openInternalDatabase } from './database';
-import { createAccountService } from './accounts';
+import { createAccountService, digest } from './accounts';
 import { createInternalHandler } from './httpApi';
 
 let db: ReturnType<typeof openInternalDatabase>;
@@ -16,6 +16,18 @@ afterEach(() => { db.close(); vi.unstubAllGlobals(); });
 function owner() { const token = auth.issueSession('account'); return { principal:auth.session(token.token,'browser',token.csrf),token }; }
 
 describe('internal accounts and HTTP boundary',() => {
+  it('allows only the first account through a private setup token with public signup closed',async () => {
+    const fresh = openInternalDatabase(':memory:');
+    try {
+      const setup = createAccountService(fresh,{ ...config,bootstrapTokenHash:digest('private-setup'),registrationOpen:false });
+      await expect(setup.registrationOptions('browser')).rejects.toThrow('forbidden');
+      await expect(setup.registrationOptions('browser',undefined,undefined,'wrong')).rejects.toThrow('forbidden');
+      const challenge = await setup.registrationOptions('browser',undefined,undefined,'private-setup');
+      expect(() => setup.consume(challenge.challengeId,'browser','register')).toThrow('unauthorized');
+      fresh.prepare('INSERT INTO accounts VALUES (?, ?, NULL)').run('first',new Date(time).toISOString());
+      await expect(setup.registrationOptions('browser',undefined,undefined,'private-setup')).rejects.toThrow('forbidden');
+    } finally { fresh.close(); }
+  });
   it('uses hashed, expiring, revocable browser sessions and checks CSRF and transport kind',() => {
     const { principal,token } = owner();
     expect(db.prepare('SELECT token_hash FROM sessions').get()!.token_hash).not.toBe(token.token);

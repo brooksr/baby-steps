@@ -76,8 +76,8 @@ export function createInternalHandler(db: DatabaseSync, config: AuthConfig, cloc
       if (path === '/api/v1/config' && !write) return json({ googleClientId: config.googleClientId, registrationOpen: config.registrationOpen });
       if (path.startsWith('/api/v1/auth/') && write) auth.rate(`auth:${remoteAddress}`, 20);
       if (path === '/api/v1/auth/reset' && write) { headers.append('Set-Cookie',cookie(COOKIE,'',0)); headers.append('Set-Cookie',cookie(CSRF,'',0,false)); return json({ reset:true }); }
-      if (path === '/api/v1/auth/register/options' && write) return json(await auth.registrationOptions(binding, optionalBrowser(),typeof body.inviteToken === 'string' ? body.inviteToken : undefined));
-      if (path === '/api/v1/auth/register/finish' && write) return signedIn(await auth.registrationFinish(binding, text(body.challengeId), body.response as RegistrationResponseJSON, optionalBrowser(),typeof body.inviteToken === 'string' ? body.inviteToken : undefined));
+      if (path === '/api/v1/auth/register/options' && write) return json(await auth.registrationOptions(binding, optionalBrowser(),typeof body.inviteToken === 'string' ? body.inviteToken : undefined,typeof body.setupToken === 'string' ? body.setupToken : undefined));
+      if (path === '/api/v1/auth/register/finish' && write) return signedIn(await auth.registrationFinish(binding, text(body.challengeId), body.response as RegistrationResponseJSON, optionalBrowser(),typeof body.inviteToken === 'string' ? body.inviteToken : undefined,typeof body.setupToken === 'string' ? body.setupToken : undefined));
       if (path === '/api/v1/auth/login/options' && write) return json(await auth.loginOptions(binding));
       if (path === '/api/v1/auth/login/finish' && write) return signedIn(await auth.loginFinish(binding, text(body.challengeId), body.response as AuthenticationResponseJSON));
       if (path === '/api/v1/auth/recover' && write) return signedIn(auth.recover(text(body.accountId), text(body.code)));

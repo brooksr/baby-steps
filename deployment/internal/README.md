@@ -25,11 +25,12 @@ never derive trusted WebAuthn origins from request headers.
    validate nginx configuration and reload it. Copy staged web files into the
    alias directory. Keep existing `/api/events`, `/api/nursery`, `/api/token`
    and root PWA behavior unchanged while rehearsing.
-5. Temporarily set registration open, recreate the container, visit
-   `/internal/`, enroll a passkey, and save recovery codes outside the Pi.
-   Invite the other parents/caregivers explicitly. Close registration again
-   and recreate the container after household onboarding. Valid, unaccepted
-   invitations permit new-account enrollment even while open signup is closed.
+5. Keep public registration closed. Generate a private random setup token and
+   set only its SHA-256 hash as `BABYSTEPS_BOOTSTRAP_TOKEN_HASH`. Visit
+   `/internal/#setup=TOKEN` privately to enroll the first passkey; this works
+   only while the account table is empty. Save recovery codes outside the Pi.
+   Invite other parents/caregivers explicitly. Valid, unaccepted invitations
+   permit new-account enrollment while open signup is closed.
 6. Test account recovery, caregiver denial, native enrollment and revocation
    with synthetic data. Native pairing opens the origin's root by default;
    during staging visit `/internal/` manually and enter the connection code in
@@ -131,3 +132,48 @@ Adopt these artifacts there only after its maintainer reviews persistent volumes
 proxy routing, backups and release gating. No production installation, family
 cutover, external Google configuration or real-device test is performed by
 checking in these files.
+
+## Existing household Pi deployment (no Compose)
+
+The existing nginx container shares the `babysteps` Docker network. After the
+required checks, build both artifacts and deploy with:
+
+```bash
+npm run build:internal
+VITE_INTERNAL_API=/api/v1 npm run build -- --base /internal/ --outDir dist-internal-web
+bash deployment/internal/deploy-pi.sh
+```
+
+`BABYSTEPS_PI_TARGET` defaults to `broche@raspberrypi.local`. This installer
+preserves root hosting and legacy APIs, adds `/internal/` and `/api/v1/`, uses a
+non-root container with memory limits and the `babysteps-internal` named volume,
+and checks API health and nginx configuration before completing. It replaces
+only the root service worker with the API-safe worker to clear older API caches.
+The existing five-minute updater does not touch the new internal release path.
+Re-running the separate `rpi` installer can overwrite nginx routing; retain the
+include of `/srv/internal/proxy.conf` if that installer is used.
+
+Private setup material and the backup decryption key are generated under
+`.babysteps/operations/` (mode 700, Git-ignored). Only the setup hash and public
+backup certificate go to the Pi. The setup token must stay private and is
+unusable once the first account exists. Remove its hash from the runtime env
+and recreate the container after enrollment when convenient. Do not create a
+family before the planned import if you want the historical family migrated.
+
+The installer schedules a daily 03:17 Pi-local-time online SQLite backup and
+integrity check, encrypted using OpenSSL CMS AES-256-GCM to the public backup
+certificate. It retains all snapshots pending an agreed retention policy;
+monitor disk space, `backup.log` and `last-backup-success`. Copy encrypted `.cms`
+files off the Pi regularly. The private key must be copied to a secure recovery
+location separately from backups and never uploaded to the Pi.
+
+To decrypt and verify a downloaded snapshot locally:
+
+```bash
+openssl cms -decrypt -binary -inform DER -in BACKUP.cms -inkey .babysteps/operations/backup-private.pem -out PRIVATE_RESTORE.sqlite
+node dist-internal/internal-tool.mjs restore-check --database PRIVATE_RESTORE.sqlite
+```
+
+Initial deployment includes an off-device restore drill. Recurring off-device
+transfer and alert delivery still need an always-available destination chosen
+by the household; a Mac that sleeps is not a reliable backup receiver.
