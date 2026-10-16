@@ -152,7 +152,10 @@ preserves root hosting and legacy APIs, adds `/internal/` and `/api/v1/`, uses a
 non-root container with memory limits and the `babysteps-internal` named volume,
 and checks API health and nginx configuration before completing. It replaces
 only the root service worker with the API-safe worker to clear older API caches.
-The existing five-minute updater does not touch the new internal release path.
+Before cutover the five-minute `update.sh` updater leaves the internal release
+path alone. After cutover it must stay unscheduled: it would swap the root site
+back to the legacy build. CI no longer publishes `pi-latest` unless the
+repository variable `PUBLISH_LEGACY_PI_RELEASE` is `true`.
 Re-running the separate `rpi` installer can overwrite nginx routing; retain the
 include of `/srv/internal/proxy.conf` if that installer is used.
 

@@ -57,7 +57,12 @@ jobs:
   # The Pi build signs in through the broker it serves at /api/token (one-time
   # sign-in); the broker script rides along as a release asset, and so does the
   # events API.
+  # Off since the household Pi cut over to the internal backend: its update.sh
+  # would swap the root site back to this legacy build. Internal releases go out
+  # with deployment/internal/deploy-pi.sh instead. Set the repository variable
+  # PUBLISH_LEGACY_PI_RELEASE to 'true' only for a Pi still on the legacy stack.
   pi:
+    if: vars.PUBLISH_LEGACY_PI_RELEASE == 'true'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
