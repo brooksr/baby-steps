@@ -6,6 +6,8 @@ export default defineConfig({
   plugins: [react()],
   test: {
     css: true,
+    // Clock assertions are written for the household's zone; CI runs in UTC.
+    env: { TZ: 'America/Los_Angeles' },
     exclude: [...configDefaults.exclude, 'android/**', 'e2e/**'],
     environment: 'jsdom',
     globals: true,
