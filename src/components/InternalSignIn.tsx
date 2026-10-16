@@ -7,8 +7,14 @@ import { internalRequest } from '../storage/internalClient';
 export function InternalSignIn({ api, onSignedIn, onRecovery }: { api: string; onSignedIn: () => Promise<void>; onRecovery: (codes: string[], accountId: string) => void }) {
   const [configuration,setConfiguration] = useState<{ googleClientId?:string; registrationOpen:boolean }>();
   useEffect(() => { void internalRequest<{ googleClientId?:string; registrationOpen:boolean }>(api,'/config').then(setConfiguration).catch(() => {}); },[api]);
-  const setupToken = new URLSearchParams(window.location.hash.slice(1)).get('setup') ?? undefined;
-  const invited = Boolean(new URLSearchParams(window.location.hash.slice(1)).get('invite') || setupToken);
+  const [signupLink,setSignupLink] = useState(() => new URLSearchParams(window.location.hash.slice(1)));
+  useEffect(() => {
+    const changed = () => setSignupLink(new URLSearchParams(window.location.hash.slice(1)));
+    window.addEventListener('hashchange',changed);
+    return () => window.removeEventListener('hashchange',changed);
+  },[]);
+  const setupToken = signupLink.get('setup') ?? undefined;
+  const invited = Boolean(signupLink.get('invite') || setupToken);
   const [error,setError] = useState(''); const [busy,setBusy] = useState(false);
   const [accountId,setAccountId] = useState(''); const [code,setCode] = useState('');
   const [recover,setRecover] = useState(false);

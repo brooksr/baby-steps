@@ -20,6 +20,19 @@ if [ ! -e "$root/internal.env" ]; then
     printf '\nBABYSTEPS_BOOTSTRAP_TOKEN_HASH=%s\n' "$(cat "$source/bootstrap-token.sha256")" >> "$root/internal.env")
 fi
 chmod 600 "$root/internal.env"
+# Reuse only the public client id already authorized for this HTTPS origin.
+python3 - <<'PYCONFIG'
+from pathlib import Path
+root = Path.home() / 'babysteps'
+broker = root / 'broker.env'
+p = root / 'internal/internal.env'
+if broker.exists():
+    settings = dict(line.split('=', 1) for line in broker.read_text().splitlines() if '=' in line and not line.startswith('#'))
+    client = settings.get('GOOGLE_CLIENT_ID', '').strip()
+    if client.endswith('.apps.googleusercontent.com') and not any(line.startswith('BABYSTEPS_GOOGLE_CLIENT_ID=') for line in p.read_text().splitlines()):
+        with p.open('a') as f:
+            f.write('\nBABYSTEPS_GOOGLE_CLIENT_ID=' + client + '\n')
+PYCONFIG
 docker build -t "babysteps-internal:$release" -f "$source/deployment/internal/Dockerfile" "$source"
 docker volume create babysteps-internal >/dev/null
 previous=""

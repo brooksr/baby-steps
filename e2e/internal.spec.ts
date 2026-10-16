@@ -37,7 +37,10 @@ async function request(page: Page,path: string,body?: unknown) {
   },{ body,path });
 }
 test('real passkey account, family, offline queue, caregiver boundary and recovery',async ({ page,browser }) => {
-  await authenticator(page); await page.goto(`${origin}/#setup=test-only-setup`);
+  await authenticator(page); await page.goto(origin);
+  await expect(page.getByRole('button',{ name:'Create a BabySteps account',exact:true })).toBeDisabled();
+  await page.evaluate(() => { window.location.hash = 'setup=test-only-setup'; });
+  await expect(page.getByRole('button',{ name:'Create a BabySteps account',exact:true })).toBeEnabled();
   await page.getByRole('button',{ name:'Create a BabySteps account',exact:true }).click();
   await expect(page.getByRole('heading',{ name:'Keep your recovery codes' })).toBeVisible();
   const recovery = (await page.getByLabel('Recovery codes').inputValue()).split('\n');

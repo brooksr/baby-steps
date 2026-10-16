@@ -18,7 +18,7 @@ node --input-type=module -e "import{readFileSync,writeFileSync}from'node:fs';imp
 test -f dist-internal/internal-api.mjs
 test -f dist-internal-web/index.html
 package="$private/$release.tar.gz"
-tar -czf "$package" dist-internal dist-internal-web deployment/internal public/sw.js
+tar --exclude=deployment/internal/internal.env -czf "$package" dist-internal dist-internal-web deployment/internal public/sw.js
 tar -czf "$private/$release-setup.tar.gz" -C "$private" backup-public.pem bootstrap-token.sha256
 ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" "umask 077; mkdir -p babysteps/internal/releases/$release"
 scp -q "$package" "$private/$release-setup.tar.gz" "$host:babysteps/internal/releases/$release/"

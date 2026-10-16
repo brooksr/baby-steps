@@ -18,17 +18,39 @@ origin including port. Keep these values stable once people enroll.
 | --- | --- | --- |
 | 0 — foundations | Independent account/family ids, schema ledger, policy and contracts | Complete locally |
 | 1 — repository | Family-scoped snapshots, validated mutations, revisions, atomic receipts/change feed, archives and migration tools | Complete locally; source migration is separate |
-| 2 — accounts | Passkeys, recovery, sessions, Google linking, invitations, device enrollment and audit activity | Live Google consent/client configuration and household enrollment |
-| 3 — API/PWA | `/api/v1`, server caregiver projection, isolated IndexedDB/outbox, conflict controls and existing care screens | Stage the opt-in build on the approved Pi origin |
+| 2 — accounts | Passkeys, recovery, sessions, Google linking, invitations, device enrollment and audit activity | Existing Google public client configured; household enrollment and real Google linking remain |
+| 3 — API/PWA | `/api/v1`, server caregiver projection, isolated IndexedDB/outbox, conflict controls and existing care screens | Live at `/internal/` on the approved Pi origin; owner enrollment and migration remain |
 | 4 — Android/Wear | Shared encrypted credential client, scoped enrollment/rotation, phone caregiver view, watch logging, nursery delivery | Rehearse the complete flow on dedicated phone/watch hardware; Keystore tested on emulator |
 | 5 — migration | Dry-run/import fingerprinting, atomic fresh-family import, online backup/integrity/export tools | Owner must enroll, approve mappings, pause legacy writers and validate real family totals |
-| 6 — operations | Docker/Compose, proxy examples, persistent-volume/backup/restore/upgrade runbook | Pi installation, off-device encrypted backup schedule and separate `rpi` updater adoption |
+| 6 — operations | Docker/Compose, proxy examples, persistent-volume/backup/restore/upgrade runbook | Pi installed with daily encrypted backups and initial off-device restore drill; recurring off-device delivery/alerts and separate `rpi` updater adoption remain |
 
 These gates distinguish implemented code from production cutover. Local tests
 cannot prove a Google account's external configuration, a physical watch's UI,
 or a household's recovery/backup arrangements. Do not mark the live migration
 complete until those steps have been performed. See the concrete
 [deployment and cutover runbook](../deployment/internal/README.md).
+
+## Household deployment record — 2026-10-16
+
+The new PWA is live at `https://raspberrypi.tailc2b8e3.ts.net:8443/internal/`
+and its API is `/api/v1/`. Root hosting and the legacy events/broker/nursery
+routes remain active. No family records have been migrated and no household
+phone/watch has been reinstalled. First-account enrollment uses a private
+single-use setup link; public registration stays closed. The existing Google
+public client id is configured for explicit optional linking after sign-in.
+
+The internal container runs as `node` with a read-only root and a persistent
+`babysteps-internal` Docker volume. The Pi kernel currently lacks Docker memory
+cgroup enforcement; the image also sets a 128 MiB V8 heap ceiling. Check actual
+memory/swap alongside health when increasing workload.
+
+Daily encrypted backups run at 03:17 Pi-local time. An initial encrypted backup
+was downloaded to this Mac, decrypted and passed SQLite integrity/foreign-key
+checks; the temporary plaintext copy was cleared. Private setup material,
+backup private key and downloaded snapshots are under the Git-ignored
+`.babysteps/operations/` directory. Move the private key into a secure recovery
+location. Recurring off-device backup delivery, alerting, physical-device checks
+and migration remain explicit rollout work.
 
 ## Build and development
 
