@@ -37,6 +37,7 @@ interface SettingsPanelProps {
    * The one-time Picker step that lets the app share a sheet it did not create.
    * Resolves to how it went, so a refusal can say why.
    */
+  onInviteProfile?: (person: BabyProfile) => Promise<void>;
   onManageSheet?: () => Promise<ManageSheetResult>;
   /** Whether the app can share this family's sheet itself; null while unknown or offline. */
   sheetManaged?: boolean | null;
@@ -135,6 +136,7 @@ export function SettingsPanel({
   onSelectChild,
   onManageSheet,
   sheetManaged = null,
+  onInviteProfile,
   onSignOut,
   onThemeChange
 }: SettingsPanelProps) {
@@ -157,6 +159,7 @@ export function SettingsPanel({
 
   /** The share sheet where there is one (a phone), an email everywhere else. */
   async function handleSendInvite(person: BabyProfile) {
+    if (onInviteProfile) { await onInviteProfile(person); return; }
     if (!familyId) {
       return;
     }
@@ -194,7 +197,7 @@ export function SettingsPanel({
   }
 
   function inviteButton(person: BabyProfile) {
-    if (!familyId || !person.email || normalizeEmail(person.email) === normalizeEmail(signedInEmail)) {
+    if (!familyId || (!onInviteProfile && (!person.email || normalizeEmail(person.email) === normalizeEmail(signedInEmail)))) {
       return null;
     }
 
@@ -762,13 +765,11 @@ export function SettingsPanel({
           as it is, and you can bring them back whenever you like. Nothing here is ever deleted.
         </p>
         <p className="field-note">
-          A caregiver, such as a grandparent or a sitter, signs in with their own Google account and sees only the
-          children's Home, where they can log anything but a birth, and the Care page's Key info and Emergency tabs.
-          An account with no profile here sees nothing of this family. Anyone the sheet is shared with can open the
-          sheet itself and read all of it, so add only people you trust.
+          {storeStatus?.backend === 'internal' ? "Invite each parent or caregiver to sign in with their own BabySteps account. Caregivers can use the children's Home, Key info and Emergency; the server limits their access." :
+            "A caregiver signs in with their own Google account and sees the children's Home, Key info and Emergency. Anyone the sheet is shared with can open the sheet itself and read all of it."}
         </p>
 
-        {showChecklist && (
+        {showChecklist && storeStatus?.backend !== 'internal' && (
           <div className="admin-checklist">
             <p><strong>Before someone new can sign in</strong></p>
             <ol>
@@ -927,11 +928,11 @@ export function SettingsPanel({
       <section className="section-block sync-note">
         <div className="section-heading">
           <h2>Storage</h2>
-          <span>{storeStatus?.backend === 'google-sheets' ? 'Google Sheets' : 'Local'}</span>
+          <span>{storeStatus?.backend === 'internal' ? 'BabySteps' : storeStatus?.backend === 'google-sheets' ? 'Google Sheets' : 'Local'}</span>
         </div>
         <p>{storeStatus?.message}</p>
         {signedInEmail && <p>Signed in as {signedInEmail}.</p>}
-        {storeStatus?.familyId && (
+        {storeStatus?.familyId && storeStatus.backend !== 'internal' && (
           <>
             <p>
               Family ID <code className="family-id">{storeStatus.familyId}</code>
@@ -947,7 +948,7 @@ export function SettingsPanel({
             Open sheet
           </a>
         )}
-        {storeStatus?.configured && !storeStatus.connected && (
+        {storeStatus?.configured && !storeStatus.connected && storeStatus.backend !== 'internal' && (
           <button className="primary-button sheet-connect" type="button" onClick={handleConnectSheet} disabled={connecting}>
             {connecting ? 'Connecting' : 'Connect Google Sheet'}
           </button>

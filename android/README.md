@@ -5,13 +5,39 @@ Studio. It is one Gradle build with two independently installed apps:
 
 - `:app` — native BabySteps Home, Log, Reports, Care, Shopping, To-do,
   Settings and Learn, plus the Nursery sound monitor.
-  Application id: `com.babysteps.nurserysensor`, version 0.5.0.
+  Application id: `com.babysteps.nurserysensor`, version 0.6.0.
 - `:wear` — standalone Pixel Watch care logging, status and nursing timer.
-  Application id: `com.babysteps.watch`, version 0.1.0; no phone companion required.
+  Application id: `com.babysteps.watch`, version 0.2.0; no phone companion required.
 
 Imported from `oneplus` commit `c60348b`. New development belongs here.
 See [the monorepo plan](../docs/MONOREPO.md) and
 [the phone architecture and port map](../docs/BABYSTEPS_APP.md).
+
+## BabySteps accounts (optional internal backend)
+
+Use **Connect account** in the phone's connection card or watch Settings, enter
+its HTTPS `/api/v1` address, then approve the displayed code in the website's
+Account page. Review the device purpose and family before approving. Passkeys
+are used in the browser; Google is an optional linked sign-in. Finish connection
+on the device. Access credentials rotate automatically and are encrypted with
+Android Keystore; revocation is available in the website Account page.
+
+Phone caregivers get Home, read-only Key info/Emergency and their own Account
+connection controls. New child entries use the signed-in actor. Watch credentials
+only read status and create feeds/diapers. Family changes keep caches, timers and
+outboxes separate. Disconnecting keeps unsent rows in their original namespace;
+choose the legacy connection explicitly to return to shared-token operation.
+Phone connection settings list queued changes and allow export, explicit retry
+against the latest version, or discard.
+
+Nursery delivery has a separate **Connect nursery account** control and a
+metadata-only credential. Stop monitoring before changing the family. Its nights
+and outbox use a family/account-specific database; older nights remain in their
+original database. Monitoring itself still requires an explicit Start.
+
+See [the internal implementation and rollout guide](../docs/INTERNAL_BACKEND.md)
+and [Pi staging/cutover](../deployment/internal/README.md). No installed phone or
+watch switches backend just because a new APK is built.
 
 ## Tooling
 
@@ -28,8 +54,8 @@ export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 export ANDROID_HOME="$HOME/Library/Android/sdk"
 export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$PATH"
 cd android
-./gradlew :app:testDebugUnitTest :wear:testDebugUnitTest
-./gradlew :app:lintDebug :wear:lintDebug
+./gradlew :app:testDebugUnitTest :wear:testDebugUnitTest :internal-client:testDebugUnitTest
+./gradlew :app:lintDebug :wear:lintDebug :internal-client:lintDebug
 ./gradlew :app:assembleDebug :wear:assembleDebug
 ```
 

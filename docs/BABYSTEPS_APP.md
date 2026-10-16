@@ -16,7 +16,20 @@ label "Babysteps"):
   classification, nightly summaries), now one tab of the app. It is the only
   tab the web app does not have.
 
-## How it reaches the data
+## Current optional internal path
+
+The phone/watch can now enroll a BabySteps account through a passkey-authenticated
+browser device code. Their shared `android/internal-client` library handles
+Keystore-backed credentials, short access-token rotation and server/family/account
+isolation. Phone caregivers receive a scoped view and server-stamped attribution;
+watch and nursery credentials have narrower capabilities. See
+[the internal backend guide](INTERNAL_BACKEND.md) for implementation and rollout
+status. It remains opt-in; existing shared-token installations keep working.
+
+The architecture below describes that existing **legacy Sheets path**. Its
+Google-only future-auth sequence is historical context, not the new primary plan.
+
+## How the legacy phone reaches the data
 
 ```
 phone ──HTTPS + Bearer APP_API_TOKEN──▶ Pi (Funnel :8443, nginx /api/events)

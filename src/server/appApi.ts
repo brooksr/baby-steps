@@ -1,5 +1,5 @@
 import { careEventLabels, type CareEvent, type CareEventType, type CreateCareEventInput } from '../domain/types';
-import type { BabyTrackerStore } from '../storage/store';
+import type { BabyTrackerStore } from '../storage/contracts';
 import { isAuthorized } from './eventsApi';
 
 /**

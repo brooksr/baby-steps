@@ -7,3 +7,8 @@ dist-server
 
 # Optional internal backend development data; never commit accounts or records.
 .babysteps/
+dist-internal
+playwright-report/
+test-results/
+deployment/internal/internal.env
+dist-internal-web

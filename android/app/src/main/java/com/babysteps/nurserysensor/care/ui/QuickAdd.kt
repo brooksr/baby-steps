@@ -92,7 +92,7 @@ fun QuickAddSheet(ui: Ui,type: EventType,edit: CareEvent?,preset: Pair<Instant,I
     var bristol by remember { mutableStateOf("4") }
     var outputColor by remember { mutableStateOf(DiaperDetails.DEFAULT_COLOR) }
     // An edit keeps whoever was recorded — including nobody. A new entry opens on this phone's caregiver.
-    var caregiverId by remember { mutableStateOf(edit?.caregiverId ?: if(editing) "" else prefs.caregiverId) }
+    var caregiverId by remember { mutableStateOf(if(ui.caregiver) ui.actorId.orEmpty() else edit?.caregiverId ?: if(editing) "" else prefs.caregiverId) }
     var error by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(edit?.id) {
@@ -123,7 +123,8 @@ fun QuickAddSheet(ui: Ui,type: EventType,edit: CareEvent?,preset: Pair<Instant,I
 
     val caregivers=remember(ui.profiles) { Family.parents(ui.profiles)+Family.caregiverAccounts(ui.profiles) }
     // Only a child's entry has a caregiver worth recording: a parent logging their own sleep is not doing it for someone else.
-    val showCaregiver=caregivers.isNotEmpty() && !profile.isParent
+    val accountMode=com.babysteps.nurserysensor.care.data.AppSettings(context).internal.selected
+    val showCaregiver=caregivers.isNotEmpty() && !profile.isParent && !ui.caregiver && !(accountMode && !editing)
     val moodLevels=remember { Reference.moodScale }; val stoolColors=remember { Reference.stoolColors }
     val bristolScale=remember { Reference.bristolScale }; val foodTriggers=remember { Reference.foodTriggers }
 
@@ -169,6 +170,7 @@ fun QuickAddSheet(ui: Ui,type: EventType,edit: CareEvent?,preset: Pair<Instant,I
             // Milestones and vaccines are ticked from Care; an existing one can still be re-timed or annotated.
             EventType.MILESTONE, EventType.VACCINE -> if(edit==null) return
         }
+        if(accountMode && !editing && !profile.isParent) f["caregiverId"]=ui.actorId
         if(showCaregiver) { f["caregiverId"]=caregiverId.ifEmpty { null }; prefs.caregiverId=caregiverId }
         if(type==EventType.FEED && !editing) prefs.feedMethod=method
 
@@ -183,7 +185,7 @@ fun QuickAddSheet(ui: Ui,type: EventType,edit: CareEvent?,preset: Pair<Instant,I
             CareRepository.addEvent(context,input)
             if(type in TIMER_TYPES && ui.timers.containsKey(type)) prefs.setTimer(profile.id,type,null)
         }
-        if(type==EventType.BIRTH) CareRepository.saveProfile(context,JSONObject().put("id",profile.id).put("birthDate",isoString(start)))
+        if(type==EventType.BIRTH && !com.babysteps.nurserysensor.care.data.AppSettings(context).internal.selected) CareRepository.saveProfile(context,JSONObject().put("id",profile.id).put("birthDate",isoString(start)))
         onClose()
     }
 

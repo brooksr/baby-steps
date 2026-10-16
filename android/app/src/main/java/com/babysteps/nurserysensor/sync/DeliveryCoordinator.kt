@@ -25,7 +25,7 @@ object DeliveryCoordinator {
             val settings=SyncSettings(context)
             if(!settings.enabled) { mutable.value="Off / not configured"; return@withContext }
             try {
-                require(SyncSettings.validEndpoint(settings.endpoint))
+                require(settings.internal.selected || SyncSettings.validEndpoint(settings.endpoint))
                 val repository=NightRepository.get(context)
                 repository.queueSessionSummaries()
                 repository.queueNightlySummaries(System.currentTimeMillis())
@@ -38,7 +38,11 @@ object DeliveryCoordinator {
                     // copy serves only the Apps Script fallback, which cannot read headers.
                     val body=JSONObject().put("schemaVersion",NightRepository.DELIVERY_SCHEMA).put("deviceId",settings.deviceId).put("token",settings.token)
                         .put("records",JSONArray().apply { records.forEach { put(JSONObject(it.payload).put("key",it.key)) } }).toString()
-                    val reply=post(settings.endpoint,settings.token,body)
+                    val reply=if(settings.internal.selected) {
+                        val payload=JSONObject(body).apply { remove("token") }
+                        val result=settings.internal.call(settings.internal.familyPath("nursery-delivery"),payload)
+                        check(result.code in 200..299) { "Account delivery refused (${result.code})" }; result.body
+                    } else post(settings.endpoint,settings.token,body)
                     check(reply.optBoolean("ok",false)) { "Receiver did not acknowledge the batch" }
                     val ack=reply.getJSONArray("acceptedKeys")
                     val keys=(0 until ack.length()).map { ack.getString(it) }.toSet()

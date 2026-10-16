@@ -11,7 +11,7 @@
     <header><a href="../">BabySteps</a></header>
     <main>
       <h1>Privacy Policy</h1>
-      <p class="effective">Effective September 4, 2026</p>
+      <p class="effective">Effective October 16, 2026</p>
 
       <p>
         BabySteps is an offline-first baby-care log. This policy explains how information is handled when you use the app.
@@ -26,13 +26,14 @@
       <h2>Where information is stored</h2>
       <p>
         BabySteps stores data locally in your browser for offline use. If you connect Google Sheets, the app reads and writes
-        tracker data in the configured shared spreadsheet using your Google account authorization. BabySteps does not operate a separate application
-        server for your care data.
+        tracker data in the configured shared spreadsheet using your Google account authorization. An installation using the optional
+        internal backend instead stores family records, account public keys, credential/session hashes and security activity on its configured host,
+        such as a household Raspberry Pi. Its operator controls that database and its backups. Passkey private keys stay with your authenticator.
       </p>
 
       <h2>Google account access</h2>
       <p>
-        Google sign-in and Sheets access are used only to provide the synchronization features you request. Google account data
+        Google may be used for legacy Sheets synchronization or as an optional linked sign-in method for an internal account. These are separate choices. Google account data
         is not sold or used for advertising. Use and transfer of information received from Google APIs will adhere to the
         Google API Services User Data Policy, including its Limited Use requirements.
       </p>
@@ -40,8 +41,10 @@
       <h2>Sharing and retention</h2>
       <p>
         The app does not sell personal information. Anyone who can access the connected spreadsheet may be able to view or edit
-        its contents. Local data remains on the device until browser storage is cleared. Synced data remains in Google Sheets
-        until you delete it there or through the app.
+        its contents. The internal backend instead enforces family memberships and device capabilities on its server.
+        Local copies and unsent changes remain on a device until its app/browser storage is cleared. Signing out hides the account but does not erase its cache.
+        Archiving a person keeps their profile and entries. Removed entries may leave synchronization tombstones; backups may retain earlier copies.
+        The internal backend does not automatically expire family records; ask your installation's operator about retention and backup handling.
       </p>
 
       <h2>Your choices</h2>

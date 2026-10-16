@@ -137,7 +137,7 @@ fun ChildHome(ui: Ui) {
 
     ProfileBand(profile.name,if(born) Dates.ageSummary(profile,now) else if(hasDue) untilDue.toString() else "Welcome",ageDetail.ifEmpty { null },big=!born && hasDue,
         side=if(!born) ({
-            Row(Modifier.clip(Radius).background(Color.White).clickable { ui.onAdd(EventType.BIRTH) }.padding(horizontal=14.dp,vertical=11.dp),
+            if(!ui.caregiver) Row(Modifier.clip(Radius).background(Color.White).clickable { ui.onAdd(EventType.BIRTH) }.padding(horizontal=14.dp,vertical=11.dp),
                 verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                 Icon(Lucide.heart,null,tint=p.ink,modifier=Modifier.size(20.dp)); Text("Log birth",style=body(15,800),color=Color(0xFF20384B))
             }

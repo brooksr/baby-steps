@@ -3901,3 +3901,29 @@ textarea {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* Account and outbox panels use the same household palette as the care screens. */
+.internal-app .card {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding: 20px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.internal-app .card h2,
+.internal-app .card p { margin: 0; overflow-wrap: anywhere; }
+.internal-app .card button {
+  padding: 10px 14px;
+  color: var(--ink);
+  background: var(--blue-50);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  font: inherit;
+  cursor: pointer;
+}
+.internal-app .card form { display: grid; gap: 12px; }
+.internal-app .card label { display: grid; gap: 6px; }
+.internal-app .card textarea { width: 100%; }

@@ -1,6 +1,9 @@
 package com.babysteps.nurserysensor.care.data
 
 import android.content.Context
+import com.babysteps.internal.InternalConnection
+import com.babysteps.internal.InternalProtocol
+import com.babysteps.internal.SecureCredentials
 import com.babysteps.nurserysensor.care.domain.Family
 import com.babysteps.nurserysensor.care.domain.NurseryData
 import com.babysteps.nurserysensor.care.model.CareEvent
@@ -29,15 +32,23 @@ import java.time.Instant
 
 /** Where the Pi is, and the app's own `APP_API_TOKEN`. Private prefs; app backup is off. */
 class AppSettings(context: Context) {
+    val internal=InternalConnection(context,"phone")
+    private val secure=SecureCredentials(context,"phone-legacy")
     private val prefs=context.getSharedPreferences("babysteps-app",Context.MODE_PRIVATE)
     val endpoint get()=prefs.getString("endpoint",DEFAULT_ENDPOINT)!!
-    val token get()=prefs.getString("token","")!!
-    val configured get()=validEndpoint(endpoint) && token.length in 32..128
+    val token get(): String {
+        secure.get("token")?.let { return it }
+        val old=prefs.getString("token","")!!
+        if(old.isNotEmpty()) { secure.set("token",old); check(prefs.edit().remove("token").commit()) }
+        return old
+    }
+    val configured get()=if(internal.selected) internal.configured else validEndpoint(endpoint) && token.length in 32..128
 
     fun save(endpoint: String,token: String) {
         require(validEndpoint(endpoint)) { "Use an https URL with no query." }
         require(token.trim().length in 32..128) { "The token is 32–128 characters." }
-        check(prefs.edit().putString("endpoint",endpoint.trim().trimEnd('/')).putString("token",token.trim()).commit())
+        secure.set("token",token.trim()); internal.useLegacy()
+        check(prefs.edit().putString("endpoint",endpoint.trim().trimEnd('/')).commit())
     }
 
     companion object {
@@ -67,6 +78,8 @@ object CareRepository {
         /** Why the last read or send failed, in words for the screen; null when all is well. */
         val problem: String?=null,
         val configured: Boolean=false,
+        val caregiver: Boolean=false,
+        val actorProfileId: String?=null,
     )
 
     private val mutable=MutableStateFlow(State())
@@ -84,13 +97,22 @@ object CareRepository {
     /** Bumped on every local change, so a read that began before it cannot reinstate the old rows. */
     private var generation=0L
     private var loaded=false
+    private var loadedScope=""
+    private var internalMeta=JSONObject()
 
-    private fun cacheFile(context: Context)=File(context.filesDir,"babysteps-tracker.json")
-    private fun prefs(context: Context)=context.getSharedPreferences("babysteps-app-state",Context.MODE_PRIVATE)
+    private fun cacheFile(context: Context)=File(context.filesDir,if(AppSettings(context).internal.selected) "babysteps-tracker-${AppSettings(context).internal.scope}.json" else "babysteps-tracker.json")
+    private fun prefs(context: Context)=context.getSharedPreferences(if(AppSettings(context).internal.selected) "babysteps-app-state-${AppSettings(context).internal.scope}" else "babysteps-app-state",Context.MODE_PRIVATE)
 
     fun load(context: Context) {
-        if(loaded) return
-        loaded=true
+        val connection=AppSettings(context).internal
+        if(connection.selected && !connection.configured) {
+            server=Tracker.EMPTY; loaded=false
+            mutable.value=State(problem="Sign in to open this account",configured=false); return
+        }
+        val scope=AppSettings(context).internal.scope
+        if(loaded && loadedScope==scope) return
+        loaded=true; loadedScope=scope
+        internalMeta=runCatching { JSONObject(prefs(context).getString("internalMeta","{}")!!) }.getOrDefault(JSONObject())
         val app=context.applicationContext
         outbox=runCatching { JSONArray(prefs(app).getString("outbox","[]")) }.getOrDefault(JSONArray())
         val cached=runCatching { JSONObject(cacheFile(app).readText()) }.getOrNull()
@@ -102,14 +124,16 @@ object CareRepository {
     fun clearRefused() { refusedFlow.value=null }
 
     private fun publish(context: Context,loaded: Boolean=mutable.value.loaded,fetchedAt: Instant?=mutable.value.fetchedAt,problem: String?=mutable.value.problem) {
-        mutable.value=State(applyOutbox(server,outbox),loaded,fetchedAt,outbox.length(),problem,AppSettings(context).configured)
+        mutable.value=State(applyOutbox(server,outbox),loaded,fetchedAt,outbox.length(),problem,AppSettings(context).configured,internalMeta.optString("role")=="caregiver",internalMeta.optString("actorProfileId").takeIf { it.isNotEmpty() })
     }
 
     // ── Reads ───────────────────────────────────────────────────────────────────
 
     suspend fun refresh(context: Context) = withContext(Dispatchers.IO) {
         val app=context.applicationContext
+        withContext(Dispatchers.Main) { load(app) }
         val settings=AppSettings(app)
+        if(settings.internal.selected) { refreshInternal(app,settings.internal); return@withContext }
         if(!settings.configured) { withContext(Dispatchers.Main) { publish(app,problem="Connect to the Babysteps Pi in Settings") }; return@withContext }
         val seen=generation
         try {
@@ -134,6 +158,13 @@ object CareRepository {
 
     suspend fun refreshNursery(context: Context) = withContext(Dispatchers.IO) {
         val app=context.applicationContext; val settings=AppSettings(app)
+        if(settings.internal.selected) {
+            try {
+                val reply=settings.internal.call(settings.internal.familyPath("nursery"))
+                if(reply.code in 200..299) nurseryFlow.value=NurseryData.parse(reply.body.optJSONObject("nursery"))
+            } catch(e: CancellationException) { throw e } catch(_: Exception) {}
+            return@withContext
+        }
         if(!settings.configured) return@withContext
         try {
             val reply=send(settings,"GET",settings.endpoint+"/nursery",null)
@@ -166,10 +197,16 @@ object CareRepository {
 
     private fun enqueue(context: Context,op: JSONObject) {
         val app=context.applicationContext
+        load(app)
         // A new list row is named here, so its retry patches the same row.
         when(op.optString("op")) {
             "saveShoppingItem" -> op.getJSONObject("input").let { if(!it.has("id")) it.put("id",com.babysteps.nurserysensor.care.model.newId("shop")) }
             "saveTask" -> op.getJSONObject("input").let { if(!it.has("id")) it.put("id",com.babysteps.nurserysensor.care.model.newId("task")) }
+        }
+        val connection=AppSettings(app).internal
+        if(connection.selected) {
+            op.put("_internalCommand",InternalProtocol.command(op,internalMeta,outbox))
+            if(op.optString("op")=="addEvent" && internalMeta.optString("role")=="caregiver") op.getJSONObject("input").put("caregiverId",internalMeta.optString("actorProfileId"))
         }
         generation++
         outbox.put(op)
@@ -182,7 +219,10 @@ object CareRepository {
 
     /** Sends the outbox in order. Stops at the first change the Pi could not take yet. */
     suspend fun flush(context: Context) = sendLock.withLock {
-        val app=context.applicationContext; val settings=AppSettings(app)
+        val app=context.applicationContext
+        withContext(Dispatchers.Main) { load(app) }
+        val settings=AppSettings(app)
+        if(settings.internal.selected) { withContext(Dispatchers.IO) { flushInternal(app,settings.internal) }; return@withLock }
         if(!settings.configured) return@withLock
         withContext(Dispatchers.IO) {
             while(true) {
@@ -214,6 +254,79 @@ object CareRepository {
         }
     }
 
+    private suspend fun refreshInternal(app: Context,connection: InternalConnection) {
+        val seen=generation
+        try {
+            val reply=connection.call(connection.familyPath("bootstrap"))
+            if(reply.code !in 200..299) {
+                withContext(Dispatchers.Main) {
+                    if(reply.code==401 || reply.code==403) { server=Tracker.EMPTY; mutable.value=State(loaded=false,pending=outbox.length(),problem="Sign in again to continue. Queued changes are kept.",configured=false) }
+                    else publish(app,problem="Could not sync (${reply.code}) · keeping the last copy")
+                }; return
+            }
+            val tracker=Tracker.parse(reply.body.getJSONObject("data")); val meta=JSONObject(reply.body.toString()).apply { remove("data") }
+            withContext(Dispatchers.Main) {
+                if(loadedScope!=connection.scope) return@withContext
+                internalMeta=meta; prefs(app).edit().putString("internalMeta",meta.toString()).commit()
+                if(generation==seen) { server=tracker; cacheFile(app).writeText(tracker.toJson().toString()) }
+                publish(app,loaded=true,fetchedAt=Instant.now(),problem=null)
+            }
+        } catch(e: CancellationException) { throw e }
+        catch(_: Exception) { withContext(Dispatchers.Main) { publish(app,problem="Offline · changes stay on this phone") } }
+    }
+    private suspend fun flushInternal(app: Context,connection: InternalConnection) {
+        while(true) {
+            val op=withContext(Dispatchers.Main) { if(outbox.length()>0) outbox.getJSONObject(0) else null } ?: break
+            val command=op.optJSONObject("_internalCommand") ?: break
+            val reply=try { connection.call(connection.familyPath("mutations"),command) } catch(_: IOException) { break }
+            if(reply.code !in 200..299) {
+                withContext(Dispatchers.Main) { publish(app,problem=if(reply.code==409) "A queued change conflicts with another device. Export the queue before resolving it." else "A queued change was refused (${reply.code}); it is kept.") }; break
+            }
+            withContext(Dispatchers.Main) {
+                val revisions=internalMeta.optJSONObject("revisions") ?: JSONObject()
+                revisions.put(command.getString("collection")+":"+command.getString("id"),reply.body.getInt("revision"))
+                reply.body.optJSONArray("related")?.let { related -> for(i in 0 until related.length()) { val r=related.getJSONObject(i); revisions.put(r.getString("collection")+":"+r.getString("id"),r.getInt("revision")) } }
+                internalMeta.put("revisions",revisions)
+                applyResult(op,reply.body.optJSONObject("payload"))
+                outbox=JSONArray().also { next -> for(i in 1 until outbox.length()) next.put(outbox.get(i)) }
+                saveOutbox(app); prefs(app).edit().putString("internalMeta",internalMeta.toString()).commit(); publish(app,problem=null)
+            }
+        }
+    }
+    fun pendingExport(context: Context): String { load(context); return outbox.toString(2) }
+    fun pendingLabels(context: Context): List<String> {
+        load(context)
+        return (0 until outbox.length()).map { index ->
+            when(outbox.getJSONObject(index).optString("op")) {
+                "addEvent","updateEvent" -> "Care entry"
+                "deleteEvent" -> "Entry removal"
+                "saveTask","removeTask" -> "Task change"
+                "saveShoppingItem","removeShoppingItem" -> "Shopping change"
+                else -> "Family profile change"
+            }
+        }
+    }
+    suspend fun discardOldest(context: Context) = sendLock.withLock {
+        load(context)
+        if(outbox.length()>0) {
+            outbox=JSONArray().also { next -> for(i in 1 until outbox.length()) next.put(outbox.get(i)) }
+            saveOutbox(context); publish(context,problem=null)
+        }
+    }
+    suspend fun retryOldest(context: Context) {
+        val connection=AppSettings(context).internal
+        check(connection.selected && connection.configured) { "Connect this account before retrying" }
+        refresh(context)
+        sendLock.withLock {
+            val op=outbox.optJSONObject(0) ?: return@withLock
+            val command=op.optJSONObject("_internalCommand") ?: return@withLock
+            val key=command.getString("collection")+":"+command.getString("id")
+            command.put("expectedRevision",internalMeta.optJSONObject("revisions")?.optInt(key,0) ?: 0).put("operationId",java.util.UUID.randomUUID().toString())
+            saveOutbox(context)
+        }
+        flush(context)
+    }
+
     // ── The outbox as it will land ──────────────────────────────────────────────
 
     /** What the sheet will hold once these changes land — the same merge each store op makes. */
@@ -223,7 +336,9 @@ object CareRepository {
         for(i in 0 until ops.length()) {
             val op=ops.optJSONObject(i) ?: continue
             when(op.optString("op")) {
-                "addEvent" -> { val e=CareEvent(op.getJSONObject("input")); if(events.none { it.id==e.id }) events=events+e }
+                "addEvent" -> { val e=CareEvent(op.getJSONObject("input")); if(events.none { it.id==e.id }) events=events+e
+                    if(e.type==com.babysteps.nurserysensor.care.model.EventType.BIRTH) profiles=profiles.map { if(it.id==e.babyId) Profile(JSONObject(it.json.toString()).put("birthDate",e.json.optString("startedAt"))) else it }
+                }
                 "updateEvent" -> { val e=CareEvent(op.getJSONObject("event")); events=events.map { if(it.id==e.id) e else it } }
                 "deleteEvent" -> { val id=op.optString("id"); events=events.filter { it.id!=id } }
                 "saveProfile" -> { val patch=op.getJSONObject("profile"); val id=patch.optString("id")

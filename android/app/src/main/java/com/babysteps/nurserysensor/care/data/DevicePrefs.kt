@@ -13,7 +13,8 @@ import java.time.Instant
  * it. The web app keeps the same things in the browser's localStorage.
  */
 class DevicePrefs(context: Context) {
-    private val prefs=context.applicationContext.getSharedPreferences("babysteps-device",Context.MODE_PRIVATE)
+    private val app=context.applicationContext
+    private val prefs get()=app.getSharedPreferences(com.babysteps.internal.InternalConnection(app,"phone").let { if(it.selected) "babysteps-device-${it.scope}" else "babysteps-device" },Context.MODE_PRIVATE)
 
     var activeProfileId: String?
         get()=prefs.getString("activeProfile",null)

@@ -1,6 +1,9 @@
 package com.babysteps.watch
 
 import android.content.Context
+import com.babysteps.internal.InternalConnection
+import com.babysteps.internal.InternalProtocol
+import com.babysteps.internal.SecureCredentials
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -19,17 +22,28 @@ import java.net.URI
 import java.time.Instant
 
 class WatchSettings(context: Context) {
+    val internal=InternalConnection(context,"watch")
+    private val secure=SecureCredentials(context,"watch-legacy")
     private val prefs=context.getSharedPreferences("babysteps-watch",Context.MODE_PRIVATE)
     val endpoint get()=prefs.getString("endpoint",DEFAULT_ENDPOINT)!!
-    val token get()=prefs.getString("token","")!!
+    val token get(): String {
+        secure.get("token")?.let { return it }
+        val old=prefs.getString("token","")!!
+        if(old.isNotEmpty()) { secure.set("token",old); prefs.edit().remove("token").commit() }
+        return old
+    }
     /** Blank is the family's only child; the Pi refuses a blank with two. */
-    val child get()=prefs.getString("child","")!!
-    val configured get()=validEndpoint(endpoint) && token.length in 32..128
+    private val app=context.applicationContext
+    private val childPrefs get()=if(internal.selected) app.getSharedPreferences("babysteps-watch-choice-${internal.scope}",Context.MODE_PRIVATE) else prefs
+    val child get()=childPrefs.getString("child","")!!
+    fun saveChild(value: String) { check(childPrefs.edit().putString("child",value.trim()).commit()) }
+    val configured get()=if(internal.selected) internal.configured else validEndpoint(endpoint) && token.length in 32..128
 
     fun save(endpoint: String,token: String,child: String) {
         require(validEndpoint(endpoint)) { "Use an https URL with no query." }
         require(token.trim().length in 32..128) { "The token is 32–128 characters." }
-        check(prefs.edit().putString("endpoint",endpoint.trim().trimEnd('/')).putString("token",token.trim()).putString("child",child.trim()).commit())
+        secure.set("token",token.trim()); internal.useLegacy()
+        check(prefs.edit().putString("endpoint",endpoint.trim().trimEnd('/')).putString("child",child.trim()).commit())
     }
 
     companion object {
@@ -68,12 +82,16 @@ object WatchRepository {
     private val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main)
     private val sendLock=Mutex()
     private var loaded=false
+    private var loadedScope=""
 
-    private fun prefs(context: Context)=context.getSharedPreferences("babysteps-watch-state",Context.MODE_PRIVATE)
+    private fun prefs(context: Context)=context.getSharedPreferences(if(WatchSettings(context).internal.selected) "babysteps-watch-state-${WatchSettings(context).internal.scope}" else "babysteps-watch-state",Context.MODE_PRIVATE)
 
     fun load(context: Context) {
-        if(loaded) return
-        loaded=true
+        val connection=WatchSettings(context).internal
+        if(connection.selected && !connection.configured) { statusFlow.value=null; timerFlow.value=null; loaded=false; return }
+        val scope=WatchSettings(context).internal.scope
+        if(loaded && loadedScope==scope) return
+        loaded=true; loadedScope=scope; statusFlow.value=null
         val prefs=prefs(context)
         // A timer saved by an older build has another shape; dropping it beats crashing on it.
         timerFlow.value=prefs.getString("timer",null)?.let { runCatching { FeedTimer.fromJson(JSONObject(it)) }.getOrNull() }
@@ -115,7 +133,16 @@ object WatchRepository {
 
     /** Queue first, then send: an entry tapped with no signal is kept, with its own time, until the Pi takes it. */
     suspend fun log(context: Context,request: JSONObject): Outcome {
-        sendLock.withLock { val q=queue(context); q.put(request.toString()); saveQueue(context,q) }
+        sendLock.withLock {
+            load(context)
+            val settings=WatchSettings(context)
+            if(settings.internal.selected) {
+                val meta=runCatching { JSONObject(prefs(context).getString("internalMeta","{}")!!) }.getOrDefault(JSONObject())
+                val command=try { InternalProtocol.watchCommand(request,meta,settings.child) } catch(e: Exception) { return Outcome.Refused(e.message ?: "Sync before logging") }
+                request.put("_internalCommand",command)
+            }
+            val q=queue(context); q.put(request.toString()); saveQueue(context,q)
+        }
         val outcome=flush(context)
         refresh(context)
         return outcome
@@ -130,7 +157,7 @@ object WatchRepository {
             var q=queue(context)
             while(q.length()>0) {
                 val body=JSONObject(q.getString(0)).apply { if(settings.child.isNotEmpty()) put("child",settings.child) }
-                val result=try { send(settings,"POST",settings.endpoint,body.toString()) }
+                val result=try { if(settings.internal.selected) { val response=settings.internal.call(settings.internal.familyPath("mutations"),body.getJSONObject("_internalCommand")); Reply(response.code,response.body) } else send(settings,"POST",settings.endpoint,body.toString()) }
                     catch(e: CancellationException) { throw e }
                     catch(_: IOException) { outcome=Outcome.Queued("No connection"); noticeFlow.value=Notice("Offline · ${q.length()} saved to send",false); break }
                 when {
@@ -151,7 +178,26 @@ object WatchRepository {
     }
 
     suspend fun refresh(context: Context) = withContext(Dispatchers.IO) {
+        load(context)
         val settings=WatchSettings(context)
+        if(settings.internal.selected) {
+            try {
+                val reply=settings.internal.call(settings.internal.familyPath("bootstrap"))
+                if(reply.code !in 200..299) { noticeFlow.value=Notice("Sign in again · queued entries are kept",false); statusFlow.value=null; return@withContext }
+                prefs(context).edit().putString("internalMeta",reply.body.toString()).commit()
+                val data=reply.body.getJSONObject("data"); val people=data.getJSONArray("profiles")
+                val children=(0 until people.length()).map { people.getJSONObject(it) }.filter { it.optString("kind","child")=="child" }
+                val child=if(settings.child.isNotEmpty()) children.find { it.optString("id")==settings.child } else children.singleOrNull()
+                if(child==null) { noticeFlow.value=Notice("Choose a child in Settings",false); return@withContext }
+                val events=data.getJSONArray("events"); val mine=(0 until events.length()).map { events.getJSONObject(it) }.filter { it.optString("babyId")==child.getString("id") }.sortedByDescending { it.optString("startedAt") }
+                val status=JSONObject().put("child",child.optString("name"))
+                for((type,key) in listOf("feed" to "lastFeed","diaper" to "lastDiaper","sleep" to "lastSleep")) mine.firstOrNull { it.optString("type")==type }?.let { event ->
+                    status.put(key,JSONObject(event.toString()).put("at",event.getString("startedAt")))
+                }
+                statusFlow.value=CareStatus.parse(status,Instant.now())
+            } catch(e: CancellationException) { throw e } catch(_: Exception) { /* Retain a stale-marked last read. */ }
+            return@withContext
+        }
         if(!settings.configured) return@withContext
         val url=settings.endpoint+"/status"+(settings.child.takeIf { it.isNotEmpty() }?.let { "?child="+java.net.URLEncoder.encode(it,"UTF-8") } ?: "")
         try {

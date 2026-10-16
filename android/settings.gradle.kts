@@ -8,3 +8,5 @@ dependencyResolutionManagement {
 rootProject.name = "BabySteps Android"
 include(":app")
 include(":wear")
+
+include(":internal-client")

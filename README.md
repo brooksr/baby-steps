@@ -1,6 +1,10 @@
 # BabySteps
 
-BabySteps is a private, offline-first progressive web app for tracking baby care and sharing the log with a household. It runs entirely in the browser, stores data locally with IndexedDB, and can optionally synchronize through a Google Sheet you control. There is no BabySteps backend (an optional token broker, below, makes sign-in one-time on a self-hosted copy).
+BabySteps is a private, offline-first family care tracker with a React PWA,
+Android phone app and Pixel Watch app. Legacy deployments keep data locally and
+optionally sync through Google Sheets. The optional internal backend stores
+family data in SQLite on your Pi, with BabySteps passkeys and Google as a
+secondary linked sign-in method.
 
 ## What it tracks
 
@@ -28,14 +32,19 @@ Reference CSVs are shared at build time. Kotlin web compilation is possible,
 but needs a Multiplatform extraction and browser adapters; the development
 plan sets out the trial and parity checks before replacing the PWA.
 
-## Internal accounts and database roadmap
+## Internal accounts and database
 
-The planned internal backend will use BabySteps accounts and SQLite, with
-passkeys as primary sign-in and Google as an optional linked identity. The
-[architecture and rollout plan](docs/INTERNAL_BACKEND.md) covers authentication,
-family permissions, offline sync, Sheets migration and Pi operations. Tested
-schema and authorization primitives live in `src/server/internal/`; the running
-app still uses its existing local/Google storage and sign-in paths.
+The opt-in internal backend includes passkeys/recovery, optional Google linking,
+server-side family permissions, isolated offline queues, phone/watch/nursery
+account enrollment, migration tools and stateful deployment assets. Existing
+Sheets builds remain the default. Enable the new PWA with
+`VITE_INTERNAL_API=/api/v1`; build its server/tools with `npm run build:internal`.
+
+- [Architecture, implementation status and future development](docs/INTERNAL_BACKEND.md)
+- [Pi staging, backups, migration and cutover runbook](deployment/internal/README.md)
+
+Starting the new backend does not migrate a family. Production cutover requires
+owner enrollment, reviewed import data, paused legacy writers and verified backups.
 
 ## Technology
 

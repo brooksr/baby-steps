@@ -31,6 +31,10 @@ import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -444,13 +448,20 @@ fun SettingsScreen(onDone: () -> Unit) {
     var child by remember { mutableStateOf(settings.child) }
     var error by remember { mutableStateOf<String?>(null) }
     val state=rememberTransformingLazyColumnState()
+    val scope=rememberCoroutineScope()
+    var pairCode by remember { mutableStateOf("") }
+    var accountApi by remember { mutableStateOf("https://raspberrypi.tailc2b8e3.ts.net:8443/api/v1") }
     ScreenScaffold(scrollState=state,
         edgeButton={
-            EdgeButton(onClick={ try { settings.save(endpoint,token,child); onDone() } catch(e: IllegalArgumentException) { error=e.message } },
+            EdgeButton(onClick={ try { if(!settings.internal.selected) settings.save(endpoint,token,child) else settings.saveChild(child); onDone() } catch(e: IllegalArgumentException) { error=e.message } },
                 buttonSize=EdgeButtonSize.Small,colors=ButtonDefaults.buttonColors(containerColor=Care.feed,contentColor=Care.onFeed)) { Text("Save") }
         }) { padding ->
         TransformingLazyColumn(state=state,contentPadding=padding) {
             item { Caption("Settings",Care.dim,CareIcons.settings) }
+            item { Field("BabySteps account server",accountApi) { accountApi=it } }
+            item { Button(onClick={ scope.launch { try { val reply=withContext(Dispatchers.IO) { settings.internal.begin(accountApi,"watch") }; pairCode=reply.getString("userCode"); error="Approve $pairCode in the website Account page" } catch(e: Exception) { error=e.message } } }) { Text("Connect account") } }
+            if(pairCode.isNotEmpty()) item { Button(onClick={ scope.launch { try { if(withContext(Dispatchers.IO) { settings.internal.complete() }) { settings.saveChild(""); WatchRepository.load(context); WatchRepository.refresh(context); onDone() } else error="Not approved yet" } catch(e: Exception) { error=e.message } } }) { Text("I approved the code") } }
+            if(settings.internal.selected) { item { Button(onClick={ settings.internal.disconnect(); WatchRepository.load(context); onDone() }) { Text("Disconnect account") } }; item { Button(onClick={ settings.internal.useLegacy(); WatchRepository.load(context); onDone() }) { Text("Use legacy connection") } } }
             item { Field("Pi events URL",endpoint) { endpoint=it } }
             item { Field("Events token",token,secret=true) { token=it } }
             item { Field("Child · blank if one",child) { child=it } }

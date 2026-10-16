@@ -357,9 +357,13 @@ class NightRepository internal constructor(context: Context, name: String = "nur
     companion object {
         const val DELIVERY_SCHEMA = 2
         private val SHEET_EPISODE_LABELS = setOf(AudioLabel.BABY_CRY,AudioLabel.SPEECH,AudioLabel.SNORING,AudioLabel.COUGH)
-        @Volatile private var instance: NightRepository? = null
-        fun get(context: Context): NightRepository = instance ?: synchronized(this) {
-            instance ?: NightRepository(context.applicationContext).also { it.initialize(); instance = it }
+        private val instances=mutableMapOf<String,NightRepository>()
+        fun get(context: Context): NightRepository = synchronized(this) {
+            val connection=SyncSettings(context).internal
+            val scope=if(connection.selected) connection.scope else "legacy"
+            instances.getOrPut(scope) {
+                NightRepository(context.applicationContext,if(scope=="legacy") "nursery-nights.db" else "nursery-nights-$scope.db").also { it.initialize() }
+            }
         }
     }
 }

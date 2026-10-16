@@ -30,6 +30,12 @@ object CareStatusClient {
     /** GET on the delivery URL with the same token. The Apps Script fallback has no read, so it is skipped. */
     suspend fun refresh(context: Context) = withContext(Dispatchers.IO) {
         val settings=SyncSettings(context)
+        if(settings.internal.selected) {
+            if(!settings.enabled) return@withContext
+            try { val reply=settings.internal.call(settings.internal.familyPath("nursery-status")); if(reply.code in 200..299) mutable.value=parse(reply.body,Instant.now()) else mutable.value=null }
+            catch(e: CancellationException) { throw e } catch(_: Exception) { /* Offline status remains marked stale. */ }
+            return@withContext
+        }
         if(!settings.enabled || !SyncSettings.validEndpoint(settings.endpoint) || URI(settings.endpoint).host=="script.google.com") return@withContext
         try {
             mutable.value=parse(get(settings.endpoint,settings.token),Instant.now())

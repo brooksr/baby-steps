@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [react()],
   test: {
     css: true,
-    exclude: [...configDefaults.exclude, 'android/**'],
+    exclude: [...configDefaults.exclude, 'android/**', 'e2e/**'],
     environment: 'jsdom',
     globals: true,
     setupFiles: './src/test/setup.ts'

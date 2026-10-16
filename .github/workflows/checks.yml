@@ -41,3 +41,25 @@ jobs:
 
       - name: Build Pi API
         run: npm run build:server
+
+      - name: Build internal API and migration tools
+        run: npm run build:internal
+
+      - name: Install browser for passkey acceptance tests
+        run: npx playwright install --with-deps chromium
+
+      - name: Browser acceptance
+        run: npm run test:e2e
+
+      - name: Build opt-in internal PWA
+        run: npm run build -- --base /internal/ --outDir dist-internal-web
+        env:
+          VITE_INTERNAL_API: /api/v1
+
+      - name: Upload browser diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: browser-diagnostics
+          path: test-results/
+          if-no-files-found: ignore

@@ -46,7 +46,7 @@ const derived: Array<{ title: string; detail: string }> = [
 ];
 
 const storage: Array<{ title: string; detail: string }> = [
-  { detail: 'Every entry reads and writes one shared Google Sheet, so several caregivers see the same log.', title: 'Shared Google Sheet' },
+  { detail: 'Share through a Google Sheet or an optional BabySteps server, with a separate offline copy on each device.', title: 'Family sync' },
   { detail: 'The app re-reads the sheet in the background, so an entry logged on someone else’s phone appears here without a reload.', title: 'Live updates' },
   { detail: 'Installable as an app, and it keeps working without a connection — reference tables are bundled, not fetched.', title: 'Works offline' },
   { detail: 'Download everything as JSON or CSV at any time, and import a JSON export back.', title: 'Your data, exportable' },

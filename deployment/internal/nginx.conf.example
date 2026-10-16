@@ -1,0 +1,17 @@
+# Add inside the existing HTTPS server block. No legacy route changes.
+location /api/v1/ {
+    client_max_body_size 1m;
+    proxy_pass http://127.0.0.1:8790;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_connect_timeout 5s;
+    proxy_read_timeout 45s;
+    proxy_buffering off;
+}
+# Stage the internal PWA under /internal/ on the SAME origin before cutover.
+# Build with VITE_INTERNAL_API=/api/v1 npm run build -- --base /internal/
+# Copy dist/ to /var/www/babysteps-internal/ and adjust this alias if needed.
+location /internal/ {
+    alias /var/www/babysteps-internal/;
+    try_files $uri $uri/ /internal/index.html;
+}

@@ -39,6 +39,7 @@ enum class Tab(val key: String,val label: String,val icon: ImageVector) {
     SHOPPING("shopping","Shopping",Lucide.cart), TODOS("todos","To-do",Lucide.listTodo), SETTINGS("settings","Settings",Lucide.settings),
     /** The nursery monitor — on the Android app only; the web app has no sensor. */
     NURSERY("nursery","Nursery",Lucide.radio),
+    ACCOUNT("account","Account",Lucide.settings),
     LEARN("learn","Learn",Lucide.bookOpen),
 }
 
@@ -64,6 +65,8 @@ class Ui(
     val selectProfile: (String) -> Unit,
     /** Opens the sleep form on an estimated stretch from the Nights track. */
     val logSleep: (Instant,Instant?) -> Unit,
+    val caregiver: Boolean=false,
+    val actorId: String?=null,
 )
 
 /** How often a foreground app re-reads the shared sheet for other people's edits — the web app's 45 seconds. */
@@ -107,20 +110,20 @@ fun CareApp(nursery: @Composable () -> Unit) {
 
         Scaffold(containerColor=p.page,snackbarHost={ SnackbarHost(snackbar) },
             // Before the first read there is no one to show, but the nursery monitor must stay one tap away.
-            bottomBar={ BottomBar(if(profile?.isParent==true) PARENT_TABS else if(profile!=null) CHILD_TABS else listOf(Tab.HOME,Tab.NURSERY),tab) { tab=it; if(it==Tab.LOG) logFilter=null } }
+            bottomBar={ BottomBar(if(state.caregiver) listOf(Tab.HOME,Tab.CARE,Tab.ACCOUNT) else if(profile?.isParent==true) PARENT_TABS else if(profile!=null) CHILD_TABS else listOf(Tab.HOME,Tab.NURSERY),tab) { tab=it; if(it==Tab.LOG) logFilter=null } }
         ) { padding ->
             Column(Modifier.fillMaxSize().padding(padding)) {
                 if(tab==Tab.NURSERY) { Box(Modifier.weight(1f)) { nursery() }; return@Column }
                 if(profile==null) { ConnectScreen(state); return@Column }
-                val allowed=if(profile.isParent) PARENT_TABS else CHILD_TABS
+                val allowed=if(state.caregiver) listOf(Tab.HOME,Tab.CARE,Tab.ACCOUNT) else if(profile.isParent) PARENT_TABS else CHILD_TABS
                 val view=if(tab in allowed || tab==Tab.LEARN) tab else Tab.HOME
                 val events=tracker.eventsFor(profile.id)
                 val childIds=tracker.profiles.filter { it.isChild }.map { it.id }.toSet()
                 val timers=remember(profile.id,timerRevision) { prefs.timers(profile.id) }
                 val ui=Ui(tracker,profile,tracker.profiles,events,if(profile.isParent) tracker.events.filter { it.babyId in childIds } else emptyList(),timers,
                     onAdd={ editing=null; preset=null; addType=it },onEdit={ addType=null; editing=it },onDelete={ deleting=it },
-                    openLog={ logFilter=it; tab=Tab.LOG },openDetail={ detail=it },navigate={ tab=it },
-                    selectProfile={ activeId=it; prefs.activeProfileId=it },logSleep={ s,e -> editing=null; preset=s to e; addType=EventType.SLEEP })
+                    openLog={ if(!state.caregiver) { logFilter=it; tab=Tab.LOG } },openDetail={ detail=it },navigate={ tab=it },
+                    caregiver=state.caregiver,actorId=state.actorProfileId,selectProfile={ activeId=it; prefs.activeProfileId=it },logSleep={ s,e -> editing=null; preset=s to e; addType=EventType.SLEEP })
 
                 Header(active,profile) { ui.selectProfile(it) }
                 SyncBanner(state)
@@ -135,6 +138,7 @@ fun CareApp(nursery: @Composable () -> Unit) {
                         Tab.SHOPPING -> ShoppingScreen(ui)
                         Tab.TODOS -> TodosScreen(ui)
                         Tab.SETTINGS -> SettingsScreen(ui,state)
+                        Tab.ACCOUNT -> ConnectionCard(state)
                         Tab.LEARN -> LearnScreen()
                         Tab.NURSERY -> {}
                     }

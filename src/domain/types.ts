@@ -124,14 +124,14 @@ export interface BabyProfile extends BaseRecord {
   /** A child's due date. Never set on a parent — see `kind`. */
   dueDate?: string;
   /**
-   * The Google account this person signs in with — a parent's or a caregiver's.
-   * It is what decides which view a device opens on (`getAccessRole`). Stored
-   * lowercased; a child carries none.
+   * Contact email for a parent or caregiver, stored lowercased. Legacy Sheets
+   * sign-in uses it for view selection; internal authorization uses stable
+   * account memberships and never treats this field as an identity claim.
    */
   email?: string;
   /**
-   * The family this person belongs to — the id of the family's spreadsheet,
-   * since one family is one sheet. Every row on a sheet carries that sheet's id;
+   * The family this person belongs to — a spreadsheet id on legacy Sheets
+   * deployments, or an independent opaque id on the internal backend. Every row on a sheet carries that sheet's id;
    * a row written before the column existed is given it on read.
    */
   familyId?: string;

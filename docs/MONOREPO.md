@@ -29,6 +29,7 @@ public/                   PWA assets and legal pages
 android/                  open this directory in Android Studio
   app/                    phone tracker and Nursery monitoring
   wear/                   standalone Pixel Watch client
+  internal-client/        shared Keystore/enrollment/mutation protocol
   integration/            optional legacy Apps Script nursery receiver
   docs/                   monitoring and device operations
   gradle/, gradlew         pinned Gradle build
@@ -103,7 +104,8 @@ exports into fixtures. Use neutral synthetic data.
 
 ## Development sequence
 
-1. **Authentication before family parity.** Follow the newer
+1. **Authentication before family parity.** The optional account/SQLite
+   implementation now exists; its rollout gates are documented separately. Follow the newer
    [internal backend plan](INTERNAL_BACKEND.md): BabySteps passkeys/accounts and
    SQLite first, with optional linked Google sign-in. The Google-only approach
    below remains a legacy-path option, not the preferred internal design. Add Google sign-in on the phone,

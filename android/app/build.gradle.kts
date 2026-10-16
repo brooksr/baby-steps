@@ -22,8 +22,8 @@ android {
         applicationId = "com.babysteps.nurserysensor"
         minSdk = 26
         targetSdk = 37
-        versionCode = 5
-        versionName = "0.5.0"
+        versionCode = 6
+        versionName = "0.6.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     // Package canonical monorepo data offline, under assets/reference/*.csv.
@@ -40,6 +40,7 @@ android {
 kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }
 
 dependencies {
+    implementation(project(":internal-client"))
     implementation(platform("androidx.compose:compose-bom:2026.09.00"))
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.foundation:foundation")

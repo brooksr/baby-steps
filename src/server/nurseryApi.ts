@@ -2,7 +2,7 @@ import { resolveChild } from '../domain/eventRequest';
 import { getActiveProfiles, getFirstName, isChild } from '../domain/family';
 import { NURSERY_SCHEMAS } from '../domain/nurserySensor';
 import type { CareEvent, DiaperEvent, FeedEvent } from '../domain/types';
-import type { BabyTrackerStore } from '../storage/store';
+import type { BabyTrackerStore } from '../storage/contracts';
 import { isAuthorized } from './eventsApi';
 
 export { NURSERY_SCHEMAS };

@@ -1,4 +1,7 @@
 // @vitest-environment node
+import { createHash } from 'node:crypto';
+import { createRequire } from 'node:module';
+import schema from './schema.sql?raw';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -23,7 +26,7 @@ describe('internal SQLite foundation', () => {
       try { seed(first); } finally { first.close(); }
       const second = openInternalDatabase(path);
       try {
-        expect(second.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get()?.count).toBe(1);
+        expect(second.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get()?.count).toBe(5);
         expect(second.prepare('SELECT legacy_sheet_id FROM families WHERE id = ?').get('family-a')?.legacy_sheet_id).toBe('old-sheet');
         expect(second.prepare('PRAGMA foreign_keys').get()?.foreign_keys).toBe(1);
       } finally { second.close(); }
@@ -66,6 +69,27 @@ describe('internal SQLite foundation', () => {
       } catch { database.exec('ROLLBACK'); }
       expect(database.prepare('SELECT COUNT(*) AS count FROM records').get()?.count).toBe(0);
     } finally { database.close(); }
+  });
+
+  it('upgrades a populated v1 database without rewriting its original migration', () => {
+    const directory = mkdtempSync(join(tmpdir(),'babysteps-v1-upgrade-'));
+    const path = join(directory,'v1.sqlite');
+    const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as typeof import('node:sqlite');
+    try {
+      const previous = new DatabaseSync(path);
+      previous.exec(schema);
+      previous.exec('CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, checksum TEXT NOT NULL) STRICT');
+      const checksum = createHash('sha256').update(schema).digest('hex');
+      previous.prepare('INSERT INTO schema_migrations VALUES (1, ?)').run(checksum);
+      seed(previous); previous.close();
+      const next = openInternalDatabase(path);
+      try {
+        expect(next.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get()!.count).toBe(5);
+        expect(next.prepare('SELECT checksum FROM schema_migrations WHERE version=1').get()!.checksum).toBe(checksum);
+        expect(next.prepare('SELECT COUNT(*) AS count FROM profiles').get()!.count).toBe(1);
+        expect(next.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+      } finally { next.close(); }
+    } finally { rmSync(directory,{ force:true,recursive:true }); }
   });
 
   it('refuses schema drift without silently rewriting a migration', () => {

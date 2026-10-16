@@ -37,7 +37,7 @@ jobs:
 
       - name: Unit tests, lint and debug APKs
         working-directory: android
-        run: ./gradlew --no-daemon :app:testDebugUnitTest :wear:testDebugUnitTest :app:lintDebug :wear:lintDebug :app:assembleDebug :wear:assembleDebug
+        run: ./gradlew --no-daemon :app:testDebugUnitTest :wear:testDebugUnitTest :internal-client:testDebugUnitTest :internal-client:lintDebug :app:lintDebug :wear:lintDebug :app:assembleDebug :wear:assembleDebug
 
       - name: Test optional Apps Script receiver
         run: node android/integration/google-apps-script/receiver.test.mjs
@@ -50,6 +50,7 @@ jobs:
           path: |
             android/app/build/reports/
             android/wear/build/reports/
+            android/internal-client/build/reports/
           if-no-files-found: ignore
 
       - name: Upload debug APKs

@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import InternalApp from './InternalApp';
 import { applyTheme, getInitialTheme } from './domain/theme';
 import { registerServiceWorker } from './pwa/registerServiceWorker';
 import { completeGoogleSignInRedirect } from './storage/googleSheetsAuth';
@@ -15,7 +16,7 @@ void completeGoogleSignInRedirect()
   .finally(() => {
     ReactDOM.createRoot(document.getElementById('root')!).render(
       <React.StrictMode>
-        <App />
+        {import.meta.env.VITE_INTERNAL_API ? <InternalApp /> : <App />}
       </React.StrictMode>
     );
   });

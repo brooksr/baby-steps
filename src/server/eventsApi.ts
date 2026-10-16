@@ -1,7 +1,7 @@
 import { describeLoggedEvent, parseEventRequest, resolveChild, SUPPORTED_EVENT_TYPES } from '../domain/eventRequest';
 import { getFirstName } from '../domain/family';
 import type { CareEvent, DiaperEvent, FeedEvent, SleepEvent } from '../domain/types';
-import type { BabyTrackerStore } from '../storage/store';
+import type { BabyTrackerStore } from '../storage/contracts';
 
 /**
  * `POST /api/events` — log one entry from a voice assistant, Home Assistant or

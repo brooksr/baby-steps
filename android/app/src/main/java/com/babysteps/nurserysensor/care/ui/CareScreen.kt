@@ -46,7 +46,7 @@ fun CareScreen(ui: Ui) {
     val ageMonths=ui.profile.birthDate?.let { Dates.ageDays(ui.profile)/(365.25/12) }
     Panel {
         Heading("Care plan",ageMonths?.let { "${Units.number(it,1)} months old" } ?: "Log birth to anchor ages",level=1)
-        Segmented(listOf("key-info" to "Key info","milestones" to "Milestones","vaccinations" to "Vaccines","emergency" to "Emergency"),tab,scroll=true) { tab=it }
+        Segmented((if(ui.caregiver) listOf("key-info" to "Key info","emergency" to "Emergency") else listOf("key-info" to "Key info","milestones" to "Milestones","vaccinations" to "Vaccines","emergency" to "Emergency")),tab,scroll=true) { tab=it }
     }
     when(tab) {
         "key-info" -> KeyInfo(ui)
@@ -188,7 +188,7 @@ private fun KeyInfo(ui: Ui) {
     val ob=contact(info,"ob") ?: Triple("OB / Obstetrician",null,null)
     val ped=contact(info,"pediatrician")
     Panel {
-        Heading("Key info","Have these ready before you need them") { IconAction(Lucide.pencil,"Edit care info",LocalPalette.current.blue700) { editing=true } }
+        Heading("Key info","Have these ready before you need them") { if(!ui.caregiver) IconAction(Lucide.pencil,"Edit care info",LocalPalette.current.blue700) { editing=true } }
         guardians.forEach { (n,ph,ad) -> ContactCard(null,n,ph,ad,null,Lucide.phone) }
         ContactCard("ER / Hospital",hospital.first ?: "Birth hospital",hospital.second,hospital.third,home,urgent=true)
         ped?.let { ContactCard("Pediatrician",it.first ?: "",it.second,it.third,home) }

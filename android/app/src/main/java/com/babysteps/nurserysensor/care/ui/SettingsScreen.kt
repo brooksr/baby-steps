@@ -262,8 +262,46 @@ fun ConnectionCard(state: CareRepository.State=CareRepository.state.collectAsSta
     var token by remember { mutableStateOf(settings.token) }
     var message by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
+    var internalApi by remember { mutableStateOf("https://raspberrypi.tailc2b8e3.ts.net:8443/api/v1") }
+    var pairingCode by remember { mutableStateOf("") }
+    var exportedQueue by remember { mutableStateOf("") }
     Panel {
-        Heading("Babysteps Pi","The shared Google Sheet, read and written through the Pi")
+        Heading("BabySteps account","Sign in on the Pi website, then approve this phone in Account.")
+        TextInput("Account server",internalApi,{ internalApi=it.trim() })
+        PrimaryButton("Connect account",enabled=!busy) {
+            busy=true; scope.launch {
+                try {
+                    val reply=kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { settings.internal.begin(internalApi) }
+                    pairingCode=reply.getString("userCode"); message="Approve code $pairingCode in the website’s Account page."
+                    context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,android.net.Uri.parse(internalApi.removeSuffix("/api/v1")+"/#device="+pairingCode)))
+                } catch(e: Exception) { message=e.message } finally { busy=false }
+            }
+        }
+        if(pairingCode.isNotEmpty()) PrimaryButton("I approved this phone",enabled=!busy) {
+            busy=true; scope.launch {
+                try {
+                    val ready=kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { settings.internal.complete() }
+                    if(ready) { CareRepository.load(context); CareRepository.refresh(context); pairingCode=""; message="Account connected." }
+                    else message="The website has not approved this code yet."
+                } catch(e: Exception) { message=e.message } finally { busy=false }
+            }
+        }
+        if(settings.internal.selected) SecondaryButton("Disconnect account") { settings.internal.disconnect(); CareRepository.load(context); scope.launch { CareRepository.refresh(context) } }
+        if(state.pending>0) {
+            Heading("Queued changes")
+            CareRepository.pendingLabels(context).forEachIndexed { index,label -> Muted("${index+1}. $label") }
+            if(settings.internal.selected) {
+                Muted("Retry applies your fields to the current version. Export first if you want to keep a separate copy.")
+                SecondaryButton("Retry oldest with latest version") { scope.launch { try { CareRepository.retryOldest(context); message=CareRepository.state.value.problem ?: "Retry finished." } catch(e: Exception) { message=e.message } } }
+            }
+            SecondaryButton("Discard oldest queued change") { scope.launch { CareRepository.discardOldest(context) } }
+            SecondaryButton("Show queued changes to copy") { exportedQueue=CareRepository.pendingExport(context) }
+            if(exportedQueue.isNotEmpty()) androidx.compose.foundation.text.selection.SelectionContainer { Ink(exportedQueue,size=12) }
+        }
+        message?.let { FieldNote(it) }
+    }
+    Panel {
+        Heading("Legacy connection","The shared Google Sheet, read and written through the Pi")
         Muted(when {
             !state.configured -> "Not connected."
             state.fetchedAt!=null -> "Last read ${Dates.clock(state.fetchedAt)}"+(if(state.pending>0) " · ${state.pending} change${if(state.pending==1) "" else "s"} waiting to send" else " · everything sent")

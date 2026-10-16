@@ -3,6 +3,10 @@ import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import type { DatabaseSync as SqliteDatabase } from 'node:sqlite';
 import schema from './schema.sql?raw';
+import services from './migrations/002-services.sql?raw';
+import native from './migrations/003-native.sql?raw';
+import devicePurpose from './migrations/004-device-purpose.sql?raw';
+import deviceSource from './migrations/005-device-source.sql?raw';
 
 // Vite 5 predates node:sqlite and treats a static import as a package name.
 // Load the Node built-in at runtime; this file must never enter the PWA bundle.
@@ -25,15 +29,14 @@ export function openInternalDatabase(path: string): SqliteDatabase {
         checksum TEXT NOT NULL
       ) STRICT;`);
       const migrations = database.prepare('SELECT version, checksum FROM schema_migrations ORDER BY version').all();
-      const checksum = createHash('sha256').update(schema).digest('hex');
-
-      if (migrations.some((row) => row.version !== 1 || row.checksum !== checksum)) {
+      const scripts = [schema, services, native, devicePurpose, deviceSource];
+      const checksums = scripts.map((script) => createHash('sha256').update(script).digest('hex'));
+      if (migrations.some((row, index) => row.version !== index + 1 || row.checksum !== checksums[index])) {
         throw new Error('Internal database schema differs from this build. Use the matching build or an explicit migration.');
       }
-
-      if (!migrations.length) {
-        database.exec(schema);
-        database.prepare('INSERT INTO schema_migrations (version, checksum) VALUES (?, ?)').run(1, checksum);
+      for (let index = migrations.length; index < scripts.length; index++) {
+        database.exec(scripts[index]);
+        database.prepare('INSERT INTO schema_migrations (version, checksum) VALUES (?, ?)').run(index + 1, checksums[index]);
       }
 
       database.exec('COMMIT');

@@ -7,25 +7,33 @@ Guidance for AI agents (and humans) working in the BabySteps repo.
 BabySteps is an offline-first PWA for shared baby-care tracking (children and
 the parents doing the tracking). React
 18 + TypeScript + Vite, with a hybrid local (Dexie/IndexedDB) + Google Sheets
-store. No backend of our own — the two exceptions both run on the Raspberry
+store. The legacy deployment has no data backend — its two helpers run on the Raspberry
 Pi and hold no data: the stateless token broker for one-time sign-in (see
 "One-time sign-in on the Pi") and the events API that lets voice assistants
-log an entry (see "Logging from outside the app").
+log an entry (see "Logging from outside the app"). The optional internal
+account/SQLite server is stateful and deploys separately; see the section below.
 
-## Internal backend foundation (not enabled)
+## Optional internal backend
 
-Read [docs/INTERNAL_BACKEND.md](docs/INTERNAL_BACKEND.md) before work on internal
-accounts, authentication, SQLite or migration off Sheets. `src/server/internal/`
-contains tested schema/policy primitives, not production sign-in or store routing.
-Do not import Node/SQLite into browser code or silently enable it in the Pi API.
-Internal account/family ids are independent of emails/sheet ids. Google becomes
-an optional linked identity; keep its legacy path working during implementation.
-Server authorization requires verified sessions and live family memberships;
-never reuse `getAccess`'s offline full-view fallback as a server access check.
-Applied SQL migrations are immutable. Profile archiving and family isolation
-remain mandatory. Run `npm run test:internal` plus all ordinary required checks.
-The plan lists release gates, remaining schemas/services and migration/restore
-requirements; do not mark the backend ready on the strength of a schema alone.
+Read [docs/INTERNAL_BACKEND.md](docs/INTERNAL_BACKEND.md) and the
+[deployment runbook](deployment/internal/README.md) before auth/SQLite/cutover work.
+The legacy build remains default; `VITE_INTERNAL_API=/api/v1` selects the internal
+PWA and `npm run build:internal` builds its separate Node 24 server/tools.
+Internal ids are independent of emails/sheets. Never apply `getAccess`'s offline
+full-view fallback on the server. Recheck live membership inside each transaction;
+keep caregiver/watch/nursery responses and capabilities scoped server-side.
+Store contracts live in `src/storage/contracts.ts`, without Node or Dexie imports.
+Applied SQL migrations are immutable; append and test populated upgrades. Preserve
+archiving, expected revisions, idempotent receipts, tombstones and related birth
+profile changes. APIs must bypass the service worker. Account/family/host-scoped
+outboxes must never be sent under a different login.
+
+Always run ordinary web checks plus `npm run build:internal`, `npm run test:internal`
+and `npm run test:e2e` for this path. Android changes also need all three modules'
+unit tests/lint and phone/watch APKs. The shared Keystore instrumentation test must
+run only on a test emulator/device. Do not use household connected-test targets.
+Live enrollment, Sheets cutover and Pi/rpi-updater adoption are rollout gates,
+not implied by passing local tests; document their actual status accurately.
 
 ## Monorepo workflow
 
@@ -201,7 +209,7 @@ Google account and a phone number, and archives it like anyone else.
   anyone the sheet is shared with could open it directly. Do not describe the
   caregiver view as a security boundary anywhere in the UI or the docs.
 
-### Families: one family is one spreadsheet
+### Legacy Sheets families: one family is one spreadsheet
 
 **The family id is the spreadsheet id** (`BabyProfile.familyId`, the `familyId`
 column). Families never share a sheet, so no family can read another's rows —
