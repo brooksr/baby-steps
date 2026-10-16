@@ -157,7 +157,9 @@ export function createFamilyRepository(database: DatabaseSync, familyId: string,
       if (Number(row?.revision ?? 0) !== command.expectedRevision) fail('conflict');
       if (row?.deleted_at || (command.action !== 'save' && !row)) fail('not-found');
       const timestamp = now();
-      let payload = command.action === 'save' ? mergePatch(previous, patch) : { ...previous };
+      // A nursery record is the sensor's whole summary, replaced on every resend. Merge-patch
+      // would read its null columns (a session still recording has no endUtc) as deletions.
+      let payload = command.action !== 'save' ? { ...previous } : command.collection === 'nursery' ? { ...patch } : mergePatch(previous, patch);
       payload = { ...payload, createdAt: previous.createdAt ?? timestamp, id: command.id, syncState: 'synced', updatedAt: timestamp };
       if (command.collection === 'profiles') {
         payload.familyId = familyId;

@@ -126,6 +126,9 @@ describe('internal accounts and HTTP boundary',() => {
     const second = enroll(); expect((await post(first.token)).status).toBe(401); expect((await post(second.token)).status).toBe(200);
     expect(db.prepare("SELECT COUNT(*) AS n FROM records WHERE collection='nursery'").get()!.n).toBe(1);
     expect((await post(second.token,{ ...payload,records:[{ ...payload.records[0],data:{ ...data,pcm:'forbidden' } }] })).status).toBe(400);
+    // A null column (no usable level yet) is a value, not a deletion: the record is stored as sent.
+    expect((await post(second.token,{ ...payload,records:[{ ...payload.records[0],data:{ ...data,peakDbfs:null } }] })).status).toBe(200);
+    expect(JSON.parse(String(db.prepare("SELECT payload FROM records WHERE collection='nursery'").get()!.payload)).data).toHaveProperty('peakDbfs',null);
   });
 
   it('verifies OIDC signatures/audience/nonce and explicitly links a Google subject without email merging',async () => {
