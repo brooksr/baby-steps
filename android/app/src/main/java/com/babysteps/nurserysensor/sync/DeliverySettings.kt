@@ -35,7 +35,7 @@ import kotlinx.coroutines.withContext
                     pairCode=reply.getString("userCode"); message="Approve $pairCode in the website Account page. This connection can send nursery metadata only."
                 } catch(e: Exception) { message=e.message }
             } }) { Text("Connect nursery account") }
-            if(pairCode.isNotEmpty()) OutlinedButton(onClick={ scope.launch {
+            if(pairCode.isNotEmpty() || settings.internal.pairing) OutlinedButton(onClick={ scope.launch {
                 try {
                     check(!com.babysteps.nurserysensor.monitoring.MonitoringStore.state.value.active) { "Stop monitoring before changing the delivery family." }
                     if(withContext(Dispatchers.IO) { settings.internal.complete() }) {

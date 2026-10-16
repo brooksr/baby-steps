@@ -140,6 +140,8 @@ object CareRepository {
             val reply=send(settings,"GET",settings.endpoint,null)
             when {
                 reply.code==401 -> withContext(Dispatchers.Main) { publish(app,problem="The Pi refused the app token · check Settings") }
+                // The Pi answers the old shared-token route with 410 once it has moved to accounts.
+                reply.code==410 -> withContext(Dispatchers.Main) { publish(app,problem="This Pi now uses BabySteps accounts · connect your account in Settings") }
                 reply.code!in 200..299 -> withContext(Dispatchers.Main) { publish(app,problem="The Pi could not read the sheet (${reply.code}) · showing the last copy") }
                 else -> {
                     val tracker=Tracker.parse(reply.body)
@@ -230,9 +232,11 @@ object CareRepository {
                 val result=try { send(settings,"POST",settings.endpoint,op.toString()) }
                     catch(e: CancellationException) { throw e }
                     catch(_: IOException) { withContext(Dispatchers.Main) { publish(app,problem="Offline · ${outbox.length()} change${if(outbox.length()==1) "" else "s"} saved to send") }; break }
-                val retry=result.code==401 || result.code==429 || result.code>=500
+                // 410 is the Pi having moved to accounts: keep the change for the export/connect path, never drop it.
+                val retry=result.code==401 || result.code==410 || result.code==429 || result.code>=500
                 if(retry) {
-                    withContext(Dispatchers.Main) { publish(app,problem=if(result.code==401) "The Pi refused the app token · check Settings" else "The Pi is unavailable (${result.code}) · will retry") }
+                    withContext(Dispatchers.Main) { publish(app,problem=when(result.code) { 401 -> "The Pi refused the app token · check Settings"
+                        410 -> "This Pi now uses BabySteps accounts · connect your account in Settings"; else -> "The Pi is unavailable (${result.code}) · will retry" }) }
                     break
                 }
                 withContext(Dispatchers.Main) {

@@ -30,6 +30,26 @@ data class CareStatus(
                 diaper.instant("at"),diaper.text("kind"),
                 sleep.instant("at"),sleep.instant("endedAt"),now)
         }
+
+        /**
+         * An account bootstrap's `data`, read the way the Pi's status route reads the log: the latest
+         * feed, diaper and sleep of one child. Null when that child is not the one asked for (or, with
+         * none asked for, when there is not exactly one).
+         */
+        fun fromBootstrap(data: JSONObject,childId: String,now: Instant): CareStatus? {
+            val people=data.getJSONArray("profiles")
+            val children=(0 until people.length()).map { people.getJSONObject(it) }.filter { it.optString("kind","child")=="child" }
+            val child=(if(childId.isNotEmpty()) children.find { it.optString("id")==childId } else children.singleOrNull()) ?: return null
+            val events=data.getJSONArray("events")
+            val mine=(0 until events.length()).map { events.getJSONObject(it) }.filter { it.optString("babyId")==child.getString("id") }
+                .sortedByDescending { runCatching { Instant.parse(it.optString("startedAt")) }.getOrDefault(Instant.EPOCH) }
+            // parse() is shared with the Pi's reply, which says ok itself; this one is built here.
+            val status=JSONObject().put("ok",true).put("child",child.optString("name"))
+            for((type,key) in listOf("feed" to "lastFeed","diaper" to "lastDiaper","sleep" to "lastSleep")) mine.firstOrNull { it.optString("type")==type }?.let { event ->
+                status.put(key,JSONObject(event.toString()).put("at",event.getString("startedAt")))
+            }
+            return parse(status,now)
+        }
     }
 }
 

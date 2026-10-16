@@ -41,6 +41,22 @@ class CareModelsTest {
         assertEquals("Bottle · 3½ oz · 5m ago",CareText.feed(bottle,now))
     }
 
+    @Test fun readsTheLatestOfEachFromAnAccountBootstrap() {
+        val data=JSONObject("""{"profiles":[{"id":"ada","kind":"child","name":"Ada"},{"id":"mom","kind":"parent","name":"Mom"}],
+            "events":[{"id":"1","babyId":"ada","type":"feed","startedAt":"2026-10-12T18:00:00.000Z","method":"bottle","amountOz":3},
+                {"id":"2","babyId":"ada","type":"feed","startedAt":"2026-10-12T20:10:00.000Z","method":"nursing","side":"left","durationMinutes":18},
+                {"id":"3","babyId":"ada","type":"diaper","startedAt":"2026-10-12T21:00:00.000Z","kind":"dirty"},
+                {"id":"4","babyId":"ada","type":"sleep","startedAt":"2026-10-12T21:15:00.000Z"},
+                {"id":"5","babyId":"mom","type":"sleep","startedAt":"2026-10-12T21:30:00.000Z","endedAt":"2026-10-12T21:35:00.000Z"}]}""")
+        val status=CareStatus.fromBootstrap(data,"",now)!!
+        assertEquals("Ada",status.child)
+        assertEquals(Instant.parse("2026-10-12T20:10:00Z"),status.feedAt)
+        assertEquals("left",status.feedSide)
+        assertEquals("dirty",status.diaperKind)
+        assertTrue(status.asleep)
+        assertNull(CareStatus.fromBootstrap(data,"ben",now))
+    }
+
     @Test(expected=IllegalStateException::class) fun refusesARefusal() {
         CareStatus.parse(JSONObject("""{"error":"unknown_child","errors":["Name the child: Ada, Ben."]}"""),now)
     }

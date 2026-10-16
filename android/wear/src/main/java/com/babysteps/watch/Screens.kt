@@ -141,7 +141,7 @@ fun HomeScreen(onTimer: () -> Unit,onBottle: () -> Unit,onDiaper: () -> Unit,onS
             val t=timer
             item {
                 if(t!=null) LiveTimer(t,now,onTimer,Modifier.transformedHeight(this,spec),SurfaceTransformation(spec))
-                else FeedHero(status,configured,now,onSettings)
+                else FeedHero(status,configured,notice,now,onSettings)
             }
             status?.let { s -> item { StatRow(s,now) } }
             if(t==null) item {
@@ -168,9 +168,10 @@ fun HomeScreen(onTimer: () -> Unit,onBottle: () -> Unit,onDiaper: () -> Unit,onS
 }
 
 @Composable
-private fun FeedHero(status: CareStatus?,configured: Boolean,now: Instant,onSettings: () -> Unit) {
+private fun FeedHero(status: CareStatus?,configured: Boolean,notice: WatchRepository.Notice?,now: Instant,onSettings: () -> Unit) {
     Column(horizontalAlignment=Alignment.CenterHorizontally,modifier=Modifier.fillMaxWidth().padding(top=6.dp,bottom=4.dp)) {
-        Caption(status?.child?.let { "$it · last feed" } ?: "Last feed",Care.feed,CareIcons.milk)
+        // First name only: a full name and "last feed" wrap on a round screen.
+        Caption(status?.child?.substringBefore(' ')?.let { "$it · last feed" } ?: "Last feed",Care.feed,CareIcons.milk)
         when {
             !configured -> {
                 Text("Set up",style=MaterialTheme.typography.displaySmall,color=Care.text,modifier=Modifier.padding(top=4.dp))
@@ -179,7 +180,9 @@ private fun FeedHero(status: CareStatus?,configured: Boolean,now: Instant,onSett
             }
             status==null -> {
                 Text("—",style=MaterialTheme.typography.numeralMedium,color=Care.faint)
-                Text("Reading the log…",style=MaterialTheme.typography.bodySmall,color=Care.dim)
+                // Nothing read yet: say why here, not only in the sync line at the bottom of the list.
+                if(notice!=null && !notice.ok) Text(notice.text,style=MaterialTheme.typography.bodySmall,color=Care.warn,textAlign=TextAlign.Center)
+                else Text("Reading the log…",style=MaterialTheme.typography.bodySmall,color=Care.dim)
             }
             status.feedAt==null -> {
                 Text("—",style=MaterialTheme.typography.numeralMedium,color=Care.faint)
@@ -460,7 +463,7 @@ fun SettingsScreen(onDone: () -> Unit) {
             item { Caption("Settings",Care.dim,CareIcons.settings) }
             item { Field("BabySteps account server",accountApi) { accountApi=it } }
             item { Button(onClick={ scope.launch { try { val reply=withContext(Dispatchers.IO) { settings.internal.begin(accountApi,"watch") }; pairCode=reply.getString("userCode"); error="Approve $pairCode in the website Account page" } catch(e: Exception) { error=e.message } } }) { Text("Connect account") } }
-            if(pairCode.isNotEmpty()) item { Button(onClick={ scope.launch { try { if(withContext(Dispatchers.IO) { settings.internal.complete() }) { settings.saveChild(""); WatchRepository.load(context); WatchRepository.refresh(context); onDone() } else error="Not approved yet" } catch(e: Exception) { error=e.message } } }) { Text("I approved the code") } }
+            if(pairCode.isNotEmpty() || settings.internal.pairing) item { Button(onClick={ scope.launch { try { if(withContext(Dispatchers.IO) { settings.internal.complete() }) { settings.saveChild(""); WatchRepository.load(context); WatchRepository.refresh(context); onDone() } else error="Not approved yet" } catch(e: Exception) { error=e.message } } }) { Text("I approved the code") } }
             if(settings.internal.selected) { item { Button(onClick={ settings.internal.disconnect(); WatchRepository.load(context); onDone() }) { Text("Disconnect account") } }; item { Button(onClick={ settings.internal.useLegacy(); WatchRepository.load(context); onDone() }) { Text("Use legacy connection") } } }
             item { Field("Pi events URL",endpoint) { endpoint=it } }
             item { Field("Events token",token,secret=true) { token=it } }

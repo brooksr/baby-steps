@@ -141,6 +141,9 @@ required checks, build both artifacts and deploy with:
 ```bash
 npm run build:internal
 VITE_INTERNAL_API=/api/v1 npm run build -- --base /internal/ --outDir dist-internal-web
+# After cutover the Pi also serves the internal app at the root, and pi-install.sh
+# refuses an upgrade without a fresh root build:
+VITE_INTERNAL_API=/api/v1 npm run build -- --base / --outDir dist-internal-root
 bash deployment/internal/deploy-pi.sh
 ```
 

@@ -168,6 +168,8 @@ object WatchRepository {
                         outcome=Outcome.Refused(reason); noticeFlow.value=Notice(reason,false)
                     }
                     result.code==401 -> { outcome=Outcome.Queued("Token refused"); noticeFlow.value=Notice("Token refused · check Settings",false); break }
+                    // The Pi answers its old routes with 410 once it has moved to accounts; keep the entry.
+                    result.code==410 -> { outcome=Outcome.Queued("Connect your account"); noticeFlow.value=Notice("Pi moved to accounts · connect in Settings",false); break }
                     else -> { outcome=Outcome.Queued("Pi unavailable"); noticeFlow.value=Notice("Pi unavailable (${result.code}) · will retry",false); break }
                 }
                 q=JSONArray().also { next -> for(i in 1 until q.length()) next.put(q.getString(i)) }
@@ -185,16 +187,9 @@ object WatchRepository {
                 val reply=settings.internal.call(settings.internal.familyPath("bootstrap"))
                 if(reply.code !in 200..299) { noticeFlow.value=Notice("Sign in again · queued entries are kept",false); statusFlow.value=null; return@withContext }
                 prefs(context).edit().putString("internalMeta",reply.body.toString()).commit()
-                val data=reply.body.getJSONObject("data"); val people=data.getJSONArray("profiles")
-                val children=(0 until people.length()).map { people.getJSONObject(it) }.filter { it.optString("kind","child")=="child" }
-                val child=if(settings.child.isNotEmpty()) children.find { it.optString("id")==settings.child } else children.singleOrNull()
-                if(child==null) { noticeFlow.value=Notice("Choose a child in Settings",false); return@withContext }
-                val events=data.getJSONArray("events"); val mine=(0 until events.length()).map { events.getJSONObject(it) }.filter { it.optString("babyId")==child.getString("id") }.sortedByDescending { it.optString("startedAt") }
-                val status=JSONObject().put("child",child.optString("name"))
-                for((type,key) in listOf("feed" to "lastFeed","diaper" to "lastDiaper","sleep" to "lastSleep")) mine.firstOrNull { it.optString("type")==type }?.let { event ->
-                    status.put(key,JSONObject(event.toString()).put("at",event.getString("startedAt")))
-                }
-                statusFlow.value=CareStatus.parse(status,Instant.now())
+                val status=CareStatus.fromBootstrap(reply.body.getJSONObject("data"),settings.child,Instant.now())
+                if(status==null) { noticeFlow.value=Notice("Choose a child in Settings",false); return@withContext }
+                statusFlow.value=status
             } catch(e: CancellationException) { throw e } catch(_: Exception) { /* Retain a stale-marked last read. */ }
             return@withContext
         }
@@ -203,6 +198,7 @@ object WatchRepository {
         try {
             val result=send(settings,"GET",url,null)
             if(result.code==401) { noticeFlow.value=Notice("Token refused · check Settings",false); return@withContext }
+            if(result.code==410) { noticeFlow.value=Notice("Pi moved to accounts · connect in Settings",false); return@withContext }
             statusFlow.value=CareStatus.parse(result.body,Instant.now())
         } catch(e: CancellationException) { throw e }
         catch(_: Exception) { /* Keep the last good status; the screen marks it stale by its age. */ }

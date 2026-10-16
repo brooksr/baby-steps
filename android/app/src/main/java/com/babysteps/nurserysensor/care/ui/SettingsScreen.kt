@@ -277,7 +277,7 @@ fun ConnectionCard(state: CareRepository.State=CareRepository.state.collectAsSta
                 } catch(e: Exception) { message=e.message } finally { busy=false }
             }
         }
-        if(pairingCode.isNotEmpty()) PrimaryButton("I approved this phone",enabled=!busy) {
+        if(pairingCode.isNotEmpty() || settings.internal.pairing) PrimaryButton("I approved this phone",enabled=!busy) {
             busy=true; scope.launch {
                 try {
                     val ready=kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { settings.internal.complete() }

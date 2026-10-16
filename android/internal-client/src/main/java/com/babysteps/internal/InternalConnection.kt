@@ -15,6 +15,8 @@ class InternalConnection(context: Context,private val namespace: String) {
     val accountId get()=prefs.getString("account","")!!
     val selected get()=api.isNotEmpty() && familyId.isNotEmpty()
     val configured get()=selected && secrets.get("tokens")!=null
+    /** A started sign-in still waiting on complete(). Saved, so leaving to approve it does not lose it. */
+    val pairing get()=prefs.contains("pairCode")
     val scope get()=if(selected) MessageDigest.getInstance("SHA-256").digest("$api:$accountId:$familyId".toByteArray()).joinToString("") { "%02x".format(it.toInt() and 255) } else "legacy"
     data class Reply(val code: Int,val body: JSONObject)
     companion object {
