@@ -141,6 +141,27 @@ describe('SettingsPanel', () => {
     expect(screen.queryByRole('button', { name: 'Sign out' })).not.toBeInTheDocument();
   });
 
+  it('keeps internal family invitations separate from contact email and account settings', async () => {
+    const user = userEvent.setup();
+    const child = createDefaultBabyProfile();
+    const me = createFamilyProfile({ kind: 'parent', name: 'Casey' }, [child]);
+    const onOpenAccount = vi.fn();
+    const onInviteProfile = vi.fn().mockResolvedValue(undefined);
+    const { props } = renderPanel({
+      onInviteProfile, onOpenAccount, profile: child, profiles: [child, me], signedInProfileId: me.id,
+      storeStatus: { backend: 'internal', configured: true, connected: true, familyId: 'internal-family', message: '' }
+    });
+    expect(screen.queryByRole('button', { name: 'Send Casey an invite' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Sign-in & account' }));
+    expect(onOpenAccount).toHaveBeenCalledOnce();
+    await user.click(screen.getByRole('button', { name: 'Add a caregiver' }));
+    await user.type(screen.getByLabelText("Caregiver's name"), 'Nan');
+    await user.click(screen.getByRole('button', { name: 'Add caregiver' }));
+    expect(props.onAddChild).toHaveBeenCalledWith(expect.objectContaining({ kind: 'caregiver', name: 'Nan' }));
+    expect(screen.getByRole('status')).toHaveTextContent('Send an invitation to give them access.');
+    expect(screen.getByRole('status')).not.toHaveTextContent('Google Sheet');
+  });
+
   describe('inviting', () => {
     const connected = {
       backend: 'google-sheets' as const,

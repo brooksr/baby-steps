@@ -121,6 +121,24 @@ test('real passkey account, family, offline queue, caregiver boundary and recove
   await page.setViewportSize({ width:390,height:844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path:'test-results/internal-mobile.png',fullPage:true });
+  for (const width of [320,390,768,1280]) {
+    await page.setViewportSize({ width,height:844 });
+    await page.getByRole('navigation',{ name:'Primary' }).getByRole('button',{ name:'Account',exact:true }).click();
+    await expect(page.getByRole('heading',{ name:'Sign-in methods',exact:true })).toBeVisible();
+    await expect(page.getByText('Loading sign-in methods…')).toBeHidden();
+    await expect(page.getByText(`Account ID: ${recovery[0]}`,{ exact:true })).toBeHidden();
+    await expect(page.getByRole('button',{ name:'Replace recovery codes',exact:true })).toBeHidden();
+    await expect(page.getByLabel('Connection code',{ exact:true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    if (width===390) await page.screenshot({ path:'test-results/mobile-account-organized.png',fullPage:true });
+    await page.getByRole('navigation',{ name:'Primary' }).getByRole('button',{ name:'Settings',exact:true }).click();
+    await expect(page.getByRole('heading',{ name:'Data & backups',exact:true })).toBeVisible();
+    await expect(page.getByRole('button',{ name:'Sign out',exact:true })).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    if (width===390) await page.screenshot({ path:'test-results/mobile-settings-organized.png',fullPage:true });
+    await page.getByRole('button',{ name:'Sign-in & account',exact:true }).click();
+    await expect(page.getByRole('heading',{ name:'Account',exact:true })).toBeVisible();
+  }
   // Exercise mobile Home/Log/Reports with real growth and Night & Day content.
   const birthAt = new Date(Date.now()-90*86400_000).toISOString();
   const beforeGrowth = await request(page,`/families/${familyId}/bootstrap`);

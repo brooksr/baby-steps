@@ -46,7 +46,7 @@ export default function InternalApp() {
   const [client,setClient] = useState<InternalClient>(); const current = useRef<InternalClient>();
   const [activeId,setActiveId] = useState(''); const [view,setView] = useState<View>('Home');
   const [logTypeFilter,setLogTypeFilter] = useState<CareEventType | null>(null);
-  const [error,setError] = useState(''); const [offline,setOffline] = useState(false); const [busy,setBusy] = useState(false);
+  const [error,setError] = useState(''); const [notice,setNotice] = useState(''); const [offline,setOffline] = useState(false); const [busy,setBusy] = useState(false);
   const [dialog,setDialog] = useState<CareEventType | null>(null); const [editing,setEditing] = useState<CareEvent | null>(null);
   const [preset,setPreset] = useState<UnloggedSleep | null>(null);
   const [timers,setTimers] = useState<ActiveTimers>({}); const [theme,setTheme] = useState(getInitialTheme);
@@ -58,6 +58,20 @@ export default function InternalApp() {
   const [credentials,setCredentials] = useState<{ google: boolean; passkeys: Array<{ id: string; createdAt: string }> }>();
   const [deviceReview,setDeviceReview] = useState<{ purpose:string; expiresAt:string }>();
   const [devices,setDevices] = useState<{ devices: Array<{ id: string; familyId: string }>; sessions: Array<{ id: string; createdAt: string }> }>();
+  const accountId = session?.accountId;
+  useEffect(() => {
+    if (view !== 'Account' || !accountId) return;
+    let cancelled = false;
+    setCredentials(undefined); setDevices(undefined); setActivity([]);
+    void Promise.all([
+      internalRequest<NonNullable<typeof credentials>>(api,'/account/credentials'),
+      internalRequest<NonNullable<typeof devices>>(api,'/account/sessions'),
+      internalRequest<{ activity: typeof activity }>(api,'/account/activity')
+    ]).then(([keys,connections,recent]) => {
+      if (!cancelled) { setCredentials(keys); setDevices(connections); setActivity(recent.activity); }
+    }).catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : 'Could not load account details.'); });
+    return () => { cancelled = true; };
+  },[api,view,accountId]);
   const signedIn = useCallback(async () => {
     const result = await internalRequest<Session>(api,'/session'); setSession(result); setFamilies(result.families); setOffline(false); setError('');
     const saved = storedChoice(); setFamily(result.families.find((f) => f.familyId === saved?.familyId)?.familyId ?? result.families[0]?.familyId ?? '');
@@ -102,7 +116,7 @@ export default function InternalApp() {
   const profile = getActiveProfiles(people).find((p) => p.id === activeId) ?? getActiveProfiles(people)[0];
   const timerKey = session && family && profile ? `internal:${api}:${session.accountId}:${family}:${profile.id}` : '';
   useEffect(() => { setTimers(timerKey ? loadActiveTimers(timerKey) : {}); },[timerKey]);
-  async function run(action: () => Promise<void>) { setError(''); setBusy(true); try { await action(); } catch (e) { setError(e instanceof Error ? e.message : 'Could not save'); } finally { setBusy(false); } }
+  async function run(action: () => Promise<void>) { setError(''); setNotice(''); setBusy(true); try { await action(); } catch (e) { setError(e instanceof Error ? e.message : 'Could not save'); } finally { setBusy(false); } }
   /** For the actions the server wants a recent sign-in for: confirms with a passkey and retries. */
   async function confirmed<T>(action: () => Promise<T>) {
     try { return await withRecentSignIn(api,session?.accountId ?? '',action); } catch (e) { if (e instanceof OtherAccountError) await signedIn(); throw e; }
@@ -152,7 +166,7 @@ export default function InternalApp() {
       {families.length > 1 && <label>Family<select value={family} onChange={(e) => { setData(undefined); setQueue([]); setFamily(e.target.value); }}>{families.map((f) => <option key={f.familyId} value={f.familyId}>{f.name}</option>)}</select></label>}
       <button className="icon-button header-sync" type="button" aria-label="Sync now" title="Sync now" disabled={busy} onClick={() => void run(async () => { await client!.refresh(); setOffline(false); await reload(); })}><RefreshCw aria-hidden="true" className={busy ? 'spinning' : undefined} /></button>
     </header>
-    {offline && <p className="notice">Offline · changes stay on this device until you reconnect.</p>}{error && <p role="alert" className="error-banner">{error}</p>}{recoveryPanel}
+    {offline && <p className="notice">Offline · changes stay on this device until you reconnect.</p>}{error && <p role="alert" className="error-banner">{error}</p>}{notice && <p role="status" className="notice">{notice}</p>}{recoveryPanel}
     {queue.length > 0 && <section className="card"><h2>Queued changes ({queue.length})</h2>{queue.map((row) => <div key={row.order}><p>{{ events:'Entry',nursery:'Nursery summary',profiles:'Person',shopping:'Shopping item',tasks:'Task' }[row.command.collection]} · {row.error ? 'Needs review before syncing' : 'Waiting to sync'}</p>
       {row.error && <button onClick={() => void run(async () => { await client!.retryWithLatest(row.order!); await client!.sync(); await reload(); })}>Apply to latest version</button>}
       <button onClick={() => void run(async () => { await client!.discard(row.order!); await reload(); })}>Discard queued change</button></div>)}
@@ -175,27 +189,42 @@ export default function InternalApp() {
       onArchiveProfile={(id) => mutate('profiles',id,'archive')} onRestoreProfile={(id) => mutate('profiles',id,'restore')} onSaveProfile={(patch) => mutate('profiles',patch.id ?? profile.id,'save',patch)} onSelectChild={async (id) => { setActiveId(id); }}
       onConnectSheet={async () => {}} onApplyShifts={async () => { throw new Error('Night shift is disabled.'); }} onExport={async () => data.data} onImport={importData}
       onInviteProfile={async (person) => { const result = await confirmed(() => internalRequest<{ token: string }>(api,`/families/${encodeURIComponent(family)}/invitations`,{ profileId:person.id }));
-        const link = `${window.location.origin}${import.meta.env.BASE_URL}#invite=${result.token}`; await navigator.clipboard.writeText(link); setError('Invitation link copied. It expires in 48 hours.'); }}
-      onOpenLearn={() => setView('Learn')} onSignOut={() => void run(logout)} onThemeChange={setTheme} />}
-    {showing === 'Account' && <section className="card"><h2>Your BabySteps account</h2>{session.needsPasskey && <p role="alert">Recovery revoked earlier passkeys, Google linking and device sessions. Add a new passkey before signing out.</p>}<p>Account ID: {session.accountId}</p><p>Family ID: {family}</p>
-      <button onClick={() => void run(async () => { const result = await confirmed(() => internalRequest<{ challengeId:string; options:PublicKeyCredentialCreationOptionsJSON }>(api,'/auth/register/options',{}));
-        const response = await startRegistration({ optionsJSON:result.options }); await internalRequest(api,'/auth/register/finish',{ challengeId:result.challengeId,response }); setError('Passkey added.'); })}>Add another passkey</button>
-      {googleEnabled && <button onClick={() => void run(() => confirmed(() => showInternalGoogle(api,document.getElementById('internal-google-link')!,async () => { setError('Google account linked.'); },(e) => setError(e instanceof Error ? e.message : 'Could not link Google'))))}>Link Google as another sign-in method</button>}<div id="internal-google-link" />
-      {credentials?.google && <button onClick={() => void run(async () => { await confirmed(() => internalRequest(api,'/account/credentials/revoke',{ provider:'google' })); setCredentials(await internalRequest(api,'/account/credentials')); })}>Unlink Google</button>}
-      {invite && <form onSubmit={(e) => { e.preventDefault(); void run(async () => { const result = await confirmed(() => internalRequest<{ familyId:string }>(api,'/invitations/accept',{ token:invite })); setInvite(''); await signedIn(); setFamily(result.familyId); window.history.replaceState(null,'',window.location.pathname); }); }}><label>Invitation token<input value={invite} onChange={(e) => setInvite(e.target.value)} /></label><button>Join invited family</button></form>}
-      <button onClick={() => void run(async () => { const result = await confirmed(() => internalRequest<{ accountId:string; recoveryCodes:string[] }>(api,'/account/recovery',{})); setRecovery({ accountId:result.accountId,codes:result.recoveryCodes }); })}>Replace recovery codes</button>
-      <button onClick={() => void run(async () => { setCredentials(await internalRequest(api,'/account/credentials')); setDevices(await internalRequest(api,'/account/sessions')); setActivity((await internalRequest<{ activity:Array<{ action:string; createdAt:string }> }>(api,'/account/activity')).activity); })}>Manage sign-in and devices</button>
-      {credentials?.passkeys.map((key) => <p key={key.id}>Passkey added {key.createdAt}<button onClick={() => void run(async () => { await confirmed(() => internalRequest(api,'/account/credentials/revoke',{ id:key.id,provider:'passkey' })); setCredentials(await internalRequest(api,'/account/credentials')); })}>Revoke passkey</button></p>)}
-      {devices?.devices.map((device) => <p key={device.id}>Device {device.id}<button onClick={() => void run(async () => { await confirmed(() => internalRequest(api,'/account/revoke',{ installationId:device.id })); setDevices(await internalRequest(api,'/account/sessions')); })}>Revoke device</button></p>)}
-      {devices?.sessions.map((item) => <p key={item.id}>Session opened {item.createdAt}<button onClick={() => void run(async () => { await confirmed(() => internalRequest(api,'/account/revoke',{ sessionId:item.id })); setDevices(await internalRequest(api,'/account/sessions')); })}>Revoke session</button></p>)}
-      {activity.length > 0 && <details><summary>Recent account activity</summary>{activity.map((item,index) => <p key={index}>{item.createdAt} · {item.action}</p>)}</details>}
-      <form onSubmit={(event) => { event.preventDefault(); void run(async () => { setDeviceReview(await internalRequest(api,'/native/preview',{ userCode:deviceCode })); }); }}>
-        <label>Phone, watch or nursery connection code<input value={deviceCode} onChange={(e) => { setDeviceCode(e.target.value); setDeviceReview(undefined); }} required /></label><button disabled={busy}>Review device</button></form>
+        const link = `${window.location.origin}${import.meta.env.BASE_URL}#invite=${result.token}`; await navigator.clipboard.writeText(link); }}
+      signedInProfileId={data.actorProfileId} onOpenAccount={() => setView('Account')} onOpenLearn={() => setView('Learn')} onThemeChange={setTheme} />}
+    {showing === 'Account' && <main className="view-stack account-page" aria-busy={busy}>
+      <header className="page-intro"><h1>Account</h1><p>{people.find((person) => person.id === data.actorProfileId)?.name ?? 'Your BabySteps account'} · {caregiver ? 'Caregiver' : 'Parent'}</p><p>Sign-in, recovery and your connected devices.</p></header>
+      {session.needsPasskey && !credentials?.passkeys.length && <p className="notice" role="alert">Recovery revoked earlier passkeys, Google linking and device sessions. Add a new passkey before signing out.</p>}
+      <section className="section-block"><h2>Sign-in methods</h2>
+        <p className="field-note">Passkeys are your primary sign-in. Add one on each device, or link Google here to sign in on a phone without a passkey.</p>
+        {!credentials && <p role="status">Loading sign-in methods…</p>}
+        <ul className="account-list">      {credentials?.passkeys.map((key) => <li className="account-row" key={key.id}><span>Passkey {credentials.passkeys.indexOf(key)+1}<small>Added {new Date(key.createdAt).toLocaleDateString()}</small></span><button onClick={() => void run(async () => { await confirmed(() => internalRequest(api,'/account/credentials/revoke',{ id:key.id,provider:'passkey' })); setCredentials(await internalRequest(api,'/account/credentials')); })}>Revoke passkey</button></li>)}</ul>
+        <div className="account-actions">      <button onClick={() => void run(async () => { const result = await confirmed(() => internalRequest<{ challengeId:string; options:PublicKeyCredentialCreationOptionsJSON }>(api,'/auth/register/options',{}));
+        const response = await startRegistration({ optionsJSON:result.options }); await internalRequest(api,'/auth/register/finish',{ challengeId:result.challengeId,response }); setCredentials(await internalRequest(api,'/account/credentials')); setNotice('Passkey added.'); })}>Add another passkey</button></div>
+        <div className="account-provider"><h3>Google · optional</h3>
+          <p>{credentials?.google ? 'Linked. You can use Google to sign in to this BabySteps account.' : googleEnabled ? 'Link your Google account here before using Google sign-in on another device.' : 'Google sign-in is not enabled on this server.'}</p>
+      {googleEnabled && credentials && !credentials.google && <button onClick={() => void run(() => confirmed(() => showInternalGoogle(api,document.getElementById('internal-google-link')!,async () => { setCredentials(await internalRequest(api,'/account/credentials')); setNotice('Google account linked.'); },(e) => setError(e instanceof Error ? e.message : 'Could not link Google'))))}>Link Google as another sign-in method</button>}<div id="internal-google-link" />      {credentials?.google && <button onClick={() => void run(async () => { await confirmed(() => internalRequest(api,'/account/credentials/revoke',{ provider:'google' })); setCredentials(await internalRequest(api,'/account/credentials')); })}>Unlink Google</button>}</div>
+      </section>
+      <section className="section-block"><h2>Connect a device</h2><p className="field-note">Open BabySteps on your phone, watch or nursery device and enter its connection code here. Review its access before allowing it.</p>
+      <form className="form-grid" onSubmit={(event) => { event.preventDefault(); void run(async () => { setDeviceReview(await internalRequest(api,'/native/preview',{ userCode:deviceCode })); }); }}>
+        <label>Connection code<input autoComplete="off" autoCapitalize="characters" placeholder="Code shown on your device" value={deviceCode} onChange={(e) => { setDeviceCode(e.target.value); setDeviceReview(undefined); }} required /></label><button disabled={busy}>Review device</button></form>
       {deviceReview && <div><p>{deviceReview.purpose === 'nursery' ? 'This nursery device can send sound summaries and read the latest care status.' : deviceReview.purpose === 'watch' ? 'This watch can read feed, diaper and sleep status, and log feeds and diapers.' : 'This phone gets your family access, including editing for a parent account.'}</p>
-        <button onClick={() => void run(async () => { await confirmed(() => internalRequest(api,'/native/approve',{ familyId:family,userCode:deviceCode })); setDeviceCode(''); setDeviceReview(undefined); window.history.replaceState(null,'',window.location.pathname); setError('Device connected.'); })}>Allow this {deviceReview.purpose} for this family</button></div>}
-      <button onClick={() => void run(logout)}>Sign out</button></section>}
+        <button onClick={() => void run(async () => { await confirmed(() => internalRequest(api,'/native/approve',{ familyId:family,userCode:deviceCode })); setDeviceCode(''); setDeviceReview(undefined); setDevices(await internalRequest(api,'/account/sessions')); window.history.replaceState(null,'',window.location.pathname); setNotice('Device connected.'); })}>Allow this {deviceReview.purpose} for this family</button></div>}
+        <details className="reference-details"><summary>Manage connected devices{devices ? ` (${devices.devices.length})` : ''}</summary>
+          {devices?.devices.length === 0 && <p>No connected devices.</p>}<ul className="account-list">      {devices?.devices.map((device) => <li className="account-row" key={device.id}><span>Connected device {devices.devices.indexOf(device)+1}<small className="account-id">{device.id}</small></span><button onClick={() => void run(async () => { await confirmed(() => internalRequest(api,'/account/revoke',{ installationId:device.id })); setDevices(await internalRequest(api,'/account/sessions')); })}>Revoke device</button></li>)}</ul>
+        </details>
+        <details className="reference-details"><summary>Manage sign-in sessions</summary><p className="field-note">Revoking a session signs that session out. This list may include your current session.</p><ul className="account-list">      {devices?.sessions.map((item) => <li className="account-row" key={item.id}><span>Sign-in session<small>Opened {new Date(item.createdAt).toLocaleString()}</small></span><button onClick={() => void run(async () => { await confirmed(() => internalRequest(api,'/account/revoke',{ sessionId:item.id })); setDevices(await internalRequest(api,'/account/sessions')); })}>Revoke session</button></li>)}</ul></details>
+      </section>
+      <section className="section-block"><h2>Recovery &amp; security</h2>
+        <p className="field-note">Keep your saved recovery codes somewhere private in case you lose access to your sign-in methods.</p>
+        <details className="reference-details"><summary>Replace recovery codes</summary><p>Replacing codes invalidates all previous codes. Save the new set before leaving this page.</p>      <button onClick={() => void run(async () => { const result = await confirmed(() => internalRequest<{ accountId:string; recoveryCodes:string[] }>(api,'/account/recovery',{})); setRecovery({ accountId:result.accountId,codes:result.recoveryCodes }); })}>Replace recovery codes</button></details>
+      {activity.length > 0 && <details><summary>Recent account activity</summary>{activity.map((item,index) => <p key={index}>{new Date(item.createdAt).toLocaleString()} · {item.action.replace(/[._]/g,' ')}</p>)}</details>}
+        <details className="reference-details"><summary>Account details</summary><p className="account-id">Account ID: {session.accountId}</p><p className="account-id">Family ID: {family}</p></details>
+      </section>
+      {invite && <form onSubmit={(e) => { e.preventDefault(); void run(async () => { const result = await confirmed(() => internalRequest<{ familyId:string }>(api,'/invitations/accept',{ token:invite })); setInvite(''); await signedIn(); setFamily(result.familyId); window.history.replaceState(null,'',window.location.pathname); }); }}><label>Invitation token<input value={invite} onChange={(e) => setInvite(e.target.value)} /></label><button>Join invited family</button></form>}
+      <footer className="account-footer"><p>Signing out keeps this account’s offline changes on this device.</p><button className="secondary-button" disabled={busy} onClick={() => void run(logout)}>Sign out</button></footer>
+    </main>}
     <nav className="bottom-nav" aria-label="Primary" style={{ gridTemplateColumns:`repeat(${allowed.filter((item) => item !== 'Learn').length}, minmax(0,1fr))` }}>{allowed.filter((item) => item !== 'Learn').map((item) => {
-      const Icon = icons[item]; return <button key={item} className={showing === item ? 'active' : ''} aria-pressed={showing === item} onClick={() => { if (item === 'Log') setLogTypeFilter(null); setView(item); window.history.replaceState(null,'',`#${item.toLowerCase()}`); }}><Icon aria-hidden="true" /><span>{item}</span></button>;
+      const Icon = icons[item]; return <button key={item} className={showing === item ? 'active' : ''} aria-pressed={showing === item} onClick={() => { setNotice(''); if (item === 'Log') setLogTypeFilter(null); setView(item); window.history.replaceState(null,'',`#${item.toLowerCase()}`); }}><Icon aria-hidden="true" /><span>{item}</span></button>;
     })}</nav>
     <QuickAddDialog activeTimers={timers} eventType={dialog} editEvent={editing} loggedBy={caregiver || !editing ? data.actorProfileId : undefined} profile={profile} profiles={people} presetTimes={preset} onClose={() => { setDialog(null); setEditing(null); setPreset(null); }} onSave={saveEvent}
       onTimerStart={(type) => changeTimer(type,true)} onTimerStop={(type) => changeTimer(type,false)} />

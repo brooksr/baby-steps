@@ -19,6 +19,8 @@ interface SettingsPanelProps {
   profiles: BabyProfile[];
   /** The Google account this device is signed in with, when known. */
   signedInEmail?: string;
+  signedInProfileId?: string;
+  onOpenAccount?: () => void;
   storeStatus: StoreStatus | null;
   theme: Theme;
   onAddChild: (input: NewProfileInput) => Promise<void>;
@@ -122,6 +124,7 @@ export function SettingsPanel({
   profile,
   profiles,
   signedInEmail,
+  signedInProfileId,
   storeStatus,
   theme,
   onAddChild,
@@ -131,6 +134,7 @@ export function SettingsPanel({
   onApplyShifts,
   onArchiveProfile,
   onOpenLearn,
+  onOpenAccount,
   onRestoreProfile,
   onSaveProfile,
   onSelectChild,
@@ -140,6 +144,7 @@ export function SettingsPanel({
   onSignOut,
   onThemeChange
 }: SettingsPanelProps) {
+  const internal = storeStatus?.backend === 'internal';
   const savedUnits = getPreferredUnits(profile);
   const [name, setName] = useState(profile.name);
   const [dueDate, setDueDate] = useState(profile.dueDate ?? '');
@@ -159,7 +164,11 @@ export function SettingsPanel({
 
   /** The share sheet where there is one (a phone), an email everywhere else. */
   async function handleSendInvite(person: BabyProfile) {
-    if (onInviteProfile) { await onInviteProfile(person); return; }
+    if (onInviteProfile) {
+      try { await onInviteProfile(person); setStatus('Invitation link copied. Send it privately; it expires in 48 hours.'); }
+      catch (caught) { setStatus(caught instanceof Error ? caught.message : 'Could not create invitation.'); }
+      return;
+    }
     if (!familyId) {
       return;
     }
@@ -197,7 +206,7 @@ export function SettingsPanel({
   }
 
   function inviteButton(person: BabyProfile) {
-    if (!familyId || (!onInviteProfile && (!person.email || normalizeEmail(person.email) === normalizeEmail(signedInEmail)))) {
+    if (person.id === signedInProfileId || !familyId || (!onInviteProfile && (!person.email || normalizeEmail(person.email) === normalizeEmail(signedInEmail)))) {
       return null;
     }
 
@@ -385,7 +394,7 @@ export function SettingsPanel({
       timezone
     });
     resetAddForms();
-    setStatus(`${getFirstName({ name: helperName })} can now sign in with ${normalizeEmail(helperEmail)}. Share the Google Sheet with that account too.`);
+    setStatus(internal ? `${getFirstName({ name: helperName })} added. Send an invitation to give them access.` : `${getFirstName({ name: helperName })} can now sign in with ${normalizeEmail(helperEmail)}. Share the Google Sheet with that account too.`);
   }
 
   async function handleArchive(person: BabyProfile) {
@@ -454,16 +463,44 @@ export function SettingsPanel({
   }
 
   return (
-    <main className="view-stack">
+    <main className="view-stack settings-page">
+      <header className="page-intro"><h1>Settings</h1><p>Family profiles and app preferences.</p>
+        {onOpenAccount && <button className="secondary-button" type="button" onClick={onOpenAccount}><UserRound aria-hidden="true" />Sign-in &amp; account</button>}
+      </header>
       <section className="section-block">
         <div className="section-heading">
-          <h1>Settings</h1>
+          <h2>Appearance</h2>
+          <div className="segmented-control" aria-label="Theme">
+            {THEMES.map((option) => {
+              const Icon = option.icon;
+
+              return (
+                <button
+                  type="button"
+                  key={option.id}
+                  aria-pressed={theme === option.id}
+                  className={theme === option.id ? 'active' : ''}
+                  onClick={() => onThemeChange(option.id)}
+                >
+                  <Icon aria-hidden="true" />
+                  <span>{option.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      <section className="section-block">
+        <div className="section-heading">
+          <h2>{getFirstName(profile)}’s profile</h2>
           <span>
             {profiles.length > 1 && `${getFirstName(profile)} · `}
             {events.length} entries
           </span>
         </div>
 
+        <p className="field-note">Editing {profile.name}. Choose another person in Family to edit their profile.</p>
         <form className="form-grid" onSubmit={handleSaveProfile}>
           <label>
             Name
@@ -493,7 +530,7 @@ export function SettingsPanel({
           )}
           {editingParent && (
             <label className="form-grid-wide">
-              Google account
+              {internal ? 'Contact email (optional)' : 'Google account'}
               <input
                 type="email"
                 value={email}
@@ -556,6 +593,7 @@ export function SettingsPanel({
           <span>{childCount === 1 ? '1 child' : `${childCount} children`}{parentCount > 0 ? ` · ${parentCount} parent${parentCount === 1 ? '' : 's'}` : ''}</span>
         </div>
 
+        {internal && <p className="field-note">Add a parent or caregiver, then send them an invitation. A contact email alone does not grant access.</p>}
         <ul className="child-list">
           {active.map((person) => {
             const showing = person.id === profile.id;
@@ -714,7 +752,7 @@ export function SettingsPanel({
               />
             </label>
             <label className="form-grid-wide">
-              Google account
+              {internal ? 'Contact email (optional)' : 'Google account'}
               <input type="email" value={parentEmail} onChange={(event) => setParentEmail(event.target.value)} placeholder="name@gmail.com" />
             </label>
             <button className="primary-button" type="submit">Add parent</button>
@@ -729,8 +767,8 @@ export function SettingsPanel({
               <input value={helperName} onChange={(event) => setHelperName(event.target.value)} required autoFocus placeholder="Grandma" />
             </label>
             <label className="form-grid-wide">
-              Google account
-              <input type="email" value={helperEmail} onChange={(event) => setHelperEmail(event.target.value)} required placeholder="name@gmail.com" />
+              {internal ? 'Contact email (optional)' : 'Google account'}
+              <input type="email" value={helperEmail} onChange={(event) => setHelperEmail(event.target.value)} required={!internal} placeholder="name@gmail.com" />
             </label>
             <label className="form-grid-wide">
               Phone
@@ -758,6 +796,7 @@ export function SettingsPanel({
           </div>
         )}
 
+        <details className="reference-details"><summary>Profiles, access &amp; archiving</summary>
         <p className="field-note">
           Everyone keeps their own entries and reports — a child's growth and milestones, a parent's sleep and, for a
           mom, her cycle. Parents are also the guardian list on the Care page and the names an entry can be logged
@@ -768,6 +807,8 @@ export function SettingsPanel({
           {storeStatus?.backend === 'internal' ? "Invite each parent or caregiver to sign in with their own BabySteps account. Caregivers can use the children's Home, Key info and Emergency; the server limits their access." :
             "A caregiver signs in with their own Google account and sees the children's Home, Key info and Emergency. Anyone the sheet is shared with can open the sheet itself and read all of it."}
         </p>
+
+        </details>
 
         {showChecklist && storeStatus?.backend !== 'internal' && (
           <div className="admin-checklist">
@@ -872,65 +913,30 @@ export function SettingsPanel({
         </section>
       )}
 
-      <section className="settings-actions" aria-label="Data tools">
-        <button className="tool-button" type="button" onClick={handleJsonExport}>
-          <Download aria-hidden="true" />
-          <span>JSON</span>
-        </button>
-        <button className="tool-button" type="button" onClick={handleCsvExport}>
-          <Download aria-hidden="true" />
-          <span>CSV</span>
-        </button>
-        <label className="tool-button file-tool">
-          <Upload aria-hidden="true" />
-          <span>Import</span>
-          <input type="file" accept="application/json" onChange={handleImport} />
-        </label>
-      </section>
-
-      <section className="section-block">
-        <div className="section-heading">
-          <div>
-            <h2>Learn</h2>
-            <span>What BabySteps tracks, what it will not do, and the reference tables behind it.</span>
-          </div>
-        </div>
-        <button className="secondary-button learn-link" type="button" onClick={onOpenLearn}>
-          <BookOpen aria-hidden="true" />
-          <span>Open the Learn page</span>
-        </button>
-      </section>
-
-      <section className="section-block">
-        <div className="section-heading">
-          <h2>Appearance</h2>
-          <div className="segmented-control" aria-label="Theme">
-            {THEMES.map((option) => {
-              const Icon = option.icon;
-
-              return (
-                <button
-                  type="button"
-                  key={option.id}
-                  aria-pressed={theme === option.id}
-                  className={theme === option.id ? 'active' : ''}
-                  onClick={() => onThemeChange(option.id)}
-                >
-                  <Icon aria-hidden="true" />
-                  <span>{option.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </section>
 
       <section className="section-block sync-note">
         <div className="section-heading">
-          <h2>Storage</h2>
+          <h2>Data &amp; backups</h2>
           <span>{storeStatus?.backend === 'internal' ? 'BabySteps' : storeStatus?.backend === 'google-sheets' ? 'Google Sheets' : 'Local'}</span>
         </div>
-        <p>{storeStatus?.message}</p>
+        <p>{internal ? (storeStatus.connected ? 'Synced with your family’s BabySteps server. This device keeps an offline copy.' : 'Offline. Changes stay on this device until you reconnect.') : storeStatus?.message}</p>
+        <p className="field-note">Back up the whole family as JSON, or export {getFirstName(profile)}’s log as CSV. Import accepts a BabySteps JSON backup.</p>
+      <div className="settings-actions" aria-label="Data tools">
+        <button className="tool-button" type="button" onClick={handleJsonExport}>
+          <Download aria-hidden="true" />
+          <span>Family backup · JSON</span>
+        </button>
+        <button className="tool-button" type="button" onClick={handleCsvExport}>
+          <Download aria-hidden="true" />
+          <span>Current log · CSV</span>
+        </button>
+        <label className="tool-button file-tool">
+          <Upload aria-hidden="true" />
+          <span>Import backup</span>
+          <input type="file" accept="application/json" onChange={handleImport} />
+        </label>
+      </div>
+
         {signedInEmail && <p>Signed in as {signedInEmail}.</p>}
         {storeStatus?.familyId && storeStatus.backend !== 'internal' && (
           <>
@@ -953,6 +959,19 @@ export function SettingsPanel({
             {connecting ? 'Connecting' : 'Connect Google Sheet'}
           </button>
         )}
+      </section>
+
+      <section className="section-block">
+        <div className="section-heading">
+          <div>
+            <h2>Learn</h2>
+            <span>What BabySteps tracks, what it will not do, and the reference tables behind it.</span>
+          </div>
+        </div>
+        <button className="secondary-button learn-link" type="button" onClick={onOpenLearn}>
+          <BookOpen aria-hidden="true" />
+          <span>Open the Learn page</span>
+        </button>
       </section>
 
       {onSignOut && (

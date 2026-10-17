@@ -4011,3 +4011,55 @@ textarea {
 .growth-age-options { margin: 0 0 14px; }
 .growth-age-options .gestation-note { margin: 10px 0 0; }
 .expect-context { margin-top: 12px; }
+
+/* Settings describes the selected profile; Account describes the signed-in person. */
+.page-intro { display: grid; justify-items: start; gap: 8px; }
+.page-intro h1, .page-intro p { margin: 0; }
+.page-intro p, .account-footer p { color: var(--muted); }
+.page-intro button { display: inline-flex; align-items: center; gap: 8px; }
+.page-intro button svg { width: 18px; height: 18px; }
+.account-page .section-block { display: grid; gap: 14px; }
+.account-page h2, .account-page h3, .account-page p { margin: 0; }
+.account-page button {
+  padding: 10px 14px;
+  color: var(--blue-700);
+  font: inherit;
+  font-weight: 700;
+  background: var(--panel-blue);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.account-page button:disabled { cursor: wait; opacity: .6; }
+.account-page details > p, .account-page details > ul, .account-page details > button { margin-top: 12px; }
+.account-page summary { cursor: pointer; color: var(--blue-700); }
+.account-list { display: grid; gap: 10px; padding: 0; margin: 0; list-style: none; }
+.account-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.account-row > span { min-width: 0; }
+.account-row small { display: block; margin-top: 4px; color: var(--muted); }
+.account-id { overflow-wrap: anywhere; font-size: .85rem; }
+.account-provider { display: grid; justify-items: start; gap: 10px; padding-top: 16px; border-top: 1px solid var(--line); }
+.account-footer { display: grid; justify-items: start; gap: 12px; }
+.settings-page .section-heading { flex-wrap: wrap; }
+.settings-page .settings-actions { margin-top: 16px; }
+@media (max-width: 480px) {
+  .settings-page .child-list li { flex-wrap: wrap; }
+  .settings-page .child-pick { flex-basis: 100%; min-width: 0; }
+  .settings-page .child-pick span { min-width: 0; overflow-wrap: anywhere; }
+  .settings-page .settings-actions:not(.add-person) { grid-template-columns: 1fr; }
+  .account-page .form-grid { grid-template-columns: 1fr; }
+}
+.settings-page .field-note, .account-page .field-note {
+  padding: 0;
+  margin: 0 0 12px;
+  background: transparent;
+  border: 0;
+}
+.settings-page .child-archive { min-height: 40px; }
+@media (max-width: 480px) {
+  .settings-page .child-list li { display: grid; grid-template-columns: auto auto; justify-content: stretch; padding: 10px; border: 1px solid var(--line); border-radius: 10px; }
+  .settings-page .child-pick { grid-column: 1 / -1; }
+  .settings-page .child-archive { justify-content: center; }
+  .settings-page .settings-actions.add-person { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .settings-page .settings-actions.add-person > :last-child { grid-column: 1 / -1; }
+}

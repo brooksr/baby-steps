@@ -52,6 +52,21 @@ backup private key and downloaded snapshots are under the Git-ignored
 location. Recurring off-device backup delivery, alerting, physical-device checks
 and migration remain explicit rollout work.
 
+## Settings and account navigation
+
+Settings edits the person selected in the header, family profiles and invitations,
+appearance, and family backups. Contact emails are profile information; they do
+not grant internal account access. An invited parent or caregiver enrolls or signs
+in with their own account. Archiving continues to keep all of a person's entries.
+
+Account always describes the signed-in person, regardless of the selected child.
+It loads sign-in methods on opening and groups optional Google linking, device
+pairing, session revocation and recovery separately. Recovery-code replacement,
+session lists and technical IDs stay collapsed until needed. Keep security writes
+behind `confirmed()` / `withRecentSignIn`; opening or rearranging these panels must
+not weaken the server's recent-sign-in checks. Account owns sign-out in the
+internal app; Settings links to it instead of duplicating those controls.
+
 ## Build and development
 
 Use Node 24. Dependencies are pinned for SimpleWebAuthn (browser/server) and jose.
