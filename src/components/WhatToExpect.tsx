@@ -75,14 +75,15 @@ function Pregnancy({ outlook }: { outlook: PregnancyOutlook }) {
 
       <p className="expect-summary"><strong>About the size of</strong> {week.size}</p>
       <p className="expect-summary">{week.development}</p>
-      <details className="reference-details"><summary>Development & tips</summary>
       <Facets
         facets={[
           { icon: Lightbulb, label: 'Heads up', text: week.headsUp }
         ]}
       />
 
-      <Facts facts={week.facts} />
+      <details className="reference-details expect-context"><summary>Notes & context</summary>
+        <Facts facts={week.facts} />
+        <p className="expect-footnote">Every baby develops at their own pace. Ask your pediatrician about concerns.</p>
       </details>
     </>
   );
@@ -120,16 +121,16 @@ function Child({ outlook, name }: { outlook: ChildOutlook; name: string }) {
 
       <p className="expect-summary">{stage.summary}</p>
 
-      <p className="expect-takeaway"><Lightbulb aria-hidden="true" />{stage.headsUp}</p>
-      <details className="reference-details"><summary>Development, feeding & sleep</summary>
       <Facets
         facets={[
           { icon: Sparkles, label: 'Development', text: stage.development },
           { icon: Milk, label: 'Feeding', text: stage.feeding },
-          { icon: Moon, label: 'Sleep', text: stage.sleep }
+          { icon: Moon, label: 'Sleep', text: stage.sleep },
+          { icon: Lightbulb, label: 'Heads up', text: stage.headsUp }
         ]}
       />
 
+      <details className="reference-details expect-context"><summary>Notes & context</summary>
       <Facts facts={stage.facts} />
 
       {outlook.notes.length > 0 && (
@@ -140,7 +141,6 @@ function Child({ outlook, name }: { outlook: ChildOutlook; name: string }) {
         </ul>
       )}
 
-      </details>
       {basis === 'corrected' && gestation && (
         <p className="expect-basis">
           Born at <strong>{gestation.label}</strong>
@@ -155,6 +155,8 @@ function Child({ outlook, name }: { outlook: ChildOutlook; name: string }) {
           {` Feeding and diapers still run on the actual ${dayWord(outlook.ageDays)}.`}
         </p>
       )}
+      <p className="expect-footnote">Every baby develops at their own pace. Ask your pediatrician about concerns.</p>
+      </details>
     </>
   );
 }
@@ -225,9 +227,6 @@ export function WhatToExpect({ events = [], profile, now }: WhatToExpectProps) {
         <div className="expect-content">
           {outlook.phase === 'pregnancy' ? <Pregnancy outlook={outlook} /> : <Child outlook={outlook} name={name} />}
 
-          <p className="expect-footnote">
-            Every baby develops at their own pace. Ask your pediatrician about concerns.
-          </p>
         </div>
       )}
     </section>

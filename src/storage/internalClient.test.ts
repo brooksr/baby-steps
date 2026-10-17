@@ -12,6 +12,28 @@ const json = (body: unknown,status = 200) => new Response(JSON.stringify(body),{
 afterEach(() => { for (const client of clients.splice(0)) client.close(); vi.unstubAllGlobals(); });
 
 describe('internal offline cache and outbox',() => {
+  it('flushes queued writes and refreshes a stale local baseline even with no cursor changes',async () => {
+    const client = make(); const initial = bootstrap(client.accountId,client.familyId);
+    vi.stubGlobal('fetch',vi.fn(async () => json(initial))); await client.bootstrap();
+    await client.queue('tasks','queued','save',{ status:'open',title:'Queued task' });
+    const latest = bootstrap(client.accountId,client.familyId);
+    latest.data.tasks = [{ createdAt:timestamp,id:'remote',status:'open',title:'From another device',updatedAt:timestamp }];
+    const calls: string[] = [];
+    vi.stubGlobal('fetch',vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input); calls.push(url);
+      if (url.endsWith('/mutations')) {
+        const payload = { createdAt:timestamp,id:'queued',status:'open' as const,title:'Queued task',updatedAt:timestamp };
+        latest.data.tasks!.push(payload);
+        return json({ collection:'tasks',id:'queued',payload,revision:1 });
+      }
+      return url.includes('/changes?') ? json({ changes:[] }) : json(latest);
+    }));
+    await client.refresh();
+    const state = await client.state();
+    expect(state.queue).toEqual([]);
+    expect(state.data!.data.tasks!.map(task => task.id)).toEqual(['remote','queued']);
+    expect(calls[0]).toMatch(/mutations$/); expect(calls[calls.length-1]).toMatch(/bootstrap$/);
+  });
   it('keeps caches separate by deployment, account and family',async () => {
     expect(internalCacheName('/api/v1','account-a','family')).not.toBe(internalCacheName('/api/v1','account-b','family'));
     expect(internalCacheName('/api/v1','a','family-a')).not.toBe(internalCacheName('/api/v1','a','family-b'));

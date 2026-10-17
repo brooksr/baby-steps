@@ -86,6 +86,12 @@ export class InternalClient {
       await this.cache.outbox.add({ command,queuedAt:new Date().toISOString() });
     });
   }
+  /** Explicit refresh repairs the local baseline even when its cursor is current. */
+  async refresh() {
+    if (this.closed) return;
+    await this.sync();
+    if (!this.closed) await this.bootstrap();
+  }
   async sync() {
     if (this.syncing) return this.syncing;
     this.syncing = this.flush().finally(() => { this.syncing = undefined; });

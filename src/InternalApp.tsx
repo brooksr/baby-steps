@@ -78,11 +78,11 @@ export default function InternalApp() {
     const next = new InternalClient(api,session.accountId,family); current.current = next; setClient(next); setData(undefined); setQueue([]); setView(session.needsPasskey || window.location.hash.startsWith('#device=') ? 'Account':'Home');
     localStorage.setItem(CHOICE,JSON.stringify({ accountId:session.accountId,familyId:family }));
     let stopped = false; let running = false;
-    async function refresh() {
+    async function refresh(full = false) {
       if (stopped || running) return; running = true;
       try {
         const cached = await next.state(); if (!stopped) { setData(cached.data); setQueue(cached.queue); }
-        if (!cached.data) await next.bootstrap(); else await next.sync();
+        if (!cached.data) await next.bootstrap(); else if (full) await next.refresh(); else await next.sync();
         if (!stopped) { setOffline(false); const state = await next.state(); setData(state.data); setQueue(state.queue); }
       } catch (e) {
         if (!stopped) {
@@ -91,8 +91,12 @@ export default function InternalApp() {
         }
       } finally { running = false; }
     }
-    void refresh(); const interval = window.setInterval(() => void refresh(),45_000);
-    return () => { stopped = true; window.clearInterval(interval); if (current.current === next) current.current = undefined; next.close(); };
+    const resume = () => { if (document.visibilityState === 'visible') void refresh(true); };
+    window.addEventListener('online',resume); window.addEventListener('focus',resume); document.addEventListener('visibilitychange',resume);
+    void refresh(true); const interval = window.setInterval(() => void refresh(),45_000);
+    return () => { stopped = true; window.clearInterval(interval);
+      window.removeEventListener('online',resume); window.removeEventListener('focus',resume); document.removeEventListener('visibilitychange',resume);
+      if (current.current === next) current.current = undefined; next.close(); };
   },[api,family,session]);
   const people = data?.data.profiles ?? (data ? [data.data.profile] : []);
   const profile = getActiveProfiles(people).find((p) => p.id === activeId) ?? getActiveProfiles(people)[0];
@@ -146,7 +150,7 @@ export default function InternalApp() {
   return <div className="app-shell internal-app">
     <header className="app-header"><a className="app-brand" href={import.meta.env.BASE_URL} aria-label="BabySteps home"><img src={`${import.meta.env.BASE_URL}icons/icon-96.png`} alt="" width="40" height="40" /></a><ChildSwitcher activeId={profile.id} profiles={people} onSelect={(id) => { setActiveId(id); setView('Home'); }} />
       {families.length > 1 && <label>Family<select value={family} onChange={(e) => { setData(undefined); setQueue([]); setFamily(e.target.value); }}>{families.map((f) => <option key={f.familyId} value={f.familyId}>{f.name}</option>)}</select></label>}
-      <button className="icon-button header-sync" type="button" aria-label="Sync now" title="Sync now" disabled={busy} onClick={() => void run(async () => { await client!.sync(); setOffline(false); await reload(); })}><RefreshCw aria-hidden="true" className={busy ? 'spinning' : undefined} /></button>
+      <button className="icon-button header-sync" type="button" aria-label="Sync now" title="Sync now" disabled={busy} onClick={() => void run(async () => { await client!.refresh(); setOffline(false); await reload(); })}><RefreshCw aria-hidden="true" className={busy ? 'spinning' : undefined} /></button>
     </header>
     {offline && <p className="notice">Offline · changes stay on this device until you reconnect.</p>}{error && <p role="alert" className="error-banner">{error}</p>}{recoveryPanel}
     {queue.length > 0 && <section className="card"><h2>Queued changes ({queue.length})</h2>{queue.map((row) => <div key={row.order}><p>{{ events:'Entry',nursery:'Nursery summary',profiles:'Person',shopping:'Shopping item',tasks:'Task' }[row.command.collection]} · {row.error ? 'Needs review before syncing' : 'Waiting to sync'}</p>

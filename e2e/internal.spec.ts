@@ -124,7 +124,7 @@ test('real passkey account, family, offline queue, caregiver boundary and recove
   // Exercise mobile Home/Log/Reports with real growth and Night & Day content.
   const birthAt = new Date(Date.now()-90*86400_000).toISOString();
   const beforeGrowth = await request(page,`/families/${familyId}/bootstrap`);
-  expect((await request(page,`/families/${familyId}/mutations`,{ action:'save',collection:'profiles',id:child.id,expectedRevision:beforeGrowth.body.revisions[`profiles:${child.id}`],operationId:'mobile-profile',patch:{ dueDate:birthAt.slice(0,10),gender:'girl' } })).status).toBe(200);
+  expect((await request(page,`/families/${familyId}/mutations`,{ action:'save',collection:'profiles',id:child.id,expectedRevision:beforeGrowth.body.revisions[`profiles:${child.id}`],operationId:'mobile-profile',patch:{ dueDate:new Date(Date.parse(birthAt)+28*86400_000).toISOString().slice(0,10),gender:'girl' } })).status).toBe(200);
   for (const [id,type,startedAt,weightOz] of [['mobile-birth','birth',birthAt,116],['mobile-growth','growth',now,220]]) {
     expect((await request(page,`/families/${familyId}/mutations`,{ action:'save',collection:'events',expectedRevision:0,id,operationId:id,patch:{ babyId:child.id,startedAt,type,weightOz,lengthIn:24,headCircumferenceIn:15 } })).status).toBe(200);
   }
@@ -139,6 +139,10 @@ test('real passkey account, family, offline queue, caregiver boundary and recove
   await page.locator('.app-brand img').waitFor();
   await expect(page.getByRole('button',{ name:'Sync now',exact:true })).toBeVisible();
   await page.screenshot({ path:'test-results/mobile-home.png',fullPage:false });
+  await expect(page.locator('.expect-facet')).toHaveCount(4);
+  await expect(page.locator('.expect-basis')).toBeHidden();
+  await expect(page.locator('.expect-footnote')).toBeHidden();
+  await expect(page.locator('.expect-facts')).toBeHidden();
   await page.locator('.expect-card').screenshot({ path:'test-results/mobile-expect.png',style:'.bottom-nav { visibility: hidden; }' });
   for (const width of [320,390,768,1280]) {
     await page.setViewportSize({ width,height:844 });
@@ -147,6 +151,9 @@ test('real passkey account, family, offline queue, caregiver boundary and recove
     if (width===390) await page.screenshot({ path:'test-results/mobile-log.png',fullPage:true });
     await nav.getByRole('button',{ name:'Reports',exact:true }).click();
     await expect(page.locator('.growth-chart').first()).toBeVisible();
+    await expect(page.locator('.growth-percentile')).toHaveCount(3);
+    await expect(page.locator('.growth-percentile').first()).toBeVisible();
+    expect(await page.locator('.growth-age-options').evaluate(element => (element as HTMLDetailsElement).open)).toBe(false);
     expect(await page.evaluate(() => [...document.querySelectorAll('body *')].filter(el => el.getBoundingClientRect().right > innerWidth+1).map(el => ({ tag:el.tagName,class:el.className,right:el.getBoundingClientRect().right })).slice(0,12))).toEqual([]);
     if (width===390) {
       const grid = await page.locator('.growth-charts').boundingBox();

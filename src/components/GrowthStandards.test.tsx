@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { createDefaultBabyProfile } from '../domain/dates';
 import type { BirthEvent } from '../domain/types';
@@ -26,7 +27,9 @@ describe('GrowthStandards units', () => {
     expect(screen.queryByText('cm')).not.toBeInTheDocument();
     expect(screen.getByText(/7 lb 4 oz/)).toBeInTheDocument();
     expect(screen.getByText('lb')).toBeInTheDocument();
-    expect(screen.getAllByText(/Estimated P\d+ actual age/)).toHaveLength(3);
+    const percentiles = screen.getAllByLabelText(/Estimated percentile P\d+/);
+    expect(percentiles).toHaveLength(3);
+    percentiles.forEach(percentile => expect(percentile).toBeVisible());
   });
 
   it('labels the weight chart in ounces when the profile reads weights that way', () => {
@@ -44,11 +47,14 @@ describe('GrowthStandards units', () => {
   });
 
   // The WHO curves are built on term births, so a preterm baby opens corrected.
-  it('opens on corrected age when there is gestation to correct for', () => {
+  it('keeps the corrected comparison available behind closed details', async () => {
     const profile = { ...createDefaultBabyProfile(), birthDate: '2026-08-04T06:30:00.000Z', dueDate: '2026-09-01' };
 
     render(<GrowthStandards events={[{ ...birth, startedAt: '2026-08-04T06:30:00.000Z' }]} profile={profile} />);
 
+    expect(screen.getByRole('button', { name: 'Corrected' })).not.toBeVisible();
+    expect(screen.getByText(/corrected age subtracts/)).not.toBeVisible();
+    await userEvent.click(screen.getByText('Age comparison'));
     expect(screen.getByRole('button', { name: 'Corrected' })).toHaveAttribute('aria-pressed', 'true');
   });
 

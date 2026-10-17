@@ -112,6 +112,20 @@ export function GrowthStandards({ events, profile }: GrowthStandardsProps) {
             <h2>Growth standards</h2>
             <span>WHO {standardSex} · {measurements.length} measurement{measurements.length === 1 ? '' : 's'}</span>
           </div>
+
+        </div>
+
+        {/* WHO publishes boys' and girls' tables only. With no sex recorded the
+            boys' curves stand in — say so rather than comparing silently. */}
+        {profile.gender !== 'boy' && profile.gender !== 'girl' && (
+          <p className="gestation-note">
+            WHO growth standards are published for boys and girls, so these bands use the <strong>boys&rsquo;</strong>{' '}
+            reference.
+            <span>Set {firstName}&rsquo;s sex in Settings to compare against the matching curves.</span>
+          </p>
+        )}
+
+        {showCorrected && <details className="reference-details growth-age-options"><summary>Age comparison</summary>
           {showCorrected && gestation && (
             <div className="segmented-control" aria-label="Age basis">
               <button
@@ -132,18 +146,6 @@ export function GrowthStandards({ events, profile }: GrowthStandardsProps) {
               </button>
             </div>
           )}
-        </div>
-
-        {/* WHO publishes boys' and girls' tables only. With no sex recorded the
-            boys' curves stand in — say so rather than comparing silently. */}
-        {profile.gender !== 'boy' && profile.gender !== 'girl' && (
-          <p className="gestation-note">
-            WHO growth standards are published for boys and girls, so these bands use the <strong>boys&rsquo;</strong>{' '}
-            reference.
-            <span>Set {firstName}&rsquo;s sex in Settings to compare against the matching curves.</span>
-          </p>
-        )}
-
         {showCorrected && gestation && (
           <p className="gestation-note">
             Born at <strong>{gestation.label}</strong>
@@ -155,6 +157,8 @@ export function GrowthStandards({ events, profile }: GrowthStandardsProps) {
             </span>
           </p>
         )}
+        </details>}
+
 
         {assessments.length === 0 ? (
           <p className="empty-state">Add a growth entry (weight, length, or head) to see how {firstName} compares.</p>
@@ -166,7 +170,7 @@ export function GrowthStandards({ events, profile }: GrowthStandardsProps) {
                   <strong>{assessment.label}</strong>
                   <span className={`assess-pill band-${assessment.band}`}>{bandLabel[assessment.band]}</span>
                 </div>
-                <p className="growth-reading">{displayGrowthValue(assessment.metric, assessment.value, preferredUnits)} <span>· {assessment.ageMonths.toFixed(1)} mo{activeBasis === 'corrected' ? ' corrected' : ''}</span></p>
+                <p className="growth-reading">{displayGrowthValue(assessment.metric, assessment.value, preferredUnits)} <span className="growth-percentile" aria-label={`Estimated percentile P${assessment.percentile}`}>· P{assessment.percentile}</span></p>
                 <details className="reference-details growth-detail"><summary>Percentiles & reference</summary>
                 <p>
                   Median{' '}
@@ -199,10 +203,10 @@ export function GrowthStandards({ events, profile }: GrowthStandardsProps) {
               </div>
               <GrowthChart maxAgeMonths={chartMaxAgeMonths} standard={standard} plots={plots} showCorrected={showCorrected} />
               {showCorrected && (
-                <div className="chart-legend">
+                <details className="reference-details"><summary>Chart key</summary><div className="chart-legend">
                   <span className="chart-legend-item growth-legend-actual">Actual age</span>
                   <span className="chart-legend-item growth-legend-corrected">Corrected age</span>
-                </div>
+                </div></details>
               )}
               <div className="chart-stats">
                 <span>WHO reference · −2 to +2 SD</span>

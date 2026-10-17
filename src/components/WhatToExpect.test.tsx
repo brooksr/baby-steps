@@ -119,3 +119,13 @@ describe('WhatToExpect', () => {
     expect(card().querySelector('.expect-card-heading .expect-navigation')).toBeInTheDocument();
   });
 });
+
+it('shows main tips as banners while keeping notes and bullets closed', () => {
+  const { container } = render(<WhatToExpect profile={profileOf({ birthDate:'2026-07-23',dueDate:'2026-09-01' })} now={new Date('2026-11-20T12:00:00')} />);
+  for (const label of ['Development','Feeding','Sleep','Heads up']) {
+    expect(screen.getByText(label).closest('article')).toBeVisible();
+  }
+  expect(container.querySelector('.expect-basis')).not.toBeVisible();
+  expect(container.querySelector('.expect-footnote')).not.toBeVisible();
+  expect(container.querySelector('.expect-facts')).not.toBeVisible();
+});

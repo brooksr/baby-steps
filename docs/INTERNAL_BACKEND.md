@@ -263,7 +263,11 @@ and test a maximum offline interval before introducing pruning; do not remove
 receipts simply to save space. This favors correctness at the household's
 current volume over premature storage cleanup.
 
-PWA caches/outboxes are namespaced by deployment/API base, account and family.
+PWA caches/outboxes are namespaced by deployment/API base, account and family. Manual sync, page load, reconnect and foreground refresh flush queued writes
+before fetching a full bootstrap to refresh the local IndexedDB baseline, even
+when its change cursor reports no updates. Background polling remains incremental.
+Conflicting or offline writes stay queued; refresh never clears an outbox to
+repair a cache.
 The service worker bypasses APIs entirely and separates root/staged app shells.
 Offline writes retain original ids, timestamps and operation ids. Conflicts stay
 queued for explicit retry against the latest version or discard; export is

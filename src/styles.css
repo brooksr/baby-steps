@@ -3999,3 +3999,15 @@ textarea {
 @media (prefers-reduced-motion: reduce) {
   .header-sync .spinning { animation: none; }
 }
+.growth-reading .growth-percentile {
+  display: inline-block;
+  padding: 3px 8px;
+  color: var(--blue-700);
+  background: var(--panel-blue);
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+.growth-age-options { margin: 0 0 14px; }
+.growth-age-options .gestation-note { margin: 10px 0 0; }
+.expect-context { margin-top: 12px; }
