@@ -108,12 +108,28 @@ describe('predictNextBath', () => {
   it('spans the usual 2–3 calendar days after the last bath', () => {
     expect(predictNextBath([bath('2026-09-08T19:00:00')], new Date('2026-09-09T09:00:00'))).toEqual({
       due: false,
+      windowEndAt: new Date('2026-09-11T19:00:00').toISOString(),
       windowEndKey: '2026-09-11',
+      windowStartAt: new Date('2026-09-10T19:00:00').toISOString(),
       windowStartKey: '2026-09-10'
     });
   });
 
-  it('is due once the window has run out', () => {
-    expect(predictNextBath([bath('2026-09-08T19:00:00')], new Date('2026-09-11T09:00:00'))?.due).toBe(true);
+  it('waits until strictly after the original bath time on day three', () => {
+    const events = [bath('2026-09-08T19:00:00')];
+    for (const time of ['2026-09-11T09:00:00', '2026-09-11T18:59:59', '2026-09-11T19:00:00']) {
+      expect(predictNextBath(events, new Date(time))?.due).toBe(false);
+      expect(getCadenceReminders(events, { now: new Date(time) })).toEqual([]);
+    }
+    const after = new Date('2026-09-11T19:00:00.001');
+    expect(predictNextBath(events, after)?.due).toBe(true);
+    expect(getCadenceReminders(events, { now: after })[0]?.kind).toBe('bath');
+  });
+
+  it('preserves the bath’s local time across the daylight-saving change', () => {
+    const prediction = predictNextBath([bath('2026-10-31T19:00:00')], new Date('2026-11-03T18:00:00'))!;
+    expect(new Date(prediction.windowStartAt).getHours()).toBe(19);
+    expect(new Date(prediction.windowEndAt).getHours()).toBe(19);
+    expect(prediction.due).toBe(false);
   });
 });

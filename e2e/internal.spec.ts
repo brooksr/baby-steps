@@ -119,9 +119,15 @@ test('real passkey account, family, offline queue, caregiver boundary and recove
   expect(JSON.parse(readFileSync(restored,'utf8')).tracker.events).toHaveLength(4);
   await page.screenshot({ path:'test-results/internal-account.png',fullPage:true });
   await page.setViewportSize({ width:390,height:844 });
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   await page.screenshot({ path:'test-results/internal-mobile.png',fullPage:true });
-  for (const width of [320,390,768,1280]) {
+  // Production has more profiles, longer contact details and classic scrollbars.
+  for (const [id,kind,name] of [['extra-parent','parent','Alexandria Example'],['extra-child','child','Christopher Example']]) {
+    expect((await request(page,`/families/${familyId}/mutations`,{ action:'save',collection:'profiles',expectedRevision:0,id,operationId:id,patch:{ kind,name,email:'long-family-contact@example.com',phone:'(000) 000-0000',timezone:'America/Los_Angeles' } })).status).toBe(200);
+  }
+  await page.getByRole('button',{ name:'Sync now',exact:true }).click();
+  await page.addStyleTag({ content:'html { scrollbar-gutter: stable; }' });
+  for (const width of [320,390,500,768,1280]) {
     await page.setViewportSize({ width,height:844 });
     await page.getByRole('navigation',{ name:'Primary' }).getByRole('button',{ name:'Account',exact:true }).click();
     await expect(page.getByRole('heading',{ name:'Sign-in methods',exact:true })).toBeVisible();
@@ -129,12 +135,19 @@ test('real passkey account, family, offline queue, caregiver boundary and recove
     await expect(page.getByText(`Account ID: ${recovery[0]}`,{ exact:true })).toBeHidden();
     await expect(page.getByRole('button',{ name:'Replace recovery codes',exact:true })).toBeHidden();
     await expect(page.getByLabel('Connection code',{ exact:true })).toBeVisible();
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
     if (width===390) await page.screenshot({ path:'test-results/mobile-account-organized.png',fullPage:true });
     await page.getByRole('navigation',{ name:'Primary' }).getByRole('button',{ name:'Settings',exact:true }).click();
     await expect(page.getByRole('heading',{ name:'Data & backups',exact:true })).toBeVisible();
+    const chrome = await page.locator('.app-header').evaluate(header => {
+      const sync = header.querySelector('.header-sync')!.getBoundingClientRect();
+      const brand = header.querySelector('.app-brand')!.getBoundingClientRect();
+      return { right:sync.right,top:sync.top,brandTop:brand.top,width:document.documentElement.clientWidth };
+    });
+    expect(chrome.right).toBeLessThanOrEqual(chrome.width);
+    expect(Math.abs(chrome.top-chrome.brandTop)).toBeLessThanOrEqual(2);
     await expect(page.getByRole('button',{ name:'Sign out',exact:true })).toHaveCount(0);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
     if (width===390) await page.screenshot({ path:'test-results/mobile-settings-organized.png',fullPage:true });
     await page.getByRole('button',{ name:'Sign-in & account',exact:true }).click();
     await expect(page.getByRole('heading',{ name:'Account',exact:true })).toBeVisible();
@@ -162,17 +175,17 @@ test('real passkey account, family, offline queue, caregiver boundary and recove
   await expect(page.locator('.expect-footnote')).toBeHidden();
   await expect(page.locator('.expect-facts')).toBeHidden();
   await page.locator('.expect-card').screenshot({ path:'test-results/mobile-expect.png',style:'.bottom-nav { visibility: hidden; }' });
-  for (const width of [320,390,768,1280]) {
+  for (const width of [320,390,500,768,1280]) {
     await page.setViewportSize({ width,height:844 });
     await nav.getByRole('button',{ name:'Log',exact:true }).click();
-    expect(await page.evaluate(() => [...document.querySelectorAll('body *')].filter(el => el.getBoundingClientRect().right > innerWidth+1).map(el => ({ tag:el.tagName,class:el.className,right:el.getBoundingClientRect().right })).slice(0,12))).toEqual([]);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
     if (width===390) await page.screenshot({ path:'test-results/mobile-log.png',fullPage:true });
     await nav.getByRole('button',{ name:'Reports',exact:true }).click();
     await expect(page.locator('.growth-chart').first()).toBeVisible();
     await expect(page.locator('.growth-percentile')).toHaveCount(3);
     await expect(page.locator('.growth-percentile').first()).toBeVisible();
     expect(await page.locator('.growth-age-options').evaluate(element => (element as HTMLDetailsElement).open)).toBe(false);
-    expect(await page.evaluate(() => [...document.querySelectorAll('body *')].filter(el => el.getBoundingClientRect().right > innerWidth+1).map(el => ({ tag:el.tagName,class:el.className,right:el.getBoundingClientRect().right })).slice(0,12))).toEqual([]);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
     if (width===390) {
       const grid = await page.locator('.growth-charts').boundingBox();
       const chart = await page.locator('.growth-charts .chart-card').first().boundingBox();

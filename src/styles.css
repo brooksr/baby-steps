@@ -4063,3 +4063,18 @@ textarea {
   .settings-page .settings-actions.add-person { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .settings-page .settings-actions.add-person > :last-child { grid-column: 1 / -1; }
 }
+
+/* The elapsed reading highlights the window; the whole tile highlights only after it. */
+.hero-metric.in-range strong { color: #f4c95d; }
+
+/* Reserve the sync button's space and let only the family names scroll. */
+.internal-app .app-header { display: grid; grid-template-columns: 40px minmax(0, 1fr) 40px; }
+.internal-app .app-header .app-brand { grid-column: 1; }
+.internal-app .app-header .child-switcher { grid-column: 2; width: 100%; margin-left: 0; }
+.internal-app .app-header .header-sync { grid-column: 3; }
+.internal-app .app-header > label { grid-column: 1 / -1; }
+/* Classic scrollbars reduce the usable viewport below the advertised screen width. */
+body { min-width: 0; }
+.settings-page .form-grid > label, .settings-page .child-pick, .settings-page .child-pick span { min-width: 0; }
+.settings-page .form-grid input, .settings-page .form-grid select { max-width: 100%; }
+.settings-page .child-pick span { overflow-wrap: anywhere; }

@@ -60,7 +60,15 @@ function HeroMetric({ children, className, label, onOpen }: { children: ReactNod
   );
 }
 
+/** Highlight the window itself; its midpoint is only an estimate. */
+function cadenceClass(prediction: { windowEndAt: string; windowStartAt: string } | null, now: Date) {
+  if (!prediction) return '';
+  if (now.getTime() > Date.parse(prediction.windowEndAt)) return ' past-due';
+  return now.getTime() >= Date.parse(prediction.windowStartAt) ? ' in-range' : '';
+}
+
 export function Dashboard({ activeTimers, allowedTypes, events, profile, profiles = [], todayKey, onAdd, onOpenLog }: DashboardProps) {
+  const now = new Date();
   const canAdd = (type: CareEventType) => !allowedTypes || allowedTypes.includes(type);
   const openLog = (type: CareEventType) => (onOpenLog ? () => onOpenLog(type) : undefined);
   // Whoever the switcher is on — an alert has to name the right baby.
@@ -73,7 +81,7 @@ export function Dashboard({ activeTimers, allowedTypes, events, profile, profile
   const todayEvents = sortEventsDescending(events.filter((event) => isSameLocalDate(event.startedAt, todayKey)));
   const summary = getDailySummary(todayEvents);
   const lastFeed = getLastEvent(events, (event) => event.type === 'feed');
-  const nextFeed = activeTimers.feed ? null : predictNextFeed(events);
+  const nextFeed = activeTimers.feed ? null : predictNextFeed(events, now);
   const lastNursing = getLastEvent(events, (event) => event.type === 'feed' && event.method === 'nursing');
   const nextSide =
     lastNursing && lastNursing.type === 'feed'
@@ -84,14 +92,12 @@ export function Dashboard({ activeTimers, allowedTypes, events, profile, profile
           : 'either'
       : null;
   const lastDiaper = getLastEvent(events, (event) => event.type === 'diaper');
-  const nextDiaper = predictNextDiaper(events);
+  const nextDiaper = predictNextDiaper(events, now);
   const lastBath = getLastEvent(events, (event) => event.type === 'bath');
-  const nextBath = predictNextBath(events);
+  const nextBath = predictNextBath(events, now);
   const dayLabel = (dateKey: string) => (dateKey === todayKey ? 'Today' : formatWeekday(dateKey));
   const sideSuffix = nextSide ? ` · ${nextSide}` : '';
-  const cadenceReminders = getCadenceReminders(events, { feedInProgress: Boolean(activeTimers.feed) });
-  const bathReminder = cadenceReminders.find((reminder) => reminder.kind === 'bath');
-  const feedReminder = cadenceReminders.find((reminder) => reminder.kind === 'feed');
+  const cadenceReminders = getCadenceReminders(events, { feedInProgress: Boolean(activeTimers.feed), now });
   const otherCadenceReminders = cadenceReminders.filter((reminder) => reminder.kind !== 'bath');
   // Under a fortnight the headline is already in days, so the exact age below it
   // would only say the same thing twice.
@@ -139,7 +145,7 @@ export function Dashboard({ activeTimers, allowedTypes, events, profile, profile
         {(lastFeed || lastDiaper || lastBath) && (
           <div className="hero-metrics">
             {lastFeed && (
-              <HeroMetric className={`hero-metric${feedReminder ? ' past-due' : ''}`} label="View feed log" onOpen={openLog('feed')}>
+              <HeroMetric className={`hero-metric${cadenceClass(nextFeed, now)}`} label="View feed log" onOpen={openLog('feed')}>
                 <span>Last feed</span>
                 <strong>{formatAgo(lastFeed.startedAt).replace(/ ago$/, '')}</strong>
                 <small>{formatClock(lastFeed.startedAt)}</small>
@@ -152,7 +158,7 @@ export function Dashboard({ activeTimers, allowedTypes, events, profile, profile
               </HeroMetric>
             )}
             {lastDiaper && (
-              <HeroMetric className={`hero-metric${nextDiaper && nextDiaper.minutesAway <= 0 ? ' past-due' : ''}`} label="View diaper log" onOpen={openLog('diaper')}>
+              <HeroMetric className={`hero-metric${cadenceClass(nextDiaper, now)}`} label="View diaper log" onOpen={openLog('diaper')}>
                 <span>Last diaper</span>
                 <strong>{formatAgo(lastDiaper.startedAt).replace(/ ago$/, '')}</strong>
                 <small>{formatClock(lastDiaper.startedAt)}</small>
@@ -164,13 +170,13 @@ export function Dashboard({ activeTimers, allowedTypes, events, profile, profile
               </HeroMetric>
             )}
             {lastBath && (
-              <HeroMetric className={`hero-metric${bathReminder ? ' past-due' : ''}`} label="View bath log" onOpen={openLog('bath')}>
+              <HeroMetric className={`hero-metric${cadenceClass(nextBath, now)}`} label="View bath log" onOpen={openLog('bath')}>
                 <span>Last bath</span>
                 <strong>{formatDaysSince(lastBath.startedAt)}</strong>
                 <small>{`${formatShortDate(lastBath.startedAt)} · ${formatClock(lastBath.startedAt)}`}</small>
                 {nextBath && (
                   <small className="hero-metric-detail">
-                    {nextBath.due ? 'Due today' : `Next ~${dayLabel(nextBath.windowStartKey)}–${dayLabel(nextBath.windowEndKey)}`}
+                    {nextBath.due ? 'Due today' : `Next ${dayLabel(nextBath.windowStartKey)}–${dayLabel(nextBath.windowEndKey)}`}
                   </small>
                 )}
               </HeroMetric>

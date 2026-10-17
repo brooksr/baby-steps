@@ -78,6 +78,31 @@ describe('Dashboard', () => {
     expect(onAdd).toHaveBeenCalledWith('bath');
   });
 
+  it('highlights the bath window until the original time on day three has passed', () => {
+    vi.useFakeTimers();
+    try {
+      const events: CareEvent[] = [{ babyId: 'avery-example', createdAt: '2026-09-11T19:00:00', id: 'bath-window', startedAt: '2026-09-11T19:00:00', syncState: 'local', type: 'bath', updatedAt: '2026-09-11T19:00:00' }];
+      const props = { activeTimers: {}, events, profile: createDefaultBabyProfile(), todayKey: '2026-09-12', onAdd: vi.fn(), onOpenLog: vi.fn() };
+      vi.setSystemTime(new Date('2026-09-12T19:00:00'));
+      const { rerender } = render(<Dashboard {...props} />);
+      const tile = screen.getByRole('button', { name: 'View bath log' });
+      expect(tile).not.toHaveClass('in-range', 'past-due');
+      expect(within(tile).getByText('Next Sun–Mon')).toBeInTheDocument();
+      vi.setSystemTime(new Date('2026-09-13T19:00:00'));
+      rerender(<Dashboard {...props} todayKey="2026-09-13" />);
+      expect(tile).toHaveClass('in-range');
+      expect(within(tile).getByText('Next Today–Mon')).toBeInTheDocument();
+      vi.setSystemTime(new Date('2026-09-14T19:00:00'));
+      rerender(<Dashboard {...props} todayKey="2026-09-14" />);
+      expect(tile).toHaveClass('in-range');
+      expect(tile).not.toHaveClass('past-due');
+      vi.advanceTimersByTime(1);
+      rerender(<Dashboard {...props} todayKey="2026-09-14" />);
+      expect(tile).toHaveClass('past-due');
+      expect(tile).not.toHaveClass('in-range');
+    } finally { vi.useRealTimers(); }
+  });
+
   it('leaves out the last-feed, last-diaper and last-bath cards until each has an entry', () => {
     const { container } = render(<Dashboard activeTimers={{}} events={[]} profile={createDefaultBabyProfile(new Date('2026-06-19T12:00:00.000Z'))} todayKey="2026-09-02" onAdd={vi.fn()} onOpenLog={vi.fn()} />);
 
@@ -177,6 +202,38 @@ describe('Dashboard', () => {
     expect(within(diaper).getByText('Likely now · wet')).toBeInTheDocument();
 
     vi.useRealTimers();
+  });
+
+  it('keeps feed and diaper elapsed text highlighted through the end of their windows', () => {
+    vi.useFakeTimers();
+    try {
+      const lastAt = new Date('2026-09-02T09:00:00');
+      const events: CareEvent[] = Array.from({ length: 8 }, (_, index) => ({
+        babyId: 'avery-example', createdAt: lastAt.toISOString(), id: `window-diaper-${index}`, kind: 'wet',
+        startedAt: new Date(lastAt.getTime() - (7-index)*3*3600_000).toISOString(),
+        syncState: 'local', type: 'diaper', updatedAt: lastAt.toISOString()
+      }));
+      events.push({ babyId: 'avery-example', createdAt: lastAt.toISOString(), id: 'window-feed', method: 'bottle', startedAt: lastAt.toISOString(), syncState: 'local', type: 'feed', updatedAt: lastAt.toISOString() });
+      vi.setSystemTime(new Date('2026-09-02T12:00:00'));
+      const props = { activeTimers: {}, events, profile: createDefaultBabyProfile(), todayKey: '2026-09-02', onAdd: vi.fn(), onOpenLog: vi.fn() };
+      const { rerender } = render(<Dashboard {...props} />);
+      const feed = screen.getByRole('button', { name: 'View feed log' });
+      const diaper = screen.getByRole('button', { name: 'View diaper log' });
+      expect(feed).toHaveClass('in-range');
+      expect(feed).not.toHaveClass('past-due');
+      expect(diaper).toHaveClass('in-range');
+      expect(diaper).not.toHaveClass('past-due');
+      vi.advanceTimersByTime(1);
+      rerender(<Dashboard {...props} />);
+      expect(feed).toHaveClass('past-due');
+      expect(diaper).not.toHaveClass('past-due');
+      vi.setSystemTime(new Date('2026-09-02T12:15:00'));
+      rerender(<Dashboard {...props} />);
+      expect(diaper).toHaveClass('in-range');
+      vi.advanceTimersByTime(1);
+      rerender(<Dashboard {...props} />);
+      expect(diaper).toHaveClass('past-due');
+    } finally { vi.useRealTimers(); }
   });
 
   it('headlines a simplified age after birth, with the exact days below it', () => {

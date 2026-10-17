@@ -1,4 +1,4 @@
-import { addDaysToKey, formatDaysAgo, formatDuration, getDaysAgo, getLocalDateKey } from './dates';
+import { addDaysToKey, formatDaysAgo, formatDuration, getLocalDateKey } from './dates';
 import { getLastEvent } from './summary';
 import type { CareEvent } from './types';
 
@@ -65,7 +65,9 @@ export interface BathPrediction {
   /** The window has run out — the same moment the bath reminder appears. */
   due: boolean;
   /** Local day keys, inclusive: the usual 2–3 days on from the last bath. */
+  windowEndAt: string;
   windowEndKey: string;
+  windowStartAt: string;
   windowStartKey: string;
 }
 
@@ -78,10 +80,17 @@ export function predictNextBath(events: CareEvent[], now = new Date()): BathPred
   }
 
   const lastKey = getLocalDateKey(lastBath.startedAt);
+  // Keep the local time of day across calendar days, including DST changes.
+  const windowStart = new Date(lastBath.startedAt);
+  windowStart.setDate(windowStart.getDate() + BATH_CADENCE_DAYS.min);
+  const windowEnd = new Date(lastBath.startedAt);
+  windowEnd.setDate(windowEnd.getDate() + BATH_CADENCE_DAYS.max);
 
   return {
-    due: getDaysAgo(lastBath.startedAt, now) >= BATH_CADENCE_DAYS.max,
+    due: now.getTime() > windowEnd.getTime(),
+    windowEndAt: windowEnd.toISOString(),
     windowEndKey: addDaysToKey(lastKey, BATH_CADENCE_DAYS.max),
+    windowStartAt: windowStart.toISOString(),
     windowStartKey: addDaysToKey(lastKey, BATH_CADENCE_DAYS.min)
   };
 }
@@ -95,7 +104,7 @@ function getFeedReminder(events: CareEvent[], now: Date): CadenceReminder | null
 
   const minutesSince = Math.round((now.getTime() - new Date(lastFeed.startedAt).getTime()) / MINUTE);
 
-  if (minutesSince < FEED_CADENCE_HOURS.max * 60) {
+  if (now.getTime() <= Date.parse(lastFeed.startedAt) + FEED_CADENCE_HOURS.max * 60 * MINUTE) {
     return null;
   }
 
@@ -113,8 +122,8 @@ function getBathReminder(events: CareEvent[], now: Date): CadenceReminder | null
     return null;
   }
 
-  // Baths are counted in calendar days, the way the dashboard shows them.
-  if (getDaysAgo(lastBath.startedAt, now) < BATH_CADENCE_DAYS.max) {
+  // The third day stays in range until the original bath time has passed.
+  if (!predictNextBath(events, now)?.due) {
     return null;
   }
 
