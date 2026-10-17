@@ -1,5 +1,6 @@
 package com.babysteps.nurserysensor.care.ui
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -13,6 +14,8 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
+import com.babysteps.nurserysensor.R
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -32,6 +35,7 @@ import com.babysteps.nurserysensor.care.model.EventType
 import com.babysteps.nurserysensor.care.model.Profile
 import com.babysteps.nurserysensor.care.model.Tracker
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.time.Instant
 
 enum class Tab(val key: String,val label: String,val icon: ImageVector) {
@@ -99,6 +103,8 @@ fun CareApp(nursery: @Composable () -> Unit) {
         var preset by remember { mutableStateOf<Pair<Instant,Instant?>?>(null) }
         var detail by remember { mutableStateOf<Metric?>(null) }
         var deleting by remember { mutableStateOf<CareEvent?>(null) }
+        val scope=rememberCoroutineScope()
+        var syncing by remember { mutableStateOf(false) }
         val snackbar=remember { SnackbarHostState() }
 
         LaunchedEffect(refused) { refused?.let { snackbar.showSnackbar("Not saved: $it"); CareRepository.clearRefused() } }
@@ -116,7 +122,7 @@ fun CareApp(nursery: @Composable () -> Unit) {
                 if(tab==Tab.NURSERY) { Box(Modifier.weight(1f)) { nursery() }; return@Column }
                 if(profile==null) { ConnectScreen(state); return@Column }
                 val allowed=if(state.caregiver) listOf(Tab.HOME,Tab.CARE,Tab.ACCOUNT) else if(profile.isParent) PARENT_TABS else CHILD_TABS
-                val view=if(tab in allowed || tab==Tab.LEARN) tab else Tab.HOME
+                val view=if(tab in allowed || tab==Tab.LEARN || tab==Tab.ACCOUNT) tab else Tab.HOME
                 val events=tracker.eventsFor(profile.id)
                 val childIds=tracker.profiles.filter { it.isChild }.map { it.id }.toSet()
                 val timers=remember(profile.id,timerRevision) { prefs.timers(profile.id) }
@@ -125,7 +131,9 @@ fun CareApp(nursery: @Composable () -> Unit) {
                     openLog={ if(!state.caregiver) { logFilter=it; tab=Tab.LOG } },openDetail={ detail=it },navigate={ tab=it },
                     caregiver=state.caregiver,actorId=state.actorProfileId,selectProfile={ activeId=it; prefs.activeProfileId=it },logSleep={ s,e -> editing=null; preset=s to e; addType=EventType.SLEEP })
 
-                Header(active,profile) { ui.selectProfile(it) }
+                Header(active,profile,syncing,ui.selectProfile,{ ui.navigate(Tab.HOME) }) {
+                    if(!syncing) scope.launch { syncing=true; try { CareRepository.flush(context); CareRepository.refresh(context) } finally { syncing=false } }
+                }
                 SyncBanner(state)
                 // Each screen, for each person, opens at its top.
                 val scroll=remember(view,profile.id) { androidx.compose.foundation.ScrollState(0) }
@@ -138,7 +146,7 @@ fun CareApp(nursery: @Composable () -> Unit) {
                         Tab.SHOPPING -> ShoppingScreen(ui)
                         Tab.TODOS -> TodosScreen(ui)
                         Tab.SETTINGS -> SettingsScreen(ui,state)
-                        Tab.ACCOUNT -> ConnectionCard(state)
+                        Tab.ACCOUNT -> ConnectionCard(state,ui)
                         Tab.LEARN -> LearnScreen()
                         Tab.NURSERY -> {}
                     }
@@ -161,13 +169,13 @@ fun CareApp(nursery: @Composable () -> Unit) {
 
 
 @Composable
-private fun Header(active: List<Profile>,profile: Profile,onSelect: (String) -> Unit) {
+private fun Header(active: List<Profile>,profile: Profile,syncing: Boolean,onSelect: (String) -> Unit,onHome: () -> Unit,onSync: () -> Unit) {
     val p=LocalPalette.current
     Row(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=10.dp),verticalAlignment=Alignment.CenterVertically) {
-        Text("BabySteps",style=display(21),color=p.blue700)
-        Spacer(Modifier.weight(1f))
+        Image(painterResource(R.mipmap.ic_launcher_foreground),"BabySteps home",Modifier.size(40.dp).clip(Radius).background(p.panel).clickable(onClick=onHome))
+        Spacer(Modifier.width(8.dp))
         // Only with more than one person, so a single-baby tracker looks untouched.
-        if(active.size>1) Row(Modifier.widthIn(max=260.dp).horizontalScroll(rememberScrollState()).clip(Radius).background(p.panel).border(1.dp,p.line,Radius).padding(3.dp),
+        if(active.size>1) Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()).clip(Radius).background(p.panel).border(1.dp,p.line,Radius).padding(3.dp),
             horizontalArrangement=Arrangement.spacedBy(2.dp)) {
             active.forEach { person ->
                 val on=person.id==profile.id
@@ -175,7 +183,10 @@ private fun Header(active: List<Profile>,profile: Profile,onSelect: (String) -> 
                     Text(person.firstName,style=body(13,700),color=if(on) (if(p.dark) p.page else Color.White) else p.ink)
                 }
             }
-        }
+        } else Spacer(Modifier.weight(1f))
+        Spacer(Modifier.width(6.dp))
+        if(syncing) Box(Modifier.size(40.dp),contentAlignment=Alignment.Center) { CircularProgressIndicator(Modifier.size(20.dp),strokeWidth=2.dp) }
+        else IconAction(Lucide.refresh,"Sync now",onClick=onSync)
     }
 }
 
@@ -196,7 +207,7 @@ private fun BottomBar(tabs: List<Tab>,selected: Tab,onSelect: (Tab) -> Unit) {
     val p=LocalPalette.current
     Row(Modifier.fillMaxWidth().background(p.panel).border(1.dp,p.line).navigationBarsPadding().padding(horizontal=4.dp,vertical=6.dp)) {
         tabs.forEach { t ->
-            val on=t==selected || (selected==Tab.LEARN && t==Tab.SETTINGS)
+            val on=t==selected || (selected in listOf(Tab.LEARN,Tab.ACCOUNT) && t==Tab.SETTINGS)
             val tint=p.nav(t.key)
             Column(Modifier.weight(1f).clip(Radius).background(if(on) tint.copy(alpha=if(p.dark) 0.16f else 0.12f) else Color.Transparent).clickable { onSelect(t) }.padding(vertical=6.dp),
                 horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(2.dp)) {
@@ -214,9 +225,9 @@ private fun ConnectScreen(state: CareRepository.State) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
         Text("BabySteps",style=display(28),color=p.blue700)
         Panel {
-            Heading(if(state.configured) "Reading the family log" else "Connect to the Babysteps Pi",level=2)
-            Muted(if(state.configured) state.problem ?: "One moment — reading the shared sheet through the Pi." else
-                "This app reads and writes the family's shared Babysteps sheet through the Pi, the way the web app does through Google. Enter the Pi's address and the app token (APP_API_TOKEN in ~/babysteps/events.env on the Pi).",size=14)
+            Heading(if(state.configured) "Reading the family log" else "Connect your BabySteps account",level=2)
+            Muted(if(state.configured) state.problem ?: "One moment — syncing your family log." else
+                "Sign in on the BabySteps website, then approve this device using the connection code below.",size=14)
             if(state.configured) LinearProgressIndicator(Modifier.fillMaxWidth(),color=p.blue500)
         }
         ConnectionCard()

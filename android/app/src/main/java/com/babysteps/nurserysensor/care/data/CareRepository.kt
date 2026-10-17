@@ -134,14 +134,14 @@ object CareRepository {
         withContext(Dispatchers.Main) { load(app) }
         val settings=AppSettings(app)
         if(settings.internal.selected) { refreshInternal(app,settings.internal); return@withContext }
-        if(!settings.configured) { withContext(Dispatchers.Main) { publish(app,problem="Connect to the Babysteps Pi in Settings") }; return@withContext }
+        if(!settings.configured) { withContext(Dispatchers.Main) { publish(app,problem="Connect your BabySteps account in Settings → Sign-in & account") }; return@withContext }
         val seen=generation
         try {
             val reply=send(settings,"GET",settings.endpoint,null)
             when {
-                reply.code==401 -> withContext(Dispatchers.Main) { publish(app,problem="The Pi refused the app token · check Settings") }
+                reply.code==401 -> withContext(Dispatchers.Main) { publish(app,problem="The Pi refused the legacy token · check Account → Advanced") }
                 // The Pi answers the old shared-token route with 410 once it has moved to accounts.
-                reply.code==410 -> withContext(Dispatchers.Main) { publish(app,problem="This Pi now uses BabySteps accounts · connect your account in Settings") }
+                reply.code==410 -> withContext(Dispatchers.Main) { publish(app,problem="This Pi now uses BabySteps accounts · connect in Settings → Sign-in & account") }
                 reply.code!in 200..299 -> withContext(Dispatchers.Main) { publish(app,problem="The Pi could not read the sheet (${reply.code}) · showing the last copy") }
                 else -> {
                     val tracker=Tracker.parse(reply.body)
@@ -235,8 +235,8 @@ object CareRepository {
                 // 410 is the Pi having moved to accounts: keep the change for the export/connect path, never drop it.
                 val retry=result.code==401 || result.code==410 || result.code==429 || result.code>=500
                 if(retry) {
-                    withContext(Dispatchers.Main) { publish(app,problem=when(result.code) { 401 -> "The Pi refused the app token · check Settings"
-                        410 -> "This Pi now uses BabySteps accounts · connect your account in Settings"; else -> "The Pi is unavailable (${result.code}) · will retry" }) }
+                    withContext(Dispatchers.Main) { publish(app,problem=when(result.code) { 401 -> "The Pi refused the legacy token · check Account → Advanced"
+                        410 -> "This Pi now uses BabySteps accounts · connect in Settings → Sign-in & account"; else -> "The Pi is unavailable (${result.code}) · will retry" }) }
                     break
                 }
                 withContext(Dispatchers.Main) {

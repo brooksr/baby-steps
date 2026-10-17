@@ -62,7 +62,7 @@ fun NightReport(ui: Ui,averageRange: DateRange?,scopeLabel: String) {
     val toLog=night.sleeps.flatMap { it.unlogged }.filter { it.end!=null }
 
     Panel(event=EventType.SLEEP) {
-        Heading("Night & Day","7 PM – 7 AM – 7 PM")
+        Heading("Night & Day","Sleep, wakes and the day that follows")
         Row(verticalAlignment=Alignment.CenterVertically) {
             IconAction(Lucide.chevronLeft,"Previous night",if(nightKey>earliest) p.ink else p.line) { if(nightKey>earliest) nightKey=BabyNights.shiftNightKey(nightKey,-1) }
             Column(Modifier.weight(1f),horizontalAlignment=Alignment.CenterHorizontally) {
@@ -71,17 +71,18 @@ fun NightReport(ui: Ui,averageRange: DateRange?,scopeLabel: String) {
             }
             IconAction(Lucide.chevronRight,"Next night",if(nightKey<latest) p.ink else p.line) { if(nightKey<latest) nightKey=BabyNights.shiftNightKey(nightKey,1) }
         }
+        Heading("Night","7pm–7am",level=3)
         if(!night.tracked) EmptyState("Nothing logged around this night.") else {
             val wakes=(night.wakes+night.edges).sortedBy { it.start }
             Track(night.start,night.end,"night",night.sleeps,wakes.map { it.start to it.resumed },wakes.flatMap { it.items },night.heard,night.wakes.map { it.start },
                 night.sleeps.flatMap { it.unlogged },{ u -> ui.logSleep(u.start,u.end) },selectedCry) { selectedCry=if(selectedCry==it) null else it }
-            Legend(listOfNotNull("Logged sleep" to p.tint(EventType.SLEEP),"Estimated" to p.tint(EventType.SLEEP).copy(alpha=0.45f),"Awake" to p.pastDue)+
-                wakes.flatMap { w -> w.types }.distinct().sortedBy { it.key }.map { it.label to p.tint(it) }+(if(nursery!=null) listOf("Crying heard" to p.danger) else emptyList()))
-            if(toLog.isNotEmpty()) Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+            Disclosure("Track legend") { Legend(listOfNotNull("Logged sleep" to p.tint(EventType.SLEEP),"Estimated" to p.tint(EventType.SLEEP).copy(alpha=0.45f),"Awake" to p.pastDue)+
+                wakes.flatMap { w -> w.types }.distinct().sortedBy { it.key }.map { it.label to p.tint(it) }+(if(nursery!=null) listOf("Crying heard" to p.danger) else emptyList())) }
+            if(toLog.isNotEmpty()) Column(verticalArrangement=Arrangement.spacedBy(6.dp)) {
                 SecondaryButton("Log ${plural(toLog.size,"estimated sleep")}") {
                     toLog.forEach { u -> CareRepository.addEvent(context,JSONObject().put("babyId",ui.profile.id).put("type","sleep").put("startedAt",isoString(u.start)).put("endedAt",isoString(u.end!!))) }
                 }
-                Muted("or tap a hatched bar to log just that one",Modifier.weight(1f),12)
+                Muted("Or tap one hatched stretch to log it.",size=12)
             }
             MetricGrid(listOf(
                 Metric("Asleep",Dates.duration(night.sleepMinutes),listOf((if(night.estimated) "estimated" else "logged")+if(night.inProgress) " · so far" else ""),EventType.SLEEP),
@@ -90,7 +91,7 @@ fun NightReport(ui: Ui,averageRange: DateRange?,scopeLabel: String) {
                 Metric("Bedtime",night.bedtime?.let(Dates::clock) ?: "—",listOf(if(night.bedtime!=null) "logged sleep" else "not logged"),EventType.SLEEP)),ui.openDetail)
         }
 
-        Heading("Day",Dates.nightLabel(day.dateKey),level=3)
+        Heading("Day","7am–7pm · ${Dates.nightLabel(day.dateKey)}",level=3)
         when {
             day.upcoming -> EmptyState("Starts when the night ends.")
             !dayTracked -> EmptyState("Nothing logged this day${if(day.inProgress) " yet" else ""}.")
@@ -103,10 +104,10 @@ fun NightReport(ui: Ui,averageRange: DateRange?,scopeLabel: String) {
 
         CryPanel(ui,night.heard+day.heard,selectedCry) { selectedCry=if(selectedCry==it) null else it }
 
-        if(nursery!=null) Muted(if(night.sensor==null) "Nursery sensor: not running this night." else
+        if(nursery!=null) Disclosure("Nursery coverage") { Muted(if(night.sensor==null) "Nursery sensor: not running this night." else
             "Nursery sensor: "+(if(night.heard.isEmpty()) "no crying heard overnight" else "crying heard ${if(night.heard.size==1) "once" else "${night.heard.size} times"} overnight")+
             night.heard.count { !it.withWake }.let { if(it>0) " ($it with nothing logged, outlined — a possible wake, not counted)" else "" }+
-            " · listening ${Math.round(night.sensor.coveragePercent)}% of noon to noon",size=12)
+            " · listening ${Math.round(night.sensor.coveragePercent)}% of noon to noon",size=12) }
 
         report?.let { r ->
             Heading("Averages",scopeLabel,level=3)
@@ -121,7 +122,7 @@ fun NightReport(ui: Ui,averageRange: DateRange?,scopeLabel: String) {
             }
         }
 
-        Muted("Wakes are night feeds, changes and meds logged within 30 minutes of each other. Sleep not logged as a sleep entry is estimated: the time between wakes, less ${BabyNights.SETTLE_MINUTES} minutes to settle. Crying the sensor heard is taken out of estimated sleep the same way, but it never adds a wake or changes a logged sleep: the sensor only hears what reaches the phone.",size=12)
+        Disclosure("How sleep is estimated") { Muted("Wakes are night feeds, changes and meds logged within 30 minutes of each other. Sleep not logged as a sleep entry is estimated: the time between wakes, less ${BabyNights.SETTLE_MINUTES} minutes to settle. Crying the sensor heard is taken out of estimated sleep the same way, but it never adds a wake or changes a logged sleep: the sensor only hears what reaches the phone.",size=12) }
     }
 }
 

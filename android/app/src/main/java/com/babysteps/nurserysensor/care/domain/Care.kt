@@ -176,6 +176,16 @@ object Diapers {
         val useFeed=lastFeed!=null && wetLag.averageMinutes!=null && wetLag.samples>=MIN_GAPS
         if(useFeed) expected=expected*(1-FEED_WEIGHT)+(t(lastFeed!!)+wetLag.averageMinutes!!*MINUTE)*FEED_WEIGHT
         val half=min(90.0,max(15.0,sd.roundToInt().toDouble()))
+        var windowStart=expected-half*MINUTE
+        var windowEnd=expected+half*MINUTE
+        val local=now.atZone(Dates.zone)
+        val overnight=local.hour>=19 || local.hour<7
+        if(overnight) {
+            val morning=(if(local.hour>=19) local.toLocalDate().plusDays(1) else local.toLocalDate()).atTime(7,0).atZone(Dates.zone).toInstant()
+            windowEnd=min(t(last)+8*60*MINUTE,morning.toEpochMilli().toDouble())
+            expected=min(expected,windowEnd)
+            windowStart=min(windowStart,expected)
+        }
         val away=Math.round((expected-now.toEpochMilli())/MINUTE)
         val variation=if(typical>0) sd/typical else 1.0
         val samples=effective(g).roundToInt()
@@ -186,8 +196,8 @@ object Diapers {
         // Dirty if the usual dirty stretch will have run out by the predicted time.
         val dirty=list.filter { it.coversDirty }; val dirtyGaps=gaps(dirty,now,MAX_DIRTY_GAP)
         val kind=if(dirty.isEmpty() || dirtyGaps.size<MIN_DIRTY_GAPS) "wet" else if((expected-t(dirty.last()))/MINUTE>=weightedMean(dirtyGaps)) "dirty" else "wet"
-        return Prediction(expectedAt,expectedAt.minusMillis((half*MINUTE).roundToLong()),expectedAt.plusMillis((half*MINUTE).roundToLong()),away,kind,
-            confidence,samples,typical,"$basis · $samples recent gaps")
+        return Prediction(expectedAt,Instant.ofEpochMilli(windowStart.roundToLong()),Instant.ofEpochMilli(windowEnd.roundToLong()),away,kind,
+            confidence,samples,typical,"$basis · $samples recent gaps"+if(overnight) " · overnight window up to 8h (7pm–7am)" else "")
     }
 }
 
@@ -195,7 +205,10 @@ object Diapers {
 object Cadence {
     data class Reminder(val kind: String,val title: String,val message: String)
     data class FeedPrediction(val expectedAt: Instant,val minutesAway: Long,val windowStart: Instant,val windowEnd: Instant)
-    data class BathPrediction(val due: Boolean,val windowStartKey: String,val windowEndKey: String)
+    data class BathPrediction(val due: Boolean,val windowStartKey: String,val windowEndKey: String,val windowStart: Instant,val windowEnd: Instant)
+
+    /** Same inclusive window and strict end boundary as the web hero. */
+    fun inWindow(start: Instant?,end: Instant?,now: Instant)=start!=null && end!=null && !now.isBefore(start) && !now.isAfter(end)
 
     fun nextFeed(events: List<CareEvent>,now: Instant=Dates.now()): FeedPrediction? {
         val last=Summary.last(events) { it.type==EventType.FEED } ?: return null
@@ -206,18 +219,20 @@ object Cadence {
     fun nextBath(events: List<CareEvent>,now: Instant=Dates.now()): BathPrediction? {
         val last=Summary.last(events) { it.type==EventType.BATH } ?: return null
         val key=Dates.key(last.start)
-        return BathPrediction(due=Dates.daysAgo(last.start,now)>=3,windowStartKey=Dates.addDays(key,2),windowEndKey=Dates.addDays(key,3))
+        val start=last.start.atZone(Dates.zone).plusDays(2).toInstant()
+        val end=last.start.atZone(Dates.zone).plusDays(3).toInstant()
+        return BathPrediction(now.isAfter(end),Dates.addDays(key,2),Dates.addDays(key,3),start,end)
     }
 
     fun reminders(events: List<CareEvent>,feedInProgress: Boolean,now: Instant=Dates.now()): List<Reminder> {
         val out=ArrayList<Reminder>()
         if(!feedInProgress) Summary.last(events) { it.type==EventType.FEED }?.let { feed ->
             val since=Math.round((now.toEpochMilli()-feed.start.toEpochMilli())/60_000.0)
-            if(since>=180) out.add(Reminder("feed","Last feed was ${Dates.duration(since)} ago",
+            if(now.isAfter(feed.start.plusSeconds(3*3600))) out.add(Reminder("feed","Last feed was ${Dates.duration(since)} ago",
                 "Feeds usually land every 2–3 hours, day and night. Offer one when you can — if feeds keep slipping or something seems off, check in with your pediatrician."))
         }
         Summary.last(events) { it.type==EventType.BATH }?.let { bath ->
-            if(Dates.daysAgo(bath.start,now)>=3) out.add(Reminder("bath","Last bath was ${Dates.daysAgoText(bath.start,now)}",
+            if(nextBath(events,now)?.due==true) out.add(Reminder("bath","Last bath was ${Dates.daysAgoText(bath.start,now)}",
                 "Every 2–3 days is the usual rhythm for a bath. No rush if today is busy — a quick top-and-tail counts."))
         }
         return out

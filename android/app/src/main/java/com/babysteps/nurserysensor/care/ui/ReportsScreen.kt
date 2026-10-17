@@ -206,10 +206,12 @@ fun GrowthStandards(profile: Profile,events: List<CareEvent>) {
 
     Panel {
         Heading("Growth standards","WHO $sex · ${measurements.size} measurement${if(measurements.size==1) "" else "s"}")
-        if(showCorrected) Segmented(listOf(false to "Actual age",true to "Corrected"),corrected,Modifier.fillMaxWidth()) { corrected=it }
-        if(profile.gender!="boy" && profile.gender!="girl") FieldNote("WHO growth standards are published for boys and girls, so these bands use the boys’ reference. Set ${profile.firstName}’s sex in Settings to compare against the matching curves.")
-        if(showCorrected && g!=null) FieldNote("Born at ${g.label}${if(g.latePreterm) " (late preterm)" else " (preterm)"} — corrected age subtracts ${g.correctionDays} days. "+
-            if(useCorrected) "Comparing against babies at the same developmental age." else "Comparing against full-term babies with the same birthday.")
+        Disclosure("Age comparison & reference notes") {
+            if(showCorrected) Segmented(listOf(false to "Actual age",true to "Corrected"),corrected,Modifier.fillMaxWidth()) { corrected=it }
+            if(profile.gender!="boy" && profile.gender!="girl") Muted("Using the boys’ WHO reference. Set sex in Settings to choose the matching curves.")
+            if(showCorrected && g!=null) Muted("Born at ${g.label}. Corrected age subtracts ${g.correctionDays} days.")
+            Muted("WHO reference bands are informational. Discuss concerns with your pediatrician.")
+        }
         if(assessments.isEmpty()) EmptyState("Add a growth entry (weight, length, or head) to see how ${profile.firstName} compares.")
         assessments.forEach { a ->
             val color=when(a.band) { "below", "above" -> p.danger; else -> if(p.dark) Color(0xFF86C98D) else Color(0xFF3D8046) }
@@ -218,9 +220,9 @@ fun GrowthStandards(profile: Profile,events: List<CareEvent>) {
                     Ink(a.label,Modifier.weight(1f))
                     Text(when(a.band) { "below" -> "Below range"; "above" -> "Above range"; else -> "On track" },Modifier.clip(RoundedCornerShape(999.dp)).background(color.copy(alpha=0.14f)).padding(horizontal=10.dp,vertical=3.dp),style=body(12,800),color=color)
                 }
-                Ink("${show(a.metric,a.value)} at ${Units.number(a.ageMonths,1)} mo${if(useCorrected) " corrected" else ""} · median ${show(a.metric,a.standard.median)} (range ${show(a.metric,a.standard.p2)}–${show(a.metric,a.standard.p98)})",size=14,weight=500)
-                Muted("Estimated P${actual[a.metric]?.percentile} actual age"+if(showCorrected) " · P${correctedMap[a.metric]?.percentile} corrected age" else "",size=12)
-                Muted(a.summary,size=12)
+                Ink("${show(a.metric,a.value)} · P${a.percentile}",size=17,weight=800)
+                Muted("Median ${show(a.metric,a.standard.median)} · range ${show(a.metric,a.standard.p2)}–${show(a.metric,a.standard.p98)}",size=12)
+
             }
         }
     }
@@ -229,8 +231,8 @@ fun GrowthStandards(profile: Profile,events: List<CareEvent>) {
         val plots=Growth.plots(measurements,metric)
         Panel {
             Row { Text(standard.label,Modifier.weight(1f),style=display(17),color=p.ink); Text(unit(metric),style=display(17),color=p.ink) }
-            GrowthChart(standard,plots,maxAge,showCorrected) { convert(metric,it) }
-            if(showCorrected) Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) { Dot(p.blue700); Muted("Actual age",size=12); Dot(p.accentStrong); Muted("Corrected age",size=12) }
+            GrowthChart(standard,plots,maxAge,useCorrected) { convert(metric,it) }
+            if(useCorrected) Disclosure("Chart age comparison") { Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) { Dot(p.blue700); Muted("Actual age",size=12); Dot(p.accentStrong); Muted("Corrected age",size=12) } }
             Row { Muted("WHO -2 SD…+2 SD band",Modifier.weight(1f),12); Muted("${plots.size} plotted",size=12) }
         }
     }

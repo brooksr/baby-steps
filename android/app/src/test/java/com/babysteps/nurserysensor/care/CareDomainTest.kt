@@ -70,6 +70,53 @@ class CareDomainTest {
         assertTrue(Cadence.reminders(events,true,Instant.parse("2026-10-16T16:10:00Z")).isEmpty())
     }
 
+    @Test fun bathWindowWaitsForTheOriginalTimeAndKeepsLocalTimeAcrossDst() {
+        val events=listOf(event("bath",at("2026-09-08T19:00").toString()))
+        for(time in listOf("2026-09-11T09:00","2026-09-11T18:59:59","2026-09-11T19:00")) {
+            val now=at(time); val prediction=Cadence.nextBath(events,now)!!
+            assertFalse(prediction.due)
+            assertTrue(Cadence.inWindow(prediction.windowStart,prediction.windowEnd,now))
+            assertTrue(Cadence.reminders(events,false,now).isEmpty())
+        }
+        val after=at("2026-09-11T19:00").plusMillis(1)
+        assertTrue(Cadence.nextBath(events,after)!!.due)
+        assertEquals("bath",Cadence.reminders(events,false,after).single().kind)
+        val dst=Cadence.nextBath(listOf(event("bath",at("2026-10-31T19:00").toString())),at("2026-11-03T18:00"))!!
+        assertEquals(19,dst.windowEnd.atZone(Dates.zone).hour)
+        assertFalse(dst.due)
+    }
+
+    private fun diaperWindow(last: String,now: String): Diapers.Prediction {
+        val end=at(last)
+        val events=(0..7).map { event("diaper",end.minusSeconds((7-it)*3L*3600).toString(),"kind" to "wet") }
+        return Diapers.predict(events,at(now))!!
+    }
+
+    @Test fun overnightDiaperAllowanceUsesEightElapsedHoursAndSevenAmBoundary() {
+        val p=diaperWindow("2026-10-01T19:00","2026-10-02T01:00")
+        assertEquals(at("2026-10-02T03:00"),p.windowEnd)
+        assertEquals(at("2026-10-01T21:45"),p.windowStart)
+        assertTrue(Cadence.inWindow(p.windowStart,p.windowEnd,at("2026-10-02T03:00")))
+        assertFalse(Cadence.inWindow(p.windowStart,p.windowEnd,at("2026-10-02T03:00").plusMillis(1)))
+        assertEquals(at("2026-10-02T07:00"),diaperWindow("2026-10-01T23:00","2026-10-02T06:59:59").windowEnd)
+        assertEquals(at("2026-10-02T02:15"),diaperWindow("2026-10-01T23:00","2026-10-02T07:00").windowEnd)
+        assertEquals(at("2026-10-01T19:15"),diaperWindow("2026-10-01T16:00","2026-10-01T18:59:59").windowEnd)
+        assertEquals(at("2026-10-02T00:00"),diaperWindow("2026-10-01T16:00","2026-10-01T19:00").windowEnd)
+        val late=diaperWindow("2026-10-02T06:00","2026-10-02T06:30")
+        assertEquals(at("2026-10-02T07:00"),late.windowEnd)
+        assertFalse(late.windowStart.isAfter(late.windowEnd))
+        assertEquals(at("2026-10-31T23:00").plusSeconds(8*3600),diaperWindow("2026-10-31T23:00","2026-11-01T01:30").windowEnd)
+    }
+
+    @Test fun feedWindowIncludesItsEndAndTimerSuppressesReminder() {
+        val events=listOf(event("feed",at("2026-10-01T09:00").toString(),"method" to "bottle"))
+        val end=at("2026-10-01T12:00"); val prediction=Cadence.nextFeed(events,end)!!
+        assertTrue(Cadence.inWindow(prediction.windowStart,prediction.windowEnd,end))
+        assertTrue(Cadence.reminders(events,false,end).isEmpty())
+        assertEquals("feed",Cadence.reminders(events,false,end.plusMillis(1)).single().kind)
+        assertTrue(Cadence.reminders(events,true,end.plusMillis(1)).isEmpty())
+    }
+
     @Test fun growthBandsAndCorrectedAge() {
         val st=Growth.standards("boy")
         assertEquals("within",Growth.classify(Growth.Metric.WEIGHT,0.0,3.3,st).band)

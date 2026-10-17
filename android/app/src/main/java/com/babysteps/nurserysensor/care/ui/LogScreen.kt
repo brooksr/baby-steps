@@ -39,7 +39,7 @@ fun LogScreen(ui: Ui,initialType: EventType?) {
         else GROUPS.find { it.first==filter }?.second?.second?.let { allowed -> result=result.filter { it.type in allowed } }
         val q=search.trim().lowercase()
         if(q.isNotEmpty()) result=result.filter { EventText.search(it).contains(q) }
-        result
+        result.sortedByDescending { it.start }
     }
 
     Panel {

@@ -79,15 +79,24 @@ fun SettingsScreen(ui: Ui,state: CareRepository.State) {
     var metric by remember(profile.id) { mutableStateOf(profile.metric) }
     var ouncesOnly by remember(profile.id) { mutableStateOf(profile.ouncesOnly) }
     val parentEdit=profile.isParent
+    val internal=remember { AppSettings(context).internal.selected }
+
+    Heading("Settings","Family profiles and app preferences.",level=1)
+    SecondaryButton("Sign-in & account",icon=Lucide.userRound) { ui.navigate(Tab.ACCOUNT) }
+    Panel {
+        val theme by DevicePrefs.theme.collectAsState()
+        Heading("Appearance")
+        Segmented(listOf("system" to "Auto","light" to "Light","dark" to "Dark"),theme ?: prefs.theme,Modifier.fillMaxWidth()) { prefs.theme=it }
+    }
 
     Panel {
-        Heading("Settings",(if(ui.profiles.size>1) "${profile.firstName} · " else "")+"${ui.events.size} entries",level=1)
+        Heading("${profile.firstName}’s profile","Editing ${profile.name} · ${ui.events.size} entries")
         TextInput("Name",name,{ name=it })
         if(!parentEdit) DateKeyInput("Due date",dueDate,{ dueDate=it })
         if(parentEdit) {
             Select("Role",PARENT_ROLE_LABELS.toList(),role) { role=it }
             TextInput("Phone",phone,{ phone=it },placeholder="(000) 000-0000",keyboard=androidx.compose.ui.text.input.KeyboardType.Phone)
-            TextInput("Google account",email,{ email=it },placeholder="name@gmail.com",keyboard=androidx.compose.ui.text.input.KeyboardType.Email)
+            TextInput(if(internal) "Contact email (optional)" else "Google account",email,{ email=it },placeholder="name@gmail.com",keyboard=androidx.compose.ui.text.input.KeyboardType.Email)
         }
         DateKeyInput("Birth date",birthDate,{ birthDate=it })
         if(!parentEdit) Select("Gender",listOf("" to "Not set")+GENDER_LABELS.toList(),gender) { gender=it }
@@ -113,11 +122,12 @@ fun SettingsScreen(ui: Ui,state: CareRepository.State) {
     val saveCsv=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri -> uri?.let { status=if(write(context,it,eventsCsv(ui))) "CSV exported." else "Could not write the file." } }
     val openJson=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { status=importJson(context,ui.tracker,it) } }
     Panel {
-        Heading("Your data","Export everything, or import a Babysteps JSON export")
-        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-            SecondaryButton("JSON",Modifier.weight(1f),icon=Lucide.download) { saveJson.launch("babysteps-${Dates.today()}.json") }
-            SecondaryButton("CSV",Modifier.weight(1f),icon=Lucide.download) { saveCsv.launch("babysteps-${profile.name.lowercase().replace(Regex("[^a-z0-9]+"),"-").trim('-').ifEmpty { "tracker" }}-events.csv") }
-            SecondaryButton("Import",Modifier.weight(1f),icon=Lucide.upload) { openJson.launch(arrayOf("application/json","*/*")) }
+        Heading("Data & backups","This device keeps an offline copy. Sync sends queued changes and refreshes your family log.")
+        Muted("JSON backs up the family; CSV exports ${profile.firstName}’s log.")
+        Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            SecondaryButton("Family backup · JSON",Modifier.fillMaxWidth(),icon=Lucide.download) { saveJson.launch("babysteps-${Dates.today()}.json") }
+            SecondaryButton("Current log · CSV",Modifier.fillMaxWidth(),icon=Lucide.download) { saveCsv.launch("babysteps-${profile.name.lowercase().replace(Regex("[^a-z0-9]+"),"-").trim('-').ifEmpty { "tracker" }}-events.csv") }
+            SecondaryButton("Import backup",Modifier.fillMaxWidth(),icon=Lucide.upload) { openJson.launch(arrayOf("application/json","*/*")) }
         }
     }
 
@@ -126,12 +136,6 @@ fun SettingsScreen(ui: Ui,state: CareRepository.State) {
         SecondaryButton("Open the Learn page",Modifier.fillMaxWidth(),icon=Lucide.bookOpen) { ui.navigate(Tab.LEARN) }
     }
 
-    Panel {
-        val theme by DevicePrefs.theme.collectAsState()
-        Heading("Appearance") { Segmented(listOf("system" to "Auto","light" to "Light","dark" to "Dark"),theme ?: prefs.theme,Modifier.width(210.dp)) { prefs.theme=it } }
-    }
-
-    ConnectionCard(state)
     status?.let { Text(it,Modifier.fillMaxWidth().clip(Radius).background(p.blue100).padding(12.dp),style=body(14,700),color=p.ink) }
 }
 
@@ -155,6 +159,7 @@ private fun importJson(context: Context,tracker: Tracker,uri: Uri): String {
 private fun FamilyPanel(ui: Ui,metric: Boolean,ouncesOnly: Boolean,timezone: String,onStatus: (String) -> Unit) {
     val context=LocalContext.current
     val p=LocalPalette.current
+    val internal=remember { AppSettings(context).internal.selected }
     val active=Family.active(ui.profiles); val helpers=Family.caregiverAccounts(ui.profiles); val archived=Family.archived(ui.profiles)
     val parentCount=active.count { it.isParent }; val childCount=active.size-parentCount
     var confirming by remember { mutableStateOf("") }
@@ -183,6 +188,10 @@ private fun FamilyPanel(ui: Ui,metric: Boolean,ouncesOnly: Boolean,timezone: Str
 
     Panel {
         Heading("Family",(if(childCount==1) "1 child" else "$childCount children")+if(parentCount>0) " · $parentCount parent${if(parentCount==1) "" else "s"}" else "")
+        if(internal) {
+            Muted("Add people here, then send an invitation from Settings → Family on the website. Contact email alone does not grant access.")
+            SecondaryButton("Manage family invitations",icon=Lucide.navigation) { openAccountWebsite(context) }
+        }
         active.forEach { person ->
             row(person,if(person.isParent) Lucide.userRound else Lucide.baby,
                 if(person.isParent) listOfNotNull(PARENT_ROLE_LABELS[person.parentRole ?: "parent"],person.phone).joinToString(" · ") else Dates.dueStatus(person),
@@ -207,14 +216,17 @@ private fun FamilyPanel(ui: Ui,metric: Boolean,ouncesOnly: Boolean,timezone: Str
             }
             else -> AddPersonForm(adding!!,ui,units,timezone,onDone={ adding=null },onStatus=onStatus)
         }
+        Disclosure("Profiles, access & archiving") {
         FieldNote("Everyone keeps their own entries and reports — a child's growth and milestones, a parent's sleep and, for a mom, her cycle. Parents are also the guardian list on the Care page and the names an entry can be logged under. Archiving takes someone out of the switcher and keeps everything they have: every entry stays exactly as it is, and you can bring them back whenever you like. Nothing here is ever deleted.")
-        FieldNote("A caregiver, such as a grandparent or a sitter, signs in to the web app with their own Google account and sees only the children's Home and the Care page's Key info and Emergency tabs. Share the family's Google Sheet with them from the web app.")
+        Muted(if(internal) "Caregivers sign in with their own BabySteps account. The server limits them to the children’s Home, Key info and Emergency." else "Caregivers use their own Google account on the legacy web app. Sheet sharing is managed there.")
+        }
     }
 }
 
 @Composable
 private fun AddPersonForm(kind: String,ui: Ui,units: JSONObject,timezone: String,onDone: () -> Unit,onStatus: (String) -> Unit) {
     val context=LocalContext.current
+    val internal=remember { AppSettings(context).internal.selected }
     var name by remember { mutableStateOf("") }
     var due by remember { mutableStateOf("") }
     var birth by remember { mutableStateOf("") }
@@ -228,10 +240,10 @@ private fun AddPersonForm(kind: String,ui: Ui,units: JSONObject,timezone: String
             "child" -> { Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) { DateKeyInput("Due date",due,{ due=it },Modifier.weight(1f)); DateKeyInput("Birth date",birth,{ birth=it },Modifier.weight(1f)) }
                 Select("Gender",listOf("" to "Not set")+GENDER_LABELS.toList(),gender) { gender=it } }
             "parent" -> { Select("Role",PARENT_ROLE_LABELS.toList(),role) { role=it }; DateKeyInput("Birth date",birth,{ birth=it })
-                TextInput("Phone",phone,{ phone=it },placeholder="(000) 000-0000"); TextInput("Google account",email,{ email=it },placeholder="name@gmail.com") }
-            else -> { TextInput("Google account",email,{ email=it },placeholder="name@gmail.com"); TextInput("Phone",phone,{ phone=it },placeholder="(000) 000-0000") }
+                TextInput("Phone",phone,{ phone=it },placeholder="(000) 000-0000"); TextInput(if(internal) "Contact email (optional)" else "Google account",email,{ email=it },placeholder="name@gmail.com") }
+            else -> { TextInput(if(internal) "Contact email (optional)" else "Google account",email,{ email=it },placeholder="name@gmail.com"); TextInput("Phone",phone,{ phone=it },placeholder="(000) 000-0000") }
         }
-        val valid=name.isNotBlank() && (kind!="child" || due.isNotEmpty() || birth.isNotEmpty()) && (kind!="caregiver" || email.contains('@'))
+        val valid=name.isNotBlank() && (kind!="child" || due.isNotEmpty() || birth.isNotEmpty()) && (internal || kind!="caregiver" || email.contains('@'))
         Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
             PrimaryButton("Add $kind",Modifier.weight(1f),enabled=valid) {
                 val input=JSONObject().put("name",name.trim()).put("preferredUnits",units).put("timezone",timezone)
@@ -244,7 +256,7 @@ private fun AddPersonForm(kind: String,ui: Ui,units: JSONObject,timezone: String
                     else -> { input.put("kind","caregiver").put("email",email.trim().lowercase()); phone.trim().takeIf { it.isNotEmpty() }?.let { input.put("phone",it) } }
                 }
                 CareRepository.addProfile(context,input)
-                onStatus(if(kind=="caregiver") "${name.trim().split(" ").first()} can now sign in with ${email.trim().lowercase()}. Share the Google Sheet with that account too." else "${name.trim().split(" ").first()} added.")
+                onStatus(if(internal) "${name.trim().split(" ").first()} added. Send an invitation from the account website to give them access." else if(kind=="caregiver") "${name.trim().split(" ").first()} can now sign in with ${email.trim().lowercase()}. Share the Google Sheet with that account too." else "${name.trim().split(" ").first()} added.")
                 onDone()
             }
             SecondaryButton("Cancel",Modifier.weight(1f),onClick=onDone)
@@ -252,9 +264,14 @@ private fun AddPersonForm(kind: String,ui: Ui,units: JSONObject,timezone: String
     }
 }
 
+private fun openAccountWebsite(context: Context) {
+    val api=AppSettings(context).internal.api.ifEmpty { "https://raspberrypi.tailc2b8e3.ts.net:8443/api/v1" }
+    context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,Uri.parse(api.removeSuffix("/api/v1")+"/")))
+}
+
 /** Where the Pi is and the app token; what the last read and the outbox look like. */
 @Composable
-fun ConnectionCard(state: CareRepository.State=CareRepository.state.collectAsState().value) {
+fun ConnectionCard(state: CareRepository.State=CareRepository.state.collectAsState().value,ui: Ui?=null) {
     val context=LocalContext.current
     val settings=remember { AppSettings(context) }
     val scope=rememberCoroutineScope()
@@ -262,11 +279,17 @@ fun ConnectionCard(state: CareRepository.State=CareRepository.state.collectAsSta
     var token by remember { mutableStateOf(settings.token) }
     var message by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
-    var internalApi by remember { mutableStateOf("https://raspberrypi.tailc2b8e3.ts.net:8443/api/v1") }
+    var internalApi by remember { mutableStateOf(settings.internal.api.ifEmpty { "https://raspberrypi.tailc2b8e3.ts.net:8443/api/v1" }) }
     var pairingCode by remember { mutableStateOf("") }
     var exportedQueue by remember { mutableStateOf("") }
     Panel {
-        Heading("BabySteps account","Sign in on the Pi website, then approve this phone in Account.")
+        Heading("Account",ui?.profiles?.find { it.id==ui.actorId }?.name,level=1)
+        Ink(if(settings.internal.configured) "This device is connected" else "Connect this device")
+        Muted("Use a passkey or linked Google account on the BabySteps website, then approve this device’s connection code.")
+        Heading("Sign-in & security",level=3)
+        Muted("Open Account on the website to manage passkeys, optional Google sign-in, recovery codes and connected devices.")
+        SecondaryButton("Open account website",icon=Lucide.navigation) { openAccountWebsite(context) }
+        Disclosure("Connect or reconnect this device") {
         TextInput("Account server",internalApi,{ internalApi=it.trim() })
         PrimaryButton("Connect account",enabled=!busy) {
             busy=true; scope.launch {
@@ -286,7 +309,11 @@ fun ConnectionCard(state: CareRepository.State=CareRepository.state.collectAsSta
                 } catch(e: Exception) { message=e.message } finally { busy=false }
             }
         }
-        if(settings.internal.selected) SecondaryButton("Disconnect account") { settings.internal.disconnect(); CareRepository.load(context); scope.launch { CareRepository.refresh(context) } }
+        }
+        if(settings.internal.selected) Disclosure("Disconnect this device") {
+            Muted("Signing out keeps offline changes for this account. Reconnect the same account to sync them.")
+            SecondaryButton("Disconnect account") { settings.internal.disconnect(); CareRepository.load(context); scope.launch { CareRepository.refresh(context) } }
+        }
         if(state.pending>0) {
             Heading("Queued changes")
             CareRepository.pendingLabels(context).forEachIndexed { index,label -> Muted("${index+1}. $label") }
@@ -301,7 +328,8 @@ fun ConnectionCard(state: CareRepository.State=CareRepository.state.collectAsSta
         message?.let { FieldNote(it) }
     }
     Panel {
-        Heading("Legacy connection","The shared Google Sheet, read and written through the Pi")
+        Disclosure("Advanced · legacy connection") {
+        Muted("For older deployments only. The internal account connection is preferred.")
         Muted(when {
             !state.configured -> "Not connected."
             state.fetchedAt!=null -> "Last read ${Dates.clock(state.fetchedAt)}"+(if(state.pending>0) " · ${state.pending} change${if(state.pending==1) "" else "s"} waiting to send" else " · everything sent")
@@ -323,6 +351,7 @@ fun ConnectionCard(state: CareRepository.State=CareRepository.state.collectAsSta
         }
         message?.let { FieldNote(it) }
         Muted("The token is APP_API_TOKEN in ~/babysteps/events.env on the Pi. It stays in this phone's private app storage; app backup is off.",size=12)
+        }
     }
 }
 

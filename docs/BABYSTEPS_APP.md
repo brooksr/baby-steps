@@ -76,23 +76,36 @@ Each domain object names the TypeScript module it ports. When the web app's
 logic changes, port the change to the same object and add a case to
 `app/src/test/.../care/CareDomainTest.kt`.
 
-### Deliberate display parity gap — October 17, 2026
+### Web display parity — Android 0.6.1 (October 17, 2026)
 
-The PWA timing changes are being released separately from the native apps.
-`src/domain/cadence.ts` now ends the bath window strictly after the original
-local bath time three calendar days later, rather than at midnight. Its elapsed
-reading highlights the 2–3 day window. `src/domain/diapers.ts` allows an overnight
+The native phone/tablet UI now follows the recent PWA changes: newest-first Log,
+Home and Reports timelines; exact-type hero links; compact icon/sync header;
+aligned hero readings; main advice tips in banners with notes collapsed; visible
+growth percentiles with age comparison collapsed; full-width charts; simpler
+Night & Day sections; and separate Settings and Account tasks.
+
+`Cadence` ends the bath window strictly after the original local bath time three
+calendar days later, including DST changes. Elapsed readings highlight the
+window; whole cards highlight only after its end. `Diapers` allows an overnight
 latest boundary of the earlier of eight elapsed hours since the last change or
 7am, while the device-local clock is between 7pm and 7am. At 7am the learned
-daytime window resumes. This is a household display preference, not clinical
-advice. The window remains unavailable when there is insufficient log history.
+daytime window resumes. These are household display preferences, not clinical
+advice. Predictions remain unavailable without sufficient history. Matching
+boundary cases live in `CareDomainTest.kt`.
 
-These rules have not yet been ported to `domain/Care.kt`; installed phone/watch
-apps keep their previous displays. Before the next native release, port the
-rules and the boundary regression cases in `cadence.test.ts`, `diapers.test.ts`
-and `Dashboard.test.tsx`, including exact endpoints, midnight, 7am, 7pm and DST.
-Run the Android test/lint/APK checks and use a test emulator before installing
-on a household device. No phone/watch install is part of this web release.
+Account pairs this device with the internal backend. Passkeys, optional Google
+linking, recovery, sessions and family invitations use the existing secured
+website; they are not new native authentication flows. The advanced shared-token
+form stays collapsed. Sync flushes the account-scoped outbox before fetching the
+full snapshot, both manually and when returning to the foreground. It never
+copies another account's cache or queue.
+
+The emulator-only `CareParityDeviceTest` uses a synthetic offline family. Build
+its APK with `:app:assembleDebugAndroidTest`, then install/run it with an explicit
+`adb -s emulator-SERIAL` target and the test class filter. Its device guard refuses
+household hardware. Never run a whole connected-test suite on the nursery phone
+or family tablet. Wear's compact UI has no equivalent report/settings layouts;
+no watch installation is part of this release.
 
 ### Writes and offline
 

@@ -11,6 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -60,14 +61,15 @@ fun ProfileBand(eyebrow: String,headline: String,detail: String?,big: Boolean,si
 
 /** One of the hero's three tiles; amber when its rhythm has run out. */
 @Composable
-fun HeroMetric(label: String,value: String,sub: String,detail: String?,pastDue: Boolean,modifier: Modifier,onClick: (() -> Unit)?) {
+fun HeroMetric(label: String,value: String,sub: String,detail: String?,pastDue: Boolean,modifier: Modifier,inRange: Boolean=false,onClick: (() -> Unit)?) {
     val p=LocalPalette.current
     val fg=if(pastDue) p.onPastDue else Color.White
+    val scale=LocalDensity.current.fontScale
     Column(modifier.clip(Radius).background(if(pastDue) p.pastDue else Color.White.copy(alpha=0.16f)).then(if(onClick!=null) Modifier.clickable(onClick=onClick) else Modifier)
         .padding(horizontal=12.dp,vertical=10.dp),verticalArrangement=Arrangement.spacedBy(2.dp)) {
-        Text(label.uppercase(),style=body(11,800).copy(letterSpacing=0.4.sp),color=fg.copy(alpha=0.85f),maxLines=1)
-        Text(value,style=display(19),color=fg,maxLines=1)
-        Text(sub,style=body(12,700),color=fg.copy(alpha=0.82f),maxLines=1)
+        Text(label.uppercase(),style=body(11,800).copy(letterSpacing=0.4.sp),color=fg.copy(alpha=0.85f),maxLines=2,modifier=Modifier.heightIn(min=(28*scale).dp))
+        Text(value,style=body(19,800),color=if(inRange && !pastDue) p.pastDue else fg,maxLines=1,modifier=Modifier.heightIn(min=(26*scale).dp))
+        Text(sub.replace(" · ","\n"),style=body(12,700),color=fg.copy(alpha=0.82f),maxLines=2,modifier=Modifier.heightIn(min=(36*scale).dp))
         detail?.let {
             Box(Modifier.fillMaxWidth().padding(top=6.dp).height(1.dp).background(fg.copy(alpha=0.24f)))
             Text(it,style=body(12,700),color=fg,modifier=Modifier.padding(top=4.dp))
@@ -115,7 +117,7 @@ fun ChildHome(ui: Ui) {
     val today=Dates.key(now)
     val born=profile.birthDate!=null; val hasDue=profile.dueDate!=null
     val untilDue=Dates.daysUntilDue(profile,now); val ageDays=Dates.ageDays(profile,now)
-    val todayEvents=events.filter { Dates.key(it.start)==today }
+    val todayEvents=events.filter { Dates.key(it.start)==today }.sortedByDescending { it.start }
     val summary=Summary.daily(todayEvents)
     val lastFeed=Summary.last(events) { it.type==EventType.FEED }
     val nextFeed=if(ui.timers.containsKey(EventType.FEED)) null else Cadence.nextFeed(events,now)
@@ -126,7 +128,6 @@ fun ChildHome(ui: Ui) {
     val lastBath=Summary.last(events) { it.type==EventType.BATH }
     val nextBath=Cadence.nextBath(events,now)
     val reminders=Cadence.reminders(events,ui.timers.containsKey(EventType.FEED),now)
-    val bathReminder=reminders.find { it.kind=="bath" }; val feedReminder=reminders.find { it.kind=="feed" }
     fun day(key: String)=if(key==today) "Today" else Dates.weekday(key)
     val ageDetail=if(born) { if(ageDays>=14) { if(ageDays>=56) "${ageDays/7} weeks · ${Dates.dueStatus(profile,now)}" else Dates.dueStatus(profile,now) } else "" }
         else if(hasDue) (if(untilDue==1) "day until due date" else "days until due date") else "Add a due date or birth date in Settings."
@@ -146,12 +147,12 @@ fun ChildHome(ui: Ui) {
             val m=Modifier.weight(1f).fillMaxHeight()
             if(lastFeed!=null) HeroMetric("Last feed",Dates.ago(lastFeed.start,now).removeSuffix(" ago"),Dates.clock(lastFeed.start),
                 nextFeed?.let { (if(it.minutesAway>0) "Next ~${Dates.clockRange(it.windowStart,it.windowEnd)}" else "Due now")+(nextSide?.let { s -> " · $s" } ?: "") },
-                feedReminder!=null,m) { ui.openLog(EventType.FEED) }
+                nextFeed?.windowEnd?.let(now::isAfter)==true,m,Cadence.inWindow(nextFeed?.windowStart,nextFeed?.windowEnd,now),if(ui.caregiver) null else ({ ui.openLog(EventType.FEED) }))
             if(lastDiaper!=null) HeroMetric("Last diaper",Dates.ago(lastDiaper.start,now).removeSuffix(" ago"),Dates.clock(lastDiaper.start),
-                nextDiaper?.let { (if(it.minutesAway>0) "Next ~${Dates.clockRange(it.windowStart,it.windowEnd)}" else "Likely now")+" · ${it.likelyKind}" },
-                nextDiaper!=null && nextDiaper.minutesAway<=0,m) { ui.openLog(EventType.DIAPER) }
+                nextDiaper?.let { (if(!now.isAfter(it.windowEnd)) "Next ~${Dates.clockRange(it.windowStart,it.windowEnd)}" else "Likely now")+" · ${it.likelyKind}" },
+                nextDiaper?.windowEnd?.let(now::isAfter)==true,m,Cadence.inWindow(nextDiaper?.windowStart,nextDiaper?.windowEnd,now),if(ui.caregiver) null else ({ ui.openLog(EventType.DIAPER) }))
             if(lastBath!=null) HeroMetric("Last bath",Dates.daysSince(lastBath.start,now),"${Dates.shortDate(lastBath.start)} · ${Dates.clock(lastBath.start)}",
-                nextBath?.let { if(it.due) "Due today" else "Next ~${day(it.windowStartKey)}–${day(it.windowEndKey)}" },bathReminder!=null,m) { ui.openLog(EventType.BATH) }
+                nextBath?.let { if(it.due) "Due today" else "Next ${day(it.windowStartKey)}–${day(it.windowEndKey)}" },nextBath?.due==true,m,Cadence.inWindow(nextBath?.windowStart,nextBath?.windowEnd,now),if(ui.caregiver) null else ({ ui.openLog(EventType.BATH) }))
         }
     }
 
@@ -231,7 +232,7 @@ fun WhatToExpectCard(ui: Ui) {
             SecondaryButton("Next",enabled=next!=null) { at=next }
         }
         @Composable fun facet(icon: androidx.compose.ui.graphics.vector.ImageVector,label: String,text: String) =
-            Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+            Row(Modifier.fillMaxWidth().clip(Radius).background(p.panelBlue).border(1.dp,p.line,Radius).padding(12.dp),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
                 Icon(icon,null,tint=p.blue700,modifier=Modifier.size(20.dp))
                 Column { Text(label,style=body(14,800),color=p.ink); Text(text,style=body(14),color=p.ink) }
             }
@@ -244,7 +245,7 @@ fun WhatToExpectCard(ui: Ui) {
                 facet(Lucide.ruler,"About the size of",outlook.week.size)
                 facet(Lucide.baby,"Developing now",outlook.week.development)
                 facet(Lucide.lightbulb,"Heads up",outlook.week.headsUp)
-                facts(outlook.week.facts)
+                Disclosure("Notes & context") { facts(outlook.week.facts); Muted("General guidance, not a schedule. Bring concerns to your pediatrician.",size=12) }
             }
             is Expect.Child -> {
                 val stage=outlook.stage
@@ -258,16 +259,18 @@ fun WhatToExpectCard(ui: Ui) {
                     facet(Lucide.milk,"Feeding",stage.feeding)
                     facet(Lucide.moon,"Sleep",stage.sleep)
                     facet(Lucide.lightbulb,"Heads up",stage.headsUp)
+                    Disclosure("Notes & context") {
                     facts(stage.facts)
                     outlook.notes.forEach { StatusRow(Lucide.sparkles,it,tone="gentle") }
                     val g=outlook.gestation
                     if(outlook.corrected && g!=null) FieldNote("Born at ${g.label}, ${g.correctionDays} days early. "+
                         (if(outlook.stageAgeDays>outlook.correctedAgeDays) "Corrected age is ${outlook.correctedAgeDays} days, so this stays at the end of the newborn window until it catches up."
                         else "Skills are shown at $name’s corrected age of ${outlook.correctedAgeDays} days.")+" Feeding and diapers still run on the actual ${outlook.ageDays} days.")
+                    Muted("General guidance, not a schedule. Bring concerns to your pediatrician.",size=12)
+                    }
                 }
             }
         }
-        Muted("General guidance, not a schedule to hit — every baby runs to their own clock. Bring anything that worries you to your pediatrician.",size=12)
     }
 }
 
@@ -299,10 +302,10 @@ fun ParentHome(ui: Ui) {
         Row(Modifier.height(IntrinsicSize.Min),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
             val m=Modifier.weight(1f).fillMaxHeight()
             HeroMetric(if(asleep) "Asleep for" else "Awake for",lastSleep?.let { Dates.duration(Dates.minutesBetween(it.end ?: it.start,now)) } ?: "None",
-                lastSleep?.let { Dates.clock(it.start)+(it.end?.let { e -> " – ${Dates.clock(e)}" } ?: "") } ?: "Nothing logged yet",null,false,m,null)
+                lastSleep?.let { Dates.clock(it.start)+(it.end?.let { e -> " – ${Dates.clock(e)}" } ?: "") } ?: "Nothing logged yet",null,false,m,onClick=null)
             HeroMetric(if(showsCycle) (if(cycle==null || cycle.status=="cycling") "Cycle day" else "Cycle") else "Nights logged",
                 if(showsCycle) tile?.first ?: "—" else "${report.nights.size}",
-                if(showsCycle) tile?.second ?: "No period logged yet" else report.averageSleep?.let { "${Dates.duration(it)} average" } ?: "Nothing logged yet",null,false,m,null)
+                if(showsCycle) tile?.second ?: "No period logged yet" else report.averageSleep?.let { "${Dates.duration(it)} average" } ?: "Nothing logged yet",null,false,m,onClick=null)
         }
     }
 

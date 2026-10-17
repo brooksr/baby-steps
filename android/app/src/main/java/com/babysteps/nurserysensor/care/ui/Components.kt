@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -59,6 +60,16 @@ fun Panel(modifier: Modifier=Modifier,event: EventType?=null,padding: Dp=16.dp,o
     Column(modifier.fillMaxWidth().clip(Radius).background(p.panel).border(1.dp,p.line,Radius)
         .then(if(edge!=null) Modifier.drawBehind { drawRect(edge,size=Size(3.dp.toPx(),size.height)) } else Modifier)
         .then(if(onClick!=null) Modifier.clickable(onClick=onClick) else Modifier).padding(padding),verticalArrangement=Arrangement.spacedBy(10.dp),content=content)
+}
+
+/** Optional context stays available without crowding the primary reading. */
+@Composable
+fun Disclosure(title: String,content: @Composable ColumnScope.() -> Unit) {
+    var open by rememberSaveable(title) { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth(),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+        SecondaryButton(title,icon=if(open) Lucide.chevronDown else Lucide.chevronRight) { open=!open }
+        if(open) content()
+    }
 }
 
 @Composable
@@ -300,7 +311,7 @@ fun Timeline(events: List<CareEvent>,profile: Profile?,profiles: List<Profile>,e
     val p=LocalPalette.current
     if(events.isEmpty()) { EmptyState(empty); return }
     Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
-        events.forEach { e ->
+        events.sortedByDescending { it.start }.forEach { e ->
             val by=Family.nameOf(profiles,e.caregiverId)
             Row(Modifier.fillMaxWidth().clip(Radius).background(p.panel).border(1.dp,p.line,Radius).padding(12.dp),horizontalArrangement=Arrangement.spacedBy(12.dp)) {
                 EventChip(e.type)
