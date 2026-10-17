@@ -159,7 +159,7 @@ describe('Dashboard', () => {
   it('predicts the next diaper once there are enough changes to go on', () => {
     // The prediction reads the wall clock, so the log is built backwards from it.
     vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-09-02T12:00:00.000Z'));
+    vi.setSystemTime(new Date('2026-09-02T12:00:00'));
 
     const events: CareEvent[] = Array.from({ length: 8 }, (_, index) => ({
       babyId: 'avery-example',
@@ -175,15 +175,15 @@ describe('Dashboard', () => {
     render(<Dashboard activeTimers={{}} events={events} profile={createDefaultBabyProfile(new Date('2026-06-19T12:00:00.000Z'))} todayKey="2026-09-02" onAdd={vi.fn()} onOpenLog={vi.fn()} />);
 
     const prediction = within(screen.getByRole('button', { name: 'View diaper log' }));
-    // Gaps of exactly 3h give the narrowest window, ±15 minutes around 7:00.
-    expect(prediction.getByText('Next ~6:45–7:15 AM · wet')).toBeInTheDocument();
+    // Gaps of exactly 3h give the narrowest window, ±15 minutes around 2pm.
+    expect(prediction.getByText('Next ~1:45–2:15 PM · wet')).toBeInTheDocument();
 
     vi.useRealTimers();
   });
 
   it('warns on the Last Diaper tile once its estimate has passed', () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-09-02T12:00:00.000Z'));
+    vi.setSystemTime(new Date('2026-09-02T12:00:00'));
     const events: CareEvent[] = Array.from({ length: 8 }, (_, index) => ({
       babyId: 'avery-example',
       createdAt: '2026-09-02T12:00:00.000Z',
@@ -233,6 +233,32 @@ describe('Dashboard', () => {
       vi.advanceTimersByTime(1);
       rerender(<Dashboard {...props} />);
       expect(diaper).toHaveClass('past-due');
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('keeps the diaper tile in range through eight hours overnight', () => {
+    vi.useFakeTimers();
+    try {
+      const lastAt = new Date('2026-09-02T19:00:00');
+      const events: CareEvent[] = Array.from({ length: 8 }, (_, index) => ({
+        babyId: 'avery-example', createdAt: lastAt.toISOString(), id: `night-diaper-${index}`, kind: 'wet',
+        startedAt: new Date(lastAt.getTime() - (7-index)*3*3600_000).toISOString(),
+        syncState: 'local', type: 'diaper', updatedAt: lastAt.toISOString()
+      }));
+      vi.setSystemTime(new Date('2026-09-03T01:00:00'));
+      const props = { activeTimers: {}, events, profile: createDefaultBabyProfile(), todayKey: '2026-09-03', onAdd: vi.fn(), onOpenLog: vi.fn() };
+      const { rerender } = render(<Dashboard {...props} />);
+      const diaper = screen.getByRole('button', { name: 'View diaper log' });
+      expect(diaper).toHaveClass('in-range');
+      expect(diaper).not.toHaveClass('past-due');
+      expect(within(diaper).getByText(/Next ~9:45 PM–3:00 AM/)).toBeInTheDocument();
+      vi.setSystemTime(new Date('2026-09-03T03:00:00'));
+      rerender(<Dashboard {...props} />);
+      expect(diaper).toHaveClass('in-range');
+      vi.advanceTimersByTime(1);
+      rerender(<Dashboard {...props} />);
+      expect(diaper).toHaveClass('past-due');
+      expect(within(diaper).getByText('Likely now · wet')).toBeInTheDocument();
     } finally { vi.useRealTimers(); }
   });
 

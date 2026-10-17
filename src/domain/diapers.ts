@@ -271,6 +271,20 @@ export function predictNextDiaper(events: CareEvent[], now = new Date()): Diaper
   }
 
   const halfWindow = Math.min(MAX_WINDOW_MINUTES, Math.max(MIN_WINDOW_MINUTES, Math.round(spread)));
+  let windowEnd = expectedTime + halfWindow * MINUTE;
+  let windowStart = expectedTime - halfWindow * MINUTE;
+  const overnight = now.getHours() >= 19 || now.getHours() < 7;
+  if (overnight) {
+    // Household display allowance, not a claim about when a change is needed.
+    // Keep the ordinary earliest estimate, bounded by the overnight deadline.
+    const morning = new Date(now);
+    if (now.getHours() >= 19) morning.setDate(morning.getDate() + 1);
+    morning.setHours(7, 0, 0, 0);
+    const overnightEnd = Math.min(timeOf(lastDiaper.startedAt) + 8 * 60 * MINUTE, morning.getTime());
+    windowEnd = overnightEnd;
+    expectedTime = Math.min(expectedTime, windowEnd);
+    windowStart = Math.min(windowStart, expectedTime);
+  }
   const minutesAway = Math.round((expectedTime - now.getTime()) / MINUTE);
   const variation = typicalGapMinutes > 0 ? spread / typicalGapMinutes : 1;
   const samples = Math.round(effectiveSampleSize(gaps));
@@ -288,14 +302,14 @@ export function predictNextDiaper(events: CareEvent[], now = new Date()): Diaper
     .join(', ');
 
   return {
-    basis: `${basis} · ${samples} recent gaps`,
+    basis: `${basis} · ${samples} recent gaps${overnight ? ' · overnight window up to 8h (7pm–7am)' : ''}`,
     confidence,
     expectedAt: new Date(expectedTime).toISOString(),
     likelyKind: getLikelyKind(diapers, expectedTime, now),
     minutesAway,
     samples,
     typicalGapMinutes,
-    windowEndAt: new Date(expectedTime + halfWindow * MINUTE).toISOString(),
-    windowStartAt: new Date(expectedTime - halfWindow * MINUTE).toISOString()
+    windowEndAt: new Date(windowEnd).toISOString(),
+    windowStartAt: new Date(windowStart).toISOString()
   };
 }

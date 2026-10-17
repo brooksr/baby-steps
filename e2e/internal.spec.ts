@@ -121,6 +121,10 @@ test('real passkey account, family, offline queue, caregiver boundary and recove
   await page.setViewportSize({ width:390,height:844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   await page.screenshot({ path:'test-results/internal-mobile.png',fullPage:true });
+  for (let index=1;index<=5;index++) {
+    const id = `alignment-diaper-${index}`;
+    expect((await request(page,`/families/${familyId}/mutations`,{ action:'save',collection:'events',expectedRevision:0,id,operationId:id,patch:{ babyId:child.id,kind:'wet',startedAt:new Date(Date.parse(now)-index*3*3600_000).toISOString(),type:'diaper' } })).status).toBe(200);
+  }
   // Production has more profiles, longer contact details and classic scrollbars.
   for (const [id,kind,name] of [['extra-parent','parent','Alexandria Example'],['extra-child','child','Christopher Example']]) {
     expect((await request(page,`/families/${familyId}/mutations`,{ action:'save',collection:'profiles',expectedRevision:0,id,operationId:id,patch:{ kind,name,email:'long-family-contact@example.com',phone:'(000) 000-0000',timezone:'America/Los_Angeles' } })).status).toBe(200);
@@ -177,6 +181,21 @@ test('real passkey account, family, offline queue, caregiver boundary and recove
   await page.locator('.expect-card').screenshot({ path:'test-results/mobile-expect.png',style:'.bottom-nav { visibility: hidden; }' });
   for (const width of [320,390,500,768,1280]) {
     await page.setViewportSize({ width,height:844 });
+    await nav.getByRole('button',{ name:'Home',exact:true }).click();
+    const alignment = await page.locator('.care-hero-metrics').evaluate(grid => {
+      const cards = [...grid.querySelectorAll('.hero-metric')];
+      return { dividers:cards.map(card => card.querySelector('.hero-metric-detail')!.getBoundingClientRect().top),
+        edges:cards.map(card => card.getBoundingClientRect().right),right:grid.getBoundingClientRect().right,
+        heroRight:grid.closest('.profile-band')!.getBoundingClientRect().right,
+        headerRight:document.querySelector('.app-header')!.getBoundingClientRect().right };
+    });
+    expect(Math.max(...alignment.dividers)-Math.min(...alignment.dividers)).toBeLessThanOrEqual(1);
+    expect(Math.max(...alignment.edges)).toBeLessThanOrEqual(alignment.right+1);
+    expect(Math.abs(alignment.heroRight-alignment.headerRight)).toBeLessThanOrEqual(1);
+    if (width===390) {
+      await page.evaluate(() => window.scrollTo(0,0));
+      await page.screenshot({ path:'test-results/mobile-aligned-home.png',fullPage:false });
+    }
     await nav.getByRole('button',{ name:'Log',exact:true }).click();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
     if (width===390) await page.screenshot({ path:'test-results/mobile-log.png',fullPage:true });

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { getFeedToDiaperLags, predictNextDiaper } from './diapers';
 import type { CareEvent, DiaperKind } from './types';
 
-const NOW = new Date('2026-10-01T12:00:00.000Z');
+const NOW = new Date('2026-10-01T12:00:00');
 const HOUR = 60 * 60_000;
 
 const base = {
@@ -66,9 +66,9 @@ describe('next diaper prediction', () => {
     const prediction = predictNextDiaper(buildDiapers(20), NOW);
 
     expect(prediction).not.toBeNull();
-    expect(prediction?.expectedAt).toBe('2026-10-01T14:00:00.000Z');
-    expect(prediction?.windowStartAt).toBe('2026-10-01T13:45:00.000Z');
-    expect(prediction?.windowEndAt).toBe('2026-10-01T14:15:00.000Z');
+    expect(prediction?.expectedAt).toBe(new Date('2026-10-01T14:00:00').toISOString());
+    expect(prediction?.windowStartAt).toBe(new Date('2026-10-01T13:45:00').toISOString());
+    expect(prediction?.windowEndAt).toBe(new Date('2026-10-01T14:15:00').toISOString());
     expect(prediction?.minutesAway).toBe(120);
     expect(prediction?.typicalGapMinutes).toBeCloseTo(180, 5);
     expect(prediction?.confidence).toBe('high');
@@ -86,7 +86,7 @@ describe('next diaper prediction', () => {
     const events: CareEvent[] = [
       ...diapers,
       ...buildFeedsBefore(diapers, 45),
-      { ...base, id: 'feed-late', method: 'nursing', startedAt: '2026-10-01T11:30:00.000Z', type: 'feed' }
+      { ...base, id: 'feed-late', method: 'nursing', startedAt: new Date('2026-10-01T11:30:00').toISOString(), type: 'feed' }
     ];
 
     const prediction = predictNextDiaper(events, NOW);
@@ -101,6 +101,40 @@ describe('next diaper prediction', () => {
     const prediction = predictNextDiaper(buildDiapers(20, (index) => (index % 4 === 0 && index <= 12 ? 'dirty' : 'wet')), NOW);
 
     expect(prediction?.likelyKind).toBe('dirty');
+  });
+
+  function overnightLog(lastAt: string) {
+    const time = new Date(lastAt).getTime();
+    return buildDiapers(8).map((event, index) => ({ ...event, startedAt: new Date(time - (7-index)*3*HOUR).toISOString() }));
+  }
+
+  it('allows eight hours overnight without moving the usual earliest estimate', () => {
+    const events = overnightLog('2026-10-01T19:00:00');
+    const prediction = predictNextDiaper(events, new Date('2026-10-02T01:00:00'))!;
+    expect(prediction.windowEndAt).toBe(new Date('2026-10-02T03:00:00').toISOString());
+    expect(prediction.windowStartAt).toBe(new Date('2026-10-01T21:45:00').toISOString());
+    expect(prediction.basis).toContain('overnight window up to 8h');
+  });
+
+  it('ends the overnight allowance at 7am and returns to the learned daytime window', () => {
+    const events = overnightLog('2026-10-01T23:00:00');
+    for (const now of ['2026-10-01T23:30:00', '2026-10-02T06:59:59']) {
+      expect(predictNextDiaper(events, new Date(now))!.windowEndAt).toBe(new Date('2026-10-02T07:00:00').toISOString());
+    }
+    expect(predictNextDiaper(events, new Date('2026-10-02T07:00:00'))!.windowEndAt).toBe(new Date('2026-10-02T02:15:00').toISOString());
+    // A late-night change never produces a reversed window near morning.
+    const nearMorning = predictNextDiaper(overnightLog('2026-10-02T06:00:00'), new Date('2026-10-02T06:30:00'))!;
+    expect(nearMorning.windowEndAt).toBe(new Date('2026-10-02T07:00:00').toISOString());
+    expect(Date.parse(nearMorning.windowStartAt)).toBeLessThanOrEqual(Date.parse(nearMorning.windowEndAt));
+    expect(Date.parse(nearMorning.expectedAt)).toBeLessThanOrEqual(Date.parse(nearMorning.windowEndAt));
+  });
+
+  it('starts the allowance at 7pm and never keeps an eight-hour-old change in range', () => {
+    const events = overnightLog('2026-10-01T16:00:00');
+    expect(predictNextDiaper(events, new Date('2026-10-01T18:59:59'))!.windowEndAt).toBe(new Date('2026-10-01T19:15:00').toISOString());
+    const midnight = new Date('2026-10-02T00:00:00');
+    expect(predictNextDiaper(events, new Date('2026-10-01T19:00:00'))!.windowEndAt).toBe(midnight.toISOString());
+    expect(predictNextDiaper(events, new Date(midnight.getTime()+1))!.windowEndAt).toBe(midnight.toISOString());
   });
 
   it('loses confidence when the log has gone quiet', () => {

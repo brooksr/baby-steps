@@ -143,7 +143,7 @@ export function Dashboard({ activeTimers, allowedTypes, events, profile, profile
         {/* A card only appears once there is something to count from — an empty
             "None · Nothing logged yet" tile says nothing the quick-add grid doesn't. */}
         {(lastFeed || lastDiaper || lastBath) && (
-          <div className="hero-metrics">
+          <div className="hero-metrics care-hero-metrics">
             {lastFeed && (
               <HeroMetric className={`hero-metric${cadenceClass(nextFeed, now)}`} label="View feed log" onOpen={openLog('feed')}>
                 <span>Last feed</span>
@@ -164,7 +164,7 @@ export function Dashboard({ activeTimers, allowedTypes, events, profile, profile
                 <small>{formatClock(lastDiaper.startedAt)}</small>
                 {nextDiaper && (
                   <small className="hero-metric-detail">
-                    {nextDiaper.minutesAway > 0 ? `Next ~${formatClockRange(nextDiaper.windowStartAt, nextDiaper.windowEndAt)}` : 'Likely now'} · {nextDiaper.likelyKind}
+                    {now.getTime() <= Date.parse(nextDiaper.windowEndAt) ? `Next ~${formatClockRange(nextDiaper.windowStartAt, nextDiaper.windowEndAt)}` : 'Likely now'} · {nextDiaper.likelyKind}
                   </small>
                 )}
               </HeroMetric>
@@ -173,7 +173,7 @@ export function Dashboard({ activeTimers, allowedTypes, events, profile, profile
               <HeroMetric className={`hero-metric${cadenceClass(nextBath, now)}`} label="View bath log" onOpen={openLog('bath')}>
                 <span>Last bath</span>
                 <strong>{formatDaysSince(lastBath.startedAt)}</strong>
-                <small>{`${formatShortDate(lastBath.startedAt)} · ${formatClock(lastBath.startedAt)}`}</small>
+                <small>{formatShortDate(lastBath.startedAt)} · <time className="hero-clock" dateTime={lastBath.startedAt}>{formatClock(lastBath.startedAt)}</time></small>
                 {nextBath && (
                   <small className="hero-metric-detail">
                     {nextBath.due ? 'Due today' : `Next ${dayLabel(nextBath.windowStartKey)}–${dayLabel(nextBath.windowEndKey)}`}

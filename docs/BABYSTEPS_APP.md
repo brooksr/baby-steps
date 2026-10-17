@@ -76,6 +76,24 @@ Each domain object names the TypeScript module it ports. When the web app's
 logic changes, port the change to the same object and add a case to
 `app/src/test/.../care/CareDomainTest.kt`.
 
+### Deliberate display parity gap — October 17, 2026
+
+The PWA timing changes are being released separately from the native apps.
+`src/domain/cadence.ts` now ends the bath window strictly after the original
+local bath time three calendar days later, rather than at midnight. Its elapsed
+reading highlights the 2–3 day window. `src/domain/diapers.ts` allows an overnight
+latest boundary of the earlier of eight elapsed hours since the last change or
+7am, while the device-local clock is between 7pm and 7am. At 7am the learned
+daytime window resumes. This is a household display preference, not clinical
+advice. The window remains unavailable when there is insufficient log history.
+
+These rules have not yet been ported to `domain/Care.kt`; installed phone/watch
+apps keep their previous displays. Before the next native release, port the
+rules and the boundary regression cases in `cadence.test.ts`, `diapers.test.ts`
+and `Dashboard.test.tsx`, including exact endpoints, midnight, 7am, 7pm and DST.
+Run the Android test/lint/APK checks and use a test emulator before installing
+on a household device. No phone/watch install is part of this web release.
+
 ### Writes and offline
 
 Every change is applied on screen at once and appended to a durable outbox

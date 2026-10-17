@@ -4078,3 +4078,11 @@ body { min-width: 0; }
 .settings-page .form-grid > label, .settings-page .child-pick, .settings-page .child-pick span { min-width: 0; }
 .settings-page .form-grid input, .settings-page .form-grid select { max-width: 100%; }
 .settings-page .child-pick span { overflow-wrap: anywhere; }
+
+/* Share the timestamp and prediction rows even when one timestamp wraps. */
+.care-hero-metrics > .hero-metric {
+  grid-row: span 4;
+  grid-template-rows: subgrid;
+  min-width: 0;
+}
+.hero-clock { white-space: nowrap; }
