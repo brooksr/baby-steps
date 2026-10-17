@@ -111,3 +111,20 @@ describe('Log type links', () => {
     expect(screen.queryByText('Recent note')).not.toBeInTheDocument();
   });
 });
+
+describe('Log ordering', () => {
+  it('shows the newest entry times first before paging, regardless of API row order', async () => {
+    const user = userEvent.setup();
+    const oldestFirst = Array.from({ length: 25 }, (_, day) => note(new Date(Date.UTC(2026, 8, day + 1, 12)).toISOString(), `Entry ${day}`));
+    // A late backfill should stay at its event time, not jump above newer care.
+    oldestFirst[0].createdAt = '2026-10-01T12:00:00.000Z';
+    const { container } = render(<Log events={oldestFirst} firstYearEvents={oldestFirst}
+      profile={createDefaultBabyProfile()} onAdd={vi.fn()} onDelete={vi.fn()} onEdit={vi.fn()} />);
+    const times = () => [...container.querySelectorAll('.timeline time')].map(time => time.getAttribute('datetime'));
+    expect(times()).toEqual(oldestFirst.slice(5).reverse().map(event => event.startedAt));
+    expect(screen.queryByText('Entry 0')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Load 5 more/ }));
+    expect(times()).toEqual([...oldestFirst].reverse().map(event => event.startedAt));
+    expect(oldestFirst[0].id).toBe('Entry 0');
+  });
+});

@@ -82,6 +82,23 @@ test('real passkey account, family, offline queue, caregiver boundary and recove
   expect(updated.body.data.events.find((e: { id:string }) => e.id === 'sitter-feed').caregiverId).toBe('sitter');
   expect((await request(sitter,`/families/${familyId}/mutations`,{ ...event,id:'sitter-birth',operationId:'sitter-birth',patch:{ ...event.patch,type:'birth' } })).status).toBe(403);
   await context.close();
+  for (const type of ['diaper','bath']) {
+    expect((await request(page,`/families/${familyId}/mutations`,{
+      action:'save',collection:'events',expectedRevision:0,id:`hero-${type}`,operationId:`hero-${type}`,
+      patch:{ babyId:child.id,startedAt:now,type,...(type === 'diaper' ? { kind:'wet' } : {}) }
+    })).status).toBe(200);
+  }
+  await page.reload();
+  for (const type of ['feed','diaper','bath']) {
+    await page.getByRole('button',{ name:`View ${type} log`,exact:true }).click();
+    await expect(page.getByLabel('Filter by type')).toHaveValue(`type:${type}`);
+    const types = await page.locator('.timeline-icon').evaluateAll(icons => icons.map(icon => icon.getAttribute('data-event')));
+    expect(types.length).toBeGreaterThan(0); expect(types.every(value => value === type)).toBe(true);
+    await page.getByRole('navigation',{ name:'Primary' }).getByRole('button',{ name:'Home',exact:true }).click();
+  }
+  await page.getByRole('navigation',{ name:'Primary' }).getByRole('button',{ name:'Log',exact:true }).click();
+  await expect(page.getByLabel('Filter by type')).toHaveValue('all');
+  await expect(page.locator('.timeline-item')).toHaveCount(4);
   await page.reload(); await expect(page.getByRole('navigation',{ name:'Primary' })).toBeVisible();
   await page.getByRole('navigation',{ name:'Primary' }).getByRole('button',{ name:'Account',exact:true }).click();
   await page.getByRole('button',{ name:'Sign out',exact:true }).click();
@@ -99,7 +116,7 @@ test('real passkey account, family, offline queue, caregiver boundary and recove
   const restored = join(directory,'restored-family.json');
   const exported = spawnSync(process.execPath,['dist-internal/internal-tool.mjs','export','--database',backup,'--family',familyId,'--account',recovery[0],'--destination',restored],{ encoding:'utf8' });
   expect(exported.status,exported.stderr).toBe(0);
-  expect(JSON.parse(readFileSync(restored,'utf8')).tracker.events).toHaveLength(2);
+  expect(JSON.parse(readFileSync(restored,'utf8')).tracker.events).toHaveLength(4);
   await page.screenshot({ path:'test-results/internal-account.png',fullPage:true });
   await page.setViewportSize({ width:390,height:844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);

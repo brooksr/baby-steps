@@ -45,6 +45,7 @@ export default function InternalApp() {
   const [data,setData] = useState<BootstrapData>(); const [queue,setQueue] = useState<QueuedMutation[]>([]);
   const [client,setClient] = useState<InternalClient>(); const current = useRef<InternalClient>();
   const [activeId,setActiveId] = useState(''); const [view,setView] = useState<View>('Home');
+  const [logTypeFilter,setLogTypeFilter] = useState<CareEventType | null>(null);
   const [error,setError] = useState(''); const [offline,setOffline] = useState(false); const [busy,setBusy] = useState(false);
   const [dialog,setDialog] = useState<CareEventType | null>(null); const [editing,setEditing] = useState<CareEvent | null>(null);
   const [preset,setPreset] = useState<UnloggedSleep | null>(null);
@@ -151,8 +152,8 @@ export default function InternalApp() {
       <button onClick={() => void run(async () => { await client!.discard(row.order!); await reload(); })}>Discard queued change</button></div>)}
       <button onClick={() => downloadText('babysteps-pending.json',JSON.stringify(queue,null,2),'application/json')}>Export pending changes</button></section>}
     {showing === 'Home' && (parent ? <ParentDashboard activeTimers={timers} childEvents={childEvents} events={events} profile={profile} profiles={people} todayKey={getLocalDateKey(new Date())} onAdd={setDialog} /> :
-      <Dashboard activeTimers={timers} allowedTypes={caregiver ? CAREGIVER_EVENT_TYPES : undefined} events={events} profile={profile} profiles={people} todayKey={getLocalDateKey(new Date())} onAdd={setDialog} onOpenLog={caregiver ? undefined : () => setView('Log')} />)}
-    {showing === 'Log' && <Log events={events} firstYearEvents={getFirstYearEvents(profile,events)} profile={profile} profiles={people} onAdd={setDialog} onDelete={(id) => mutate('events',id,'remove')} onEdit={setEditing} />}
+      <Dashboard activeTimers={timers} allowedTypes={caregiver ? CAREGIVER_EVENT_TYPES : undefined} events={events} profile={profile} profiles={people} todayKey={getLocalDateKey(new Date())} onAdd={setDialog} onOpenLog={caregiver ? undefined : (type) => { setLogTypeFilter(type); setView('Log'); }} />)}
+    {showing === 'Log' && <Log key={`${profile.id}:${logTypeFilter ?? 'all'}`} initialType={logTypeFilter} events={events} firstYearEvents={getFirstYearEvents(profile,events)} profile={profile} profiles={people} onAdd={setDialog} onDelete={(id) => mutate('events',id,'remove')} onEdit={setEditing} />}
     {showing === 'Reports' && (parent ? <ParentReports childEvents={childEvents} events={events} profile={profile} profiles={people} /> : <Reports events={events} profile={profile} profiles={people}
         loadNursery={async () => (await internalRequest<{ nursery:NurseryData }>(api,`/families/${encodeURIComponent(family)}/nursery`)).nursery}
         onLogSleep={(sleep) => { setPreset(sleep); setDialog('sleep'); }}
@@ -188,7 +189,7 @@ export default function InternalApp() {
         <button onClick={() => void run(async () => { await confirmed(() => internalRequest(api,'/native/approve',{ familyId:family,userCode:deviceCode })); setDeviceCode(''); setDeviceReview(undefined); window.history.replaceState(null,'',window.location.pathname); setError('Device connected.'); })}>Allow this {deviceReview.purpose} for this family</button></div>}
       <button onClick={() => void run(logout)}>Sign out</button></section>}
     <nav className="bottom-nav" aria-label="Primary" style={{ gridTemplateColumns:`repeat(${allowed.filter((item) => item !== 'Learn').length}, minmax(0,1fr))` }}>{allowed.filter((item) => item !== 'Learn').map((item) => {
-      const Icon = icons[item]; return <button key={item} className={showing === item ? 'active' : ''} aria-pressed={showing === item} onClick={() => { setView(item); window.history.replaceState(null,'',`#${item.toLowerCase()}`); }}><Icon aria-hidden="true" /><span>{item}</span></button>;
+      const Icon = icons[item]; return <button key={item} className={showing === item ? 'active' : ''} aria-pressed={showing === item} onClick={() => { if (item === 'Log') setLogTypeFilter(null); setView(item); window.history.replaceState(null,'',`#${item.toLowerCase()}`); }}><Icon aria-hidden="true" /><span>{item}</span></button>;
     })}</nav>
     <QuickAddDialog activeTimers={timers} eventType={dialog} editEvent={editing} loggedBy={caregiver || !editing ? data.actorProfileId : undefined} profile={profile} profiles={people} presetTimes={preset} onClose={() => { setDialog(null); setEditing(null); setPreset(null); }} onSave={saveEvent}
       onTimerStart={(type) => changeTimer(type,true)} onTimerStop={(type) => changeTimer(type,false)} />

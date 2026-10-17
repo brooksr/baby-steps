@@ -110,7 +110,10 @@ export function Log({ events, firstYearEvents, profile, profiles = [], initialTy
       result = result.filter((e) => searchText(e).includes(q));
     }
 
-    return result;
+    // API/import order is not chronological. Sort before paging so the newest
+    // entries cannot be hidden behind older rows on the first page.
+    return [...result].sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt)
+      || Date.parse(b.createdAt) - Date.parse(a.createdAt) || b.id.localeCompare(a.id));
   }, [scopedEvents, filter, range, search]);
 
   // Every control resets paging: narrowing the list while page 3 is on screen
