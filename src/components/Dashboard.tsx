@@ -5,7 +5,7 @@ import { getFirstName } from '../domain/family';
 import { formatAgeSummary, formatAgo, formatClock, formatClockRange, formatDaysSince, formatDuration, formatShortDate, formatWeekday, getAgeDays, getDaysUntilDue, getDueDateStatus, isSameLocalDate } from '../domain/dates';
 import { predictNextDiaper } from '../domain/diapers';
 import { classifyTemperatureC } from '../domain/reference';
-import { getActiveSleep, getDailySummary, getEventDurationMinutes, getLastEvent, getUpcomingAppointments, getUpcomingMedicationEvents } from '../domain/summary';
+import { getActiveSleep, getDailySummary, getEventDurationMinutes, getLastEvent, getUpcomingAppointments, getUpcomingMedicationEvents, sortEventsDescending } from '../domain/summary';
 import { HOSPITAL } from '../domain/medicalInfo';
 import { formatTemperature } from '../domain/temperature';
 import { type ActiveTimers, formatElapsed, getElapsedSeconds, isTimerType } from '../domain/timers';
@@ -70,7 +70,7 @@ export function Dashboard({ activeTimers, allowedTypes, events, profile, profile
   const hasDueDate = Boolean(profile.dueDate);
   const daysUntilDue = getDaysUntilDue(profile);
   const ageDays = getAgeDays(profile);
-  const todayEvents = events.filter((event) => isSameLocalDate(event.startedAt, todayKey));
+  const todayEvents = sortEventsDescending(events.filter((event) => isSameLocalDate(event.startedAt, todayKey)));
   const summary = getDailySummary(todayEvents);
   const lastFeed = getLastEvent(events, (event) => event.type === 'feed');
   const nextFeed = activeTimers.feed ? null : predictNextFeed(events);

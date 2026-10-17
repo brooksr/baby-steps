@@ -3927,3 +3927,75 @@ textarea {
 .internal-app .card form { display: grid; gap: 12px; }
 .internal-app .card label { display: grid; gap: 6px; }
 .internal-app .card textarea { width: 100%; }
+
+/* Compact app chrome and reference panels. */
+.app-brand { display: flex; flex: 0 0 40px; align-items: center; }
+.app-brand img { display: block; width: 40px; height: 40px; border-radius: 10px; }
+.app-header { flex-wrap: wrap; gap: 10px; }
+.app-header .child-switcher { flex: 1; min-width: 0; max-width: none; margin-left: auto; }
+.header-sync { flex: 0 0 40px; width: 40px; height: 40px; }
+.app-header > label { order: 4; width: 100%; }
+.reference-details { margin-top: 10px; color: var(--muted); font-size: 0.85rem; }
+.reference-details > summary { width: fit-content; padding: 8px 0; color: var(--blue-700); cursor: pointer; font-weight: 700; }
+.reference-details[open] > summary { margin-bottom: 8px; }
+.reference-details p { line-height: 1.6; }
+.expect-card-heading { align-items: flex-start; flex-wrap: wrap; }
+.expect-card-actions { margin-left: auto; }
+.expect-takeaway { display: flex; align-items: flex-start; gap: 10px; margin: 10px 0 0; font-size: 0.9rem; line-height: 1.6; }
+.expect-takeaway svg { flex: 0 0 18px; width: 18px; margin-top: 3px; color: var(--blue-700); }
+.expect-content > .expect-footnote { margin-top: 12px; padding-top: 10px; }
+.growth-overview .assess-list { gap: 0; }
+.growth-overview .assess-row { padding: 14px 0; background: transparent; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; }
+.growth-overview .assess-row:last-child { border-bottom: 0; padding-bottom: 0; }
+.growth-reading { font-size: 1.15rem !important; }
+.growth-reading span { color: var(--muted); font-size: 0.82rem; font-weight: 500; }
+.growth-detail { margin-top: 0; }
+.growth-detail small { display: block; margin-top: 5px; }
+.growth-charts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.chart-card, .section-block, .view-stack { min-width: 0; }
+.night-period { padding: 16px 0; border-bottom: 1px solid var(--line); }
+.night-period-heading, .night-period .night-span-heading { margin: 0 0 12px; }
+.night-period .report-grid { margin-top: 14px; gap: 4px 12px; }
+.night-report .metric-card { min-height: 80px; padding: 10px 0; background: transparent; border: 0; border-radius: 0; }
+.night-report .metric-card strong { font-size: 1.4rem; }
+.night-report .night-nav { padding: 10px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.night-key { margin-top: 4px; }
+.night-key .night-legend { margin: 0 0 10px; }
+.night-log-row { align-items: flex-start; flex-wrap: wrap; }
+.night-explanation { border-top: 1px solid var(--line); padding-top: 6px; }
+.log-heading { align-items: flex-start; flex-wrap: wrap; }
+.log-heading h1 { margin-bottom: 2px; }
+.log-heading .button-row { align-items: center; }
+@media (max-width: 719px) {
+  .chart-grid, .growth-charts { grid-template-columns: minmax(0, 1fr); }
+  .chart-card { width: 100%; min-height: auto; padding: 14px 12px; }
+  .log-heading { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .log-heading .button-row { justify-content: flex-start; }
+  .log-heading .segmented-control { margin-right: auto; }
+  .log-controls { grid-template-columns: minmax(0, 1fr); }
+  .log-filter { width: 100%; }
+  .expect-card-actions { width: 100%; justify-content: space-between; }
+  .expect-navigation { flex: 1; }
+  .expect-navigation button { min-height: 36px; }
+  .night-report > .section-heading { flex-wrap: wrap; gap: 4px; }
+  .night-report .night-note { font-size: 0.78rem; line-height: 1.6; }
+  .night-report .report-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .night-track-wrap { max-width: 100%; }
+}
+@media (max-width: 360px) {
+  .log-heading .button-row { gap: 6px; }
+  .log-heading .button-row > button { flex: 1; }
+  .log-heading .segmented-control { width: 100%; }
+}
+.date-range-inputs label, .date-range-inputs input { min-width: 0; max-width: 100%; }
+@media (max-width: 420px) {
+  .date-range-inputs { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 360px) {
+  .date-range-presets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.header-sync .spinning { animation: sync-rotate 1s linear infinite; }
+@keyframes sync-rotate { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .header-sync .spinning { animation: none; }
+}

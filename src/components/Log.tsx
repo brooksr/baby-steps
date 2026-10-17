@@ -139,8 +139,8 @@ export function Log({ events, firstYearEvents, profile, profiles = [], initialTy
 
   return (
     <main className="view-stack">
-      <section className="section-block">
-        <div className="section-heading">
+      <section className="section-block log-section">
+        <div className="section-heading log-heading">
           <div>
             <h1>Log</h1>
             <span>{filtered.length} of {scopedEvents.length}</span>

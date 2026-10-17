@@ -1,4 +1,4 @@
-import { BarChart3, BookOpen, ClipboardCheck, Home, List, ListTodo, Settings, ShoppingCart, UserRound } from 'lucide-react';
+import { BarChart3, BookOpen, ClipboardCheck, Home, List, ListTodo, RefreshCw, Settings, ShoppingCart, UserRound } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { startRegistration } from '@simplewebauthn/browser';
 import type { PublicKeyCredentialCreationOptionsJSON } from '@simplewebauthn/browser';
@@ -144,9 +144,11 @@ export default function InternalApp() {
   function changeTimer(type: TimerType,start: boolean) { const next = { ...timers }; if (start) next[type] = { startedAt:new Date().toISOString() }; else delete next[type]; setTimers(next); saveActiveTimers(timerKey,next); }
   async function saveEvent(input: CreateCareEventInput) { const id = editing?.id ?? crypto.randomUUID(); await mutate('events',id,'save',{ ...input,babyId:profile!.id }); setDialog(null); setEditing(null); }
   return <div className="app-shell internal-app">
-    <header className="app-header"><h1>BabySteps</h1><ChildSwitcher activeId={profile.id} profiles={people} onSelect={(id) => { setActiveId(id); setView('Home'); }} />
-      {families.length > 1 && <label>Family<select value={family} onChange={(e) => { setData(undefined); setQueue([]); setFamily(e.target.value); }}>{families.map((f) => <option key={f.familyId} value={f.familyId}>{f.name}</option>)}</select></label>}</header>
-    {offline && <p className="notice">Offline · changes stay on this device until you reconnect.</p>}<button className="secondary-button" onClick={() => void run(async () => { await client!.sync(); setOffline(false); await reload(); })}>Sync now</button>{error && <p role="alert" className="error-banner">{error}</p>}{recoveryPanel}
+    <header className="app-header"><a className="app-brand" href={import.meta.env.BASE_URL} aria-label="BabySteps home"><img src={`${import.meta.env.BASE_URL}icons/icon-96.png`} alt="" width="40" height="40" /></a><ChildSwitcher activeId={profile.id} profiles={people} onSelect={(id) => { setActiveId(id); setView('Home'); }} />
+      {families.length > 1 && <label>Family<select value={family} onChange={(e) => { setData(undefined); setQueue([]); setFamily(e.target.value); }}>{families.map((f) => <option key={f.familyId} value={f.familyId}>{f.name}</option>)}</select></label>}
+      <button className="icon-button header-sync" type="button" aria-label="Sync now" title="Sync now" disabled={busy} onClick={() => void run(async () => { await client!.sync(); setOffline(false); await reload(); })}><RefreshCw aria-hidden="true" className={busy ? 'spinning' : undefined} /></button>
+    </header>
+    {offline && <p className="notice">Offline · changes stay on this device until you reconnect.</p>}{error && <p role="alert" className="error-banner">{error}</p>}{recoveryPanel}
     {queue.length > 0 && <section className="card"><h2>Queued changes ({queue.length})</h2>{queue.map((row) => <div key={row.order}><p>{{ events:'Entry',nursery:'Nursery summary',profiles:'Person',shopping:'Shopping item',tasks:'Task' }[row.command.collection]} · {row.error ? 'Needs review before syncing' : 'Waiting to sync'}</p>
       {row.error && <button onClick={() => void run(async () => { await client!.retryWithLatest(row.order!); await client!.sync(); await reload(); })}>Apply to latest version</button>}
       <button onClick={() => void run(async () => { await client!.discard(row.order!); await reload(); })}>Discard queued change</button></div>)}

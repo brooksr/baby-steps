@@ -227,16 +227,21 @@ function Track({ awake, endedAt, heard, items, label, onLog, onSelectCry, select
             ))}
         </div>
       </div>
-      <LabelRow className="night-sleep-labels" labels={sleepLabels} />
-      <LabelRow
-        className="night-wake-labels"
-        labels={wakeLabels.map((wake) => ({ at: share(wake.startedAt), key: wake.startedAt, text: formatClock(wake.startedAt), title: wake.title }))}
-      />
       <div className="night-axis" aria-hidden="true">
         {ticks.map((tick) => (
           <span key={tick}>{formatClock(tick)}</span>
         ))}
       </div>
+      {(sleepLabels.length > 0 || wakeLabels.length > 0) && <details className="reference-details night-times"><summary>Sleep &amp; wake times</summary>
+      {sleepLabels.length > 0 && <small>Sleep starts</small>}
+      <LabelRow className="night-sleep-labels" labels={sleepLabels} />
+      {wakeLabels.length > 0 && <small>Wakes</small>}
+      <LabelRow
+        className="night-wake-labels"
+        labels={wakeLabels.map((wake) => ({ at: share(wake.startedAt), key: wake.startedAt, text: formatClock(wake.startedAt), title: wake.title }))}
+      />
+      </details>}
+
     </div>
   );
 }
@@ -478,7 +483,7 @@ export function NightReport({ averageRange, events, loadNursery, now: fixedNow, 
     <section className="section-block night-report" data-event="sleep">
       <div className="section-heading">
         <h2>Night &amp; Day</h2>
-        <span>7 PM – 7 AM – 7 PM</span>
+
       </div>
 
       <div className="night-nav">
@@ -506,11 +511,14 @@ export function NightReport({ averageRange, events, loadNursery, now: fixedNow, 
         </button>
       </div>
 
+      <div className="night-period">
+      <div className="section-heading night-period-heading"><h3>Night</h3><span>7 PM – 7 AM</span></div>
       {!night.tracked ? (
         <p className="empty-state compact">Nothing logged around this night.</p>
       ) : (
         <>
           <NightTrack night={night} onLog={onLogSleep} onSelectCry={selectCry} selectedCry={selectedCry} />
+          <details className="reference-details night-key"><summary>Timeline key</summary>
           <div className="night-legend" aria-hidden="true">
             <span><i className="night-sleep logged" />Logged sleep</span>
             <span><i className="night-sleep estimated" />Estimated</span>
@@ -522,6 +530,7 @@ export function NightReport({ averageRange, events, loadNursery, now: fixedNow, 
             {onLogSleep && dayTracked && day.openings.length > 0 && <span><i className="night-opening" />Room for a nap</span>}
           </div>
 
+          </details>
           {onLogSleeps && toLog.length > 0 && (
             <div className="night-log-row">
               <button className="secondary-button" disabled={logging} type="button" onClick={() => void logAll()}>
@@ -556,6 +565,8 @@ export function NightReport({ averageRange, events, loadNursery, now: fixedNow, 
         </>
       )}
 
+      </div>
+      <div className="night-period">
       <div className="section-heading night-span-heading">
         <h3>Day</h3>
         <span>{formatNightLabel(day.dateKey)}</span>
@@ -577,6 +588,7 @@ export function NightReport({ averageRange, events, loadNursery, now: fixedNow, 
         </>
       )}
 
+      </div>
       <CryPanel cries={[...night.heard, ...day.heard]} events={events} onMark={onMarkCries} onSelect={selectCry} selected={selectedCry} />
 
       <SensorLine night={night} nursery={nursery} />
@@ -623,11 +635,13 @@ export function NightReport({ averageRange, events, loadNursery, now: fixedNow, 
         </>
       )}
 
+      <details className="reference-details night-explanation"><summary>How sleep is estimated</summary>
       <p className="night-note">
         Wakes are night feeds, changes and meds logged within 30 minutes of each other. Sleep not logged as a sleep entry is
         estimated: the time between wakes, less {SETTLE_MINUTES} minutes to settle. Crying the sensor heard is taken out of estimated
         sleep the same way, but it never adds a wake or changes a logged sleep: the sensor only hears what reaches the phone.
       </p>
+      </details>
     </section>
   );
 }

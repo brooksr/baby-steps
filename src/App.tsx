@@ -873,7 +873,7 @@ function App() {
   return (
     <div className="app-shell">
       <header className="app-header">
-        <span className="app-wordmark">BabySteps</span>
+        <a className="app-brand" href={import.meta.env.BASE_URL} aria-label="BabySteps home"><img src={`${import.meta.env.BASE_URL}icons/icon-96.png`} alt="" width="40" height="40" /></a>
         {switchable.length > 1 && <ChildSwitcher activeId={profile.id} profiles={switchable} onSelect={selectChild} />}
       </header>
 

@@ -3,7 +3,7 @@ import { formatClock, formatDuration, formatShortDate } from '../domain/dates';
 import { getCaregiverName } from '../domain/family';
 import { parseIntakeTags } from '../domain/intakeOutput';
 import { getBristolType, getFoodTriggerById, getMilestoneById, getMoodScale, getStoolColorById, getVaccinationById } from '../domain/reference';
-import { getEventDurationMinutes } from '../domain/summary';
+import { getEventDurationMinutes, sortEventsDescending } from '../domain/summary';
 import { formatTemperature } from '../domain/temperature';
 import { careEventLabels, intakeKindLabels, intakePortionLabels, mensesFlowLabels, outputKindLabels, type BabyProfile, type CareEvent, type CareEventType } from '../domain/types';
 import { formatLength, formatVolume, formatWeight, getPreferredUnits } from '../domain/units';
@@ -134,7 +134,7 @@ export function Timeline({ events, emptyMessage = 'No entries yet.', onDelete, o
 
   return (
     <ol className="timeline">
-      {events.map((event) => {
+      {sortEventsDescending(events).map((event) => {
         const Icon = icons[event.type];
         const caregiver = getCaregiverName(profiles, event.caregiverId);
 

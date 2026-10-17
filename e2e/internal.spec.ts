@@ -121,5 +121,42 @@ test('real passkey account, family, offline queue, caregiver boundary and recove
   await page.setViewportSize({ width:390,height:844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path:'test-results/internal-mobile.png',fullPage:true });
+  // Exercise mobile Home/Log/Reports with real growth and Night & Day content.
+  const birthAt = new Date(Date.now()-90*86400_000).toISOString();
+  const beforeGrowth = await request(page,`/families/${familyId}/bootstrap`);
+  expect((await request(page,`/families/${familyId}/mutations`,{ action:'save',collection:'profiles',id:child.id,expectedRevision:beforeGrowth.body.revisions[`profiles:${child.id}`],operationId:'mobile-profile',patch:{ dueDate:birthAt.slice(0,10),gender:'girl' } })).status).toBe(200);
+  for (const [id,type,startedAt,weightOz] of [['mobile-birth','birth',birthAt,116],['mobile-growth','growth',now,220]]) {
+    expect((await request(page,`/families/${familyId}/mutations`,{ action:'save',collection:'events',expectedRevision:0,id,operationId:id,patch:{ babyId:child.id,startedAt,type,weightOz,lengthIn:24,headCircumferenceIn:15 } })).status).toBe(200);
+  }
+  const lastNight = new Date(now); lastNight.setDate(lastNight.getDate()-1); lastNight.setHours(22,0,0,0);
+  for (const [index,hours] of [0,4].entries()) {
+    expect((await request(page,`/families/${familyId}/mutations`,{ action:'save',collection:'events',expectedRevision:0,id:`night-feed-${index}`,operationId:`night-feed-${index}`,patch:{ babyId:child.id,startedAt:new Date(lastNight.getTime()+hours*3600_000).toISOString(),type:'feed',method:'bottle',amountOz:3 } })).status).toBe(200);
+  }
+  expect((await request(page,`/families/${familyId}/mutations`,{ action:'save',collection:'events',expectedRevision:0,id:'night-sleep',operationId:'night-sleep',patch:{ babyId:child.id,startedAt:new Date(lastNight.getTime()-3600_000).toISOString(),endedAt:lastNight.toISOString(),type:'sleep' } })).status).toBe(200);
+  await page.reload();
+  const nav = page.getByRole('navigation',{ name:'Primary' });
+  await nav.getByRole('button',{ name:'Home',exact:true }).click();
+  await page.locator('.app-brand img').waitFor();
+  await expect(page.getByRole('button',{ name:'Sync now',exact:true })).toBeVisible();
+  await page.screenshot({ path:'test-results/mobile-home.png',fullPage:false });
+  await page.locator('.expect-card').screenshot({ path:'test-results/mobile-expect.png',style:'.bottom-nav { visibility: hidden; }' });
+  for (const width of [320,390,768,1280]) {
+    await page.setViewportSize({ width,height:844 });
+    await nav.getByRole('button',{ name:'Log',exact:true }).click();
+    expect(await page.evaluate(() => [...document.querySelectorAll('body *')].filter(el => el.getBoundingClientRect().right > innerWidth+1).map(el => ({ tag:el.tagName,class:el.className,right:el.getBoundingClientRect().right })).slice(0,12))).toEqual([]);
+    if (width===390) await page.screenshot({ path:'test-results/mobile-log.png',fullPage:true });
+    await nav.getByRole('button',{ name:'Reports',exact:true }).click();
+    await expect(page.locator('.growth-chart').first()).toBeVisible();
+    expect(await page.evaluate(() => [...document.querySelectorAll('body *')].filter(el => el.getBoundingClientRect().right > innerWidth+1).map(el => ({ tag:el.tagName,class:el.className,right:el.getBoundingClientRect().right })).slice(0,12))).toEqual([]);
+    if (width===390) {
+      const grid = await page.locator('.growth-charts').boundingBox();
+      const chart = await page.locator('.growth-charts .chart-card').first().boundingBox();
+      expect(chart!.width).toBeGreaterThanOrEqual(grid!.width-2);
+      await page.locator('.growth-overview').screenshot({ path:'test-results/mobile-growth-overview.png',style:'.bottom-nav { visibility: hidden; }' });
+      await page.locator('.growth-charts').screenshot({ path:'test-results/mobile-growth-charts.png',style:'.bottom-nav { visibility: hidden; }' });
+      await page.locator('.night-report').screenshot({ path:'test-results/mobile-night.png',style:'.bottom-nav { visibility: hidden; }' });
+    }
+  }
+
 
 });

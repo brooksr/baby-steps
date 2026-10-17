@@ -300,3 +300,14 @@ describe('Dashboard', () => {
     expect(screen.queryByRole('button', { name: /Log birth/ })).toBeNull();
   });
 });
+
+it('shows the eight newest entries today even when storage returns oldest first', () => {
+  const events: CareEvent[] = Array.from({ length:10 }, (_, index) => ({
+    babyId:'avery-example',createdAt:'2026-10-01T12:00:00Z',id:`note-${index}`,startedAt:`2026-09-02T${String(index+8).padStart(2,'0')}:00:00`,title:`Today note ${index}`,type:'note',updatedAt:'2026-10-01T12:00:00Z'
+  }));
+  const { container } = render(<Dashboard activeTimers={{}} events={events} profile={createDefaultBabyProfile()} todayKey="2026-09-02" onAdd={vi.fn()} />);
+  expect(screen.queryByText('Today note 0')).not.toBeInTheDocument();
+  expect(screen.getByText('Today note 9')).toBeInTheDocument();
+  expect([...container.querySelectorAll('.timeline time')].map(time => time.getAttribute('datetime')))
+    .toEqual(events.slice(2).reverse().map(event => event.startedAt));
+});

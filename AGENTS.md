@@ -125,6 +125,14 @@ change done.
   exports a component and nothing else. Its tracks are `minmax(0, 1fr)` with the
   gap tightening as columns multiply — a per-column pixel floor plus gaps is
   wider than the card once a period runs to months, and the bars spill out of it.
+- Event lists must be newest first regardless of API/import row order. `Timeline`
+  sorts with `sortEventsDescending`; any list that slices or paginates must sort
+  **before** that slice too (Home and Log). Android already sorts profile events
+  in `care/model/Model.kt` before its Home/Log views.
+- Mobile charts take one full content column. Keep reference details expandable
+  without discarding the underlying guidance, age basis, ranges or safety copy.
+  Web presentation changes need not change Kotlin calculations; native styling
+  remains independent, with the shared domain behavior kept in parity.
 - `src/components/` — React views. `App.tsx` owns the tab router + store wiring.
   `DateRangeFilter` is shared by the Log and by the Reports "Custom" period.
 - `src/server/` — the Pi's events API (Node, bundled by `build:server`).

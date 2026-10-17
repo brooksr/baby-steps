@@ -83,7 +83,7 @@ export function GrowthStandards({ events, profile }: GrowthStandardsProps) {
 
   if (!profile.birthDate) {
     return (
-      <section className="section-block">
+      <section className="section-block growth-overview">
         <div className="section-heading">
           <h2>Growth standards</h2>
         </div>
@@ -106,7 +106,7 @@ export function GrowthStandards({ events, profile }: GrowthStandardsProps) {
 
   return (
     <>
-      <section className="section-block">
+      <section className="section-block growth-overview">
         <div className="section-heading">
           <div>
             <h2>Growth standards</h2>
@@ -166,9 +166,10 @@ export function GrowthStandards({ events, profile }: GrowthStandardsProps) {
                   <strong>{assessment.label}</strong>
                   <span className={`assess-pill band-${assessment.band}`}>{bandLabel[assessment.band]}</span>
                 </div>
+                <p className="growth-reading">{displayGrowthValue(assessment.metric, assessment.value, preferredUnits)} <span>· {assessment.ageMonths.toFixed(1)} mo{activeBasis === 'corrected' ? ' corrected' : ''}</span></p>
+                <details className="reference-details growth-detail"><summary>Percentiles & reference</summary>
                 <p>
-                  {displayGrowthValue(assessment.metric, assessment.value, preferredUnits)} at {assessment.ageMonths.toFixed(1)} mo
-                  {activeBasis === 'corrected' ? ' corrected' : ''} · median{' '}
+                  Median{' '}
                   {displayGrowthValue(assessment.metric, assessment.standard.median, preferredUnits)} (range{' '}
                   {displayGrowthValue(assessment.metric, assessment.standard.p2, preferredUnits)}–
                   {displayGrowthValue(assessment.metric, assessment.standard.p98, preferredUnits)})
@@ -178,13 +179,14 @@ export function GrowthStandards({ events, profile }: GrowthStandardsProps) {
                   {showCorrected ? ` · P${correctedAssessments.get(assessment.metric)?.percentile} corrected age` : ''}
                 </small>
                 <small>{assessment.summary}</small>
+                </details>
               </article>
             ))}
           </div>
         )}
       </section>
 
-      <section className="chart-grid" aria-label="WHO growth standard charts">
+      <section className="chart-grid growth-charts" aria-label="WHO growth standard charts">
         {METRIC_ORDER.map((metric) => {
           const standard = displayStandard(standards[metric], preferredUnits);
           const plots = displayPlots(getMetricPlots(measurements, metric), metric, preferredUnits);
@@ -203,7 +205,7 @@ export function GrowthStandards({ events, profile }: GrowthStandardsProps) {
                 </div>
               )}
               <div className="chart-stats">
-                <span>WHO -2 SD…+2 SD band</span>
+                <span>WHO reference · −2 to +2 SD</span>
                 <span>{plots.length} plotted</span>
               </div>
             </article>

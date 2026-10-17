@@ -36,3 +36,11 @@ describe('Timeline units', () => {
     expect(screen.getByText(/50.8 cm/)).toBeInTheDocument();
   });
 });
+
+it('orders Home and Reports timelines by event time rather than stored row order', () => {
+  const older = { ...birth, id:'older', startedAt:'2026-09-01T10:00:00Z' };
+  const newer = { ...birth, id:'newer', startedAt:'2026-09-03T10:00:00Z' };
+  const { container } = render(<Timeline events={[older, newer, birth]} />);
+  expect([...container.querySelectorAll('time')].map(time => time.getAttribute('datetime')))
+    .toEqual([newer.startedAt, birth.startedAt, older.startedAt]);
+});
