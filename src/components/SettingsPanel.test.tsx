@@ -145,15 +145,16 @@ describe('SettingsPanel', () => {
     const user = userEvent.setup();
     const child = createDefaultBabyProfile();
     const me = createFamilyProfile({ kind: 'parent', name: 'Casey' }, [child]);
-    const onOpenAccount = vi.fn();
     const onInviteProfile = vi.fn().mockResolvedValue(undefined);
     const { props } = renderPanel({
-      onInviteProfile, onOpenAccount, profile: child, profiles: [child, me], signedInProfileId: me.id,
+      onInviteProfile, profile: child, profiles: [child, me], signedInProfileId: me.id,
       storeStatus: { backend: 'internal', configured: true, connected: true, familyId: 'internal-family', message: '' }
     });
     expect(screen.queryByRole('button', { name: 'Send Casey an invite' })).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Sign-in & account' }));
-    expect(onOpenAccount).toHaveBeenCalledOnce();
+    // Account owns sign-in, backups and the legal links in the internal app.
+    expect(screen.queryByRole('button', { name: 'Sign-in & account' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Data & backups' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Privacy Policy' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Add a caregiver' }));
     await user.type(screen.getByLabelText("Caregiver's name"), 'Nan');
     await user.click(screen.getByRole('button', { name: 'Add caregiver' }));

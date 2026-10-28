@@ -13,6 +13,7 @@ import { ParentReports } from './components/ParentReports';
 import { Care } from './components/Care';
 import { ShoppingList } from './components/ShoppingList';
 import { Todos } from './components/Todos';
+import { DataBackups } from './components/DataBackups';
 import { SettingsPanel } from './components/SettingsPanel';
 import { ChildSwitcher } from './components/ChildSwitcher';
 import { QuickAddDialog } from './components/QuickAddDialog';
@@ -176,7 +177,8 @@ export default function InternalApp() {
       </button>
     </header>
     {error && <p role="alert" className="error-banner">{error}</p>}{notice && <p role="status" className="notice">{notice}</p>}{recoveryPanel}
-    {queue.length > 0 && <section className="card"><h2>Queued changes ({queue.length})</h2>{queue.map((row) => <div key={row.order}><p>{{ events:'Entry',nursery:'Nursery summary',profiles:'Person',shopping:'Shopping item',tasks:'Task' }[row.command.collection]} · {row.error ? 'Needs review before syncing' : 'Waiting to sync'}</p>
+    {/* Waiting changes sync on their own; only a conflict needs someone to decide. */}
+    {queue.some((row) => row.error) && <section className="card"><h2>Changes need review</h2>{queue.filter((row) => row.error).map((row) => <div key={row.order}><p>{{ events:'Entry',nursery:'Nursery summary',profiles:'Person',shopping:'Shopping item',tasks:'Task' }[row.command.collection]} · {row.error ? 'Needs review before syncing' : 'Waiting to sync'}</p>
       {row.error && <button onClick={() => void run(async () => { await client!.retryWithLatest(row.order!); await client!.sync(); await reload(); })}>Apply to latest version</button>}
       <button onClick={() => void run(async () => { await client!.discard(row.order!); await reload(); })}>Discard queued change</button></div>)}
       <button onClick={() => downloadText('babysteps-pending.json',JSON.stringify(queue,null,2),'application/json')}>Export pending changes</button></section>}
@@ -199,7 +201,7 @@ export default function InternalApp() {
       onConnectSheet={async () => {}} onApplyShifts={async () => { throw new Error('Night shift is disabled.'); }} onExport={async () => data.data} onImport={importData}
       onInviteProfile={async (person) => { const result = await confirmed(() => internalRequest<{ token: string }>(api,`/families/${encodeURIComponent(family)}/invitations`,{ profileId:person.id }));
         const link = `${window.location.origin}${import.meta.env.BASE_URL}#invite=${result.token}`; await navigator.clipboard.writeText(link); }}
-      signedInProfileId={data.actorProfileId} onOpenAccount={() => setView('Account')} onOpenLearn={() => setView('Learn')} onThemeChange={setTheme} />}
+      signedInProfileId={data.actorProfileId} onOpenLearn={() => setView('Learn')} onThemeChange={setTheme} />}
     {showing === 'Account' && <main className="view-stack account-page" aria-busy={busy}>
       <header className="page-intro"><h1>Account</h1><p>{people.find((person) => person.id === data.actorProfileId)?.name ?? 'Your BabySteps account'} · {caregiver ? 'Caregiver' : 'Parent'}</p><p>Sign-in, recovery and your connected devices.</p></header>
       {session.needsPasskey && !credentials?.passkeys.length && <p className="notice" role="alert">Recovery revoked earlier passkeys, Google linking and device sessions. Add a new passkey before signing out.</p>}
@@ -230,7 +232,10 @@ export default function InternalApp() {
         <details className="reference-details"><summary>Account details</summary><p className="account-id">Account ID: {session.accountId}</p><p className="account-id">Family ID: {family}</p></details>
       </section>
       {invite && <form onSubmit={(e) => { e.preventDefault(); void run(async () => { const result = await confirmed(() => internalRequest<{ familyId:string }>(api,'/invitations/accept',{ token:invite })); setInvite(''); await signedIn(); setFamily(result.familyId); window.history.replaceState(null,'',window.location.pathname); }); }}><label>Invitation token<input value={invite} onChange={(e) => setInvite(e.target.value)} /></label><button>Join invited family</button></form>}
+      <DataBackups events={events} profile={profile} profiles={people} source="BabySteps" summary={offline ? 'Offline. Changes stay on this device until you reconnect.' : 'Synced with your family’s BabySteps server. This device keeps an offline copy.'}
+        onExport={async () => data.data} onImport={importData} />
       <footer className="account-footer"><p>Signing out keeps this account’s offline changes on this device.</p><button className="secondary-button" disabled={busy} onClick={() => void run(logout)}>Sign out</button></footer>
+      <p className="legal-links"><a href={`${import.meta.env.BASE_URL}privacy/index.html`}>Privacy Policy</a><a href={`${import.meta.env.BASE_URL}terms/index.html`}>Terms of Service</a></p>
     </main>}
     <nav className="bottom-nav" aria-label="Primary" style={{ gridTemplateColumns:`repeat(${allowed.filter((item) => item !== 'Learn').length}, minmax(0,1fr))` }}>{allowed.filter((item) => item !== 'Learn').map((item) => {
       const Icon = icons[item]; return <button key={item} className={showing === item ? 'active' : ''} aria-pressed={showing === item} onClick={() => { setNotice(''); if (item === 'Log') setLogTypeFilter(null); setView(item); window.history.replaceState(null,'',`#${item.toLowerCase()}`); }}><Icon aria-hidden="true" /><span>{item}</span></button>;

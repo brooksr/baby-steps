@@ -1120,16 +1120,21 @@ stays on the phone.
   an interactive sign-in failing — sets `babysteps.google.pickAccount`, so the
   next interactive request uses `prompt: 'select_account'` instead of silently
   reusing the account it just left; a successful sign-in clears it.
-- **Theme** — the light/dark control lives in **Settings → Appearance**. The app
-  header holds only the wordmark; Settings is also the only way into **Learn**
-  (still routable at `#learn`, and the bottom nav stays visible there).
+- **Theme** — the light/dark control sits at the top of **Settings**, beside
+  the **Learn** button, with no card of its own. The app header holds only the
+  wordmark; Settings is also the only way into Learn (still routable at
+  `#learn`, and the bottom nav stays visible there). In the internal app,
+  **Data & backups** (`components/DataBackups.tsx`) and the Privacy/Terms links
+  live on the Account page instead of Settings, and the queued-changes card
+  appears only when a change needs review — waiting changes sync on their own.
 - **Event colors** — care events are color-coded by family (feeds blue, diapers
   amber, tummy teal, bath cyan, sleep indigo, meds/temp/vaccines coral,
   birth/growth/milestones green, mood pink, appointments/notes slate). The pair
   rides on the element as `data-event={type}` plus two custom properties:
   `--event-tint` for the mark, `--event-fill` for the surface behind it. The
-  Home quick-add grid and the Log timeline chip both read them, so one block
-  keeps the four surfaces in step. Reports tags each metric card and `MiniChart`
+  Home quick-add grid reads only the tint (its tiles are plain panels, the icon
+  carries the color) and the Log timeline chip reads both, so one block keeps
+  the surfaces in step. Reports tags each metric card and `MiniChart`
   (which takes an `event` prop) — cards carry no icon, so a 3px leading edge does
   the coding, and the chart bars draw in the family tint over its fill. Care tags
   its Milestones and Vaccinations sections, which tints the idle `.check-box`;
@@ -1137,9 +1142,8 @@ stays on the phone.
   one stacked chart is the exception: wet vs dirty is a different dimension from
   the family hue, so those two parts keep their own blue/amber pair, and the
   selected bar deepens with a `filter` rather than switching to a fixed blue. Both fall back to the old flat blue, so an untagged
-  element is unchanged, and `.quick-button` takes the fill on *itself* rather
-  than on the `[data-event]` rules — those would outrank `.timer-active` and a
-  running timer must still be able to take the tile.
+  element is unchanged, and a running timer still takes a quick-add tile
+  through `.timer-active`.
 - **Nav colors** — each bottom-nav tab owns a hue, keyed off `data-nav={tab.id}`
   and carried by two custom properties: `--nav-tint` colors the idle icon,
   `--nav-fill` fills the selected pill. Fills stay pastel in both themes (the

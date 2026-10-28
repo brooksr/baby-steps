@@ -849,9 +849,9 @@ button {
   gap: 8px;
   padding: 12px 8px;
   color: var(--ink);
-  /* Set here, not on the `[data-event]` rules above: those would outrank
-     `.timer-active`, and a running timer must still be able to take the tile. */
-  background: var(--event-fill, var(--panel));
+  /* Plain tiles: the family color rides on the icon alone. A running timer
+     still takes the tile through `.timer-active`. */
+  background: var(--panel);
   border: 1px solid var(--line);
   box-shadow: 0 1px 0 rgba(34, 75, 112, 0.06);
   font-weight: 800;
@@ -4052,12 +4052,10 @@ textarea {
 .account-provider { display: grid; justify-items: start; gap: 10px; padding-top: 16px; border-top: 1px solid var(--line); }
 .account-footer { display: grid; justify-items: start; gap: 12px; }
 .settings-page .section-heading { flex-wrap: wrap; }
-.settings-page .settings-actions { margin-top: 16px; }
+.settings-page .settings-actions, .account-page .settings-actions { margin-top: 16px; }
 @media (max-width: 480px) {
-  .settings-page .child-list li { flex-wrap: wrap; }
-  .settings-page .child-pick { flex-basis: 100%; min-width: 0; }
   .settings-page .child-pick span { min-width: 0; overflow-wrap: anywhere; }
-  .settings-page .settings-actions:not(.add-person) { grid-template-columns: 1fr; }
+  .settings-page .settings-actions:not(.add-person), .account-page .settings-actions { grid-template-columns: 1fr; }
   .account-page .form-grid { grid-template-columns: 1fr; }
 }
 .settings-page .field-note, .account-page .field-note {
@@ -4066,11 +4064,14 @@ textarea {
   background: transparent;
   border: 0;
 }
-.settings-page .child-archive { min-height: 40px; }
+.settings-page .child-archive { min-height: 40px; justify-content: center; }
+/* Invite and archive are icons beside the name, never a row of their own. */
+.settings-page .child-pick { min-width: 0; }
+.settings-page .child-archive { flex: 0 0 auto; padding: 0 10px; }
+/* Theme and Learn ride in the page header instead of cards of their own. */
+.settings-top { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.settings-top .secondary-button { min-height: 40px; padding: 0 14px; }
 @media (max-width: 480px) {
-  .settings-page .child-list li { display: grid; grid-template-columns: auto auto; justify-content: stretch; padding: 10px; border: 1px solid var(--line); border-radius: 10px; }
-  .settings-page .child-pick { grid-column: 1 / -1; }
-  .settings-page .child-archive { justify-content: center; }
   .settings-page .settings-actions.add-person { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .settings-page .settings-actions.add-person > :last-child { grid-column: 1 / -1; }
 }

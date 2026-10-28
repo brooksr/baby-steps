@@ -55,12 +55,14 @@ test('real passkey account, family, offline queue, caregiver boundary and recove
   await page.context().setOffline(true);
   await page.getByPlaceholder('What needs doing?').fill('Offline task');
   await page.getByRole('button',{ name:'Add',exact:true }).click();
-  await expect(page.getByRole('heading',{ name:'Queued changes (1)' })).toBeVisible();
+  await expect(page.getByText('Offline task')).toBeVisible();
+  await expect(page.getByRole('heading',{ name:/Queued changes|Changes need review/ })).toHaveCount(0);
   await page.context().setOffline(false); await page.getByRole('button',{ name:'Sync now',exact:true }).click();
-  await expect(page.getByRole('heading',{ name:'Queued changes (1)' })).not.toBeVisible();
   const session = await request(page,'/session'); expect(session.status).toBe(200);
   const familyId = session.body.families[0].familyId;
   const boot = await request(page,`/families/${familyId}/bootstrap`); expect(boot.status).toBe(200);
+  // The queued task reaches the server once Sync now finishes.
+  await expect.poll(async () => JSON.stringify((await request(page,`/families/${familyId}/bootstrap`)).body.data.tasks)).toContain('Offline task');
   const child = boot.body.data.profiles.find((p: { kind:string }) => p.kind === 'child');
   const now = new Date().toISOString();
   const event = { action:'save',collection:'events',expectedRevision:0,id:'feed-e2e',operationId:'feed-e2e',patch:{ babyId:child.id,method:'bottle',amountOz:3,startedAt:now,type:'feed' } };
@@ -139,10 +141,18 @@ test('real passkey account, family, offline queue, caregiver boundary and recove
     await expect(page.getByText(`Account ID: ${recovery[0]}`,{ exact:true })).toBeHidden();
     await expect(page.getByRole('button',{ name:'Replace recovery codes',exact:true })).toBeHidden();
     await expect(page.getByLabel('Connection code',{ exact:true })).toBeVisible();
+    await expect(page.getByRole('heading',{ name:'Data & backups',exact:true })).toBeVisible();
+    await expect(page.getByRole('link',{ name:'Privacy Policy',exact:true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
     if (width===390) await page.screenshot({ path:'test-results/mobile-account-organized.png',fullPage:true });
     await page.getByRole('navigation',{ name:'Primary' }).getByRole('button',{ name:'Settings',exact:true }).click();
-    await expect(page.getByRole('heading',{ name:'Data & backups',exact:true })).toBeVisible();
+    await expect(page.getByRole('button',{ name:'Learn',exact:true })).toBeVisible();
+    await expect(page.getByRole('heading',{ name:'Data & backups',exact:true })).toHaveCount(0);
+    // Invite and archive stay on the name's row at every width.
+    expect(await page.locator('.settings-page .child-list li').evaluateAll(rows => rows.every(row => {
+      const tops = [...row.children].map(child => Math.round(child.getBoundingClientRect().top));
+      return tops.every(top => top === tops[0]);
+    }))).toBe(true);
     const chrome = await page.locator('.app-header').evaluate(header => {
       const sync = header.querySelector('.header-sync')!.getBoundingClientRect();
       const brand = header.querySelector('.app-brand')!.getBoundingClientRect();
@@ -153,8 +163,6 @@ test('real passkey account, family, offline queue, caregiver boundary and recove
     await expect(page.getByRole('button',{ name:'Sign out',exact:true })).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
     if (width===390) await page.screenshot({ path:'test-results/mobile-settings-organized.png',fullPage:true });
-    await page.getByRole('button',{ name:'Sign-in & account',exact:true }).click();
-    await expect(page.getByRole('heading',{ name:'Account',exact:true })).toBeVisible();
   }
   // Exercise mobile Home/Log/Reports with real growth and Night & Day content.
   const birthAt = new Date(Date.now()-90*86400_000).toISOString();

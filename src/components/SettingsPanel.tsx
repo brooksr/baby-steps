@@ -1,5 +1,5 @@
-import { Archive, ArchiveRestore, BookOpen, Baby, Download, ExternalLink, HeartHandshake, LogOut, Moon, Plus, Send, Sun, Upload, UserRound } from 'lucide-react';
-import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react';
+import { Archive, ArchiveRestore, BookOpen, Baby, ExternalLink, HeartHandshake, LogOut, Moon, Plus, Send, Sun, UserRound } from 'lucide-react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { getActiveProfiles, getArchivedProfiles, getCaregiverAccounts, getCaregivers, getFirstName, isCaregiverAccount, isParent, normalizeEmail, type NewProfileInput } from '../domain/family';
 import { DEFAULT_MORNING_SHIFT, DEFAULT_NAP_WINDOW, DEFAULT_NIGHT_SHIFT, DEFAULT_SLEEP_WINDOW, formatShiftTime } from '../domain/nightShift';
 import type { ShiftPlan, ShiftResult } from '../domain/nightShift';
@@ -11,6 +11,7 @@ import { buildInvite } from '../domain/invite';
 import { describeManageResult, getInviteLink, type ManageSheetResult } from '../storage/familyDirectory';
 import { GOOGLE_OAUTH_PUBLISHED, getTestUsersUrl, hasPickerConfig } from '../storage/googleSetup';
 import type { StoreStatus } from '../storage/store';
+import { DataBackups } from './DataBackups';
 
 interface SettingsPanelProps {
   events: CareEvent[];
@@ -20,7 +21,6 @@ interface SettingsPanelProps {
   /** The Google account this device is signed in with, when known. */
   signedInEmail?: string;
   signedInProfileId?: string;
-  onOpenAccount?: () => void;
   storeStatus: StoreStatus | null;
   theme: Theme;
   onAddChild: (input: NewProfileInput) => Promise<void>;
@@ -67,58 +67,6 @@ const THEMES: Array<{ icon: typeof Sun; id: Theme; label: string }> = [
   { icon: Moon, id: 'dark', label: 'Dark' }
 ];
 
-/** A filename that names the child, now that a download is one child's data. */
-function fileSlug(profile: BabyProfile) {
-  return (
-    profile.name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '') || 'tracker'
-  );
-}
-
-function escapeCsv(value: unknown) {
-  const text = value === undefined || value === null ? '' : String(value);
-  return `"${text.replace(/"/g, '""')}"`;
-}
-
-function eventDetails(event: CareEvent) {
-  const details = { ...event } as Record<string, unknown>;
-  // `caregiverId` gets a column of its own, resolved to a name.
-  for (const key of ['id', 'babyId', 'caregiverId', 'createdAt', 'updatedAt', 'syncState', 'startedAt', 'endedAt', 'notes', 'type']) {
-    delete details[key];
-  }
-
-  return JSON.stringify(details);
-}
-
-function downloadFile(filename: string, contents: string, type: string) {
-  const blob = new Blob([contents], { type });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
-  URL.revokeObjectURL(url);
-}
-
-function eventsToCsv(events: CareEvent[], profiles: BabyProfile[]) {
-  const headers = ['id', 'type', 'startedAt', 'endedAt', 'loggedBy', 'notes', 'details'];
-  const rows = events.map((event) =>
-    [
-      escapeCsv(event.id),
-      escapeCsv(event.type),
-      escapeCsv(event.startedAt),
-      escapeCsv(event.endedAt),
-      escapeCsv(profiles.find((person) => person.id === event.caregiverId)?.name),
-      escapeCsv(event.notes),
-      escapeCsv(eventDetails(event))
-    ].join(',')
-  );
-
-  return [headers.join(','), ...rows].join('\n');
-}
-
 export function SettingsPanel({
   events,
   profile,
@@ -134,7 +82,6 @@ export function SettingsPanel({
   onApplyShifts,
   onArchiveProfile,
   onOpenLearn,
-  onOpenAccount,
   onRestoreProfile,
   onSaveProfile,
   onSelectChild,
@@ -211,9 +158,8 @@ export function SettingsPanel({
     }
 
     return (
-      <button type="button" className="child-archive" aria-label={`Send ${person.name} an invite`} onClick={() => void handleSendInvite(person)}>
+      <button type="button" className="child-archive" aria-label={`Send ${person.name} an invite`} title="Invite" onClick={() => void handleSendInvite(person)}>
         <Send aria-hidden="true" />
-        <span>Invite</span>
       </button>
     );
   }
@@ -321,18 +267,6 @@ export function SettingsPanel({
   }
 
   /** The JSON export is the whole tracker, so it is not named for one child. */
-  async function handleJsonExport() {
-    const data = await onExport();
-    downloadFile(`babysteps-${data.exportedAt.slice(0, 10)}.json`, JSON.stringify(data, null, 2), 'application/json');
-    setStatus('JSON exported.');
-  }
-
-  // The CSV is what is on screen: this child's entries.
-  function handleCsvExport() {
-    downloadFile(`babysteps-${fileSlug(profile)}-events.csv`, eventsToCsv(events, profiles), 'text/csv');
-    setStatus('CSV exported.');
-  }
-
   function resetAddForms() {
     setAdding(null);
     setChildName('');
@@ -439,19 +373,6 @@ export function SettingsPanel({
     }
   }
 
-  async function handleImport(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-
-    if (!file) {
-      return;
-    }
-
-    const data = JSON.parse(await file.text()) as TrackerExport;
-    await onImport(data);
-    event.target.value = '';
-    setStatus('Import complete.');
-  }
-
   async function handleConnectSheet() {
     setConnecting(true);
     try {
@@ -465,11 +386,7 @@ export function SettingsPanel({
   return (
     <main className="view-stack settings-page">
       <header className="page-intro"><h1>Settings</h1><p>Family profiles and app preferences.</p>
-        {onOpenAccount && <button className="secondary-button" type="button" onClick={onOpenAccount}><UserRound aria-hidden="true" />Sign-in &amp; account</button>}
-      </header>
-      <section className="section-block">
-        <div className="section-heading">
-          <h2>Appearance</h2>
+        <div className="settings-top">
           <div className="segmented-control" aria-label="Theme">
             {THEMES.map((option) => {
               const Icon = option.icon;
@@ -488,8 +405,12 @@ export function SettingsPanel({
               );
             })}
           </div>
+          <button className="secondary-button" type="button" onClick={onOpenLearn}>
+            <BookOpen aria-hidden="true" />
+            <span>Learn</span>
+          </button>
         </div>
-      </section>
+      </header>
 
       <section className="section-block">
         <div className="section-heading">
@@ -914,65 +835,41 @@ export function SettingsPanel({
       )}
 
 
-      <section className="section-block sync-note">
-        <div className="section-heading">
-          <h2>Data &amp; backups</h2>
-          <span>{storeStatus?.backend === 'internal' ? 'BabySteps' : storeStatus?.backend === 'google-sheets' ? 'Google Sheets' : 'Local'}</span>
-        </div>
-        <p>{internal ? (storeStatus.connected ? 'Synced with your family’s BabySteps server. This device keeps an offline copy.' : 'Offline. Changes stay on this device until you reconnect.') : storeStatus?.message}</p>
-        <p className="field-note">Back up the whole family as JSON, or export {getFirstName(profile)}’s log as CSV. Import accepts a BabySteps JSON backup.</p>
-      <div className="settings-actions" aria-label="Data tools">
-        <button className="tool-button" type="button" onClick={handleJsonExport}>
-          <Download aria-hidden="true" />
-          <span>Family backup · JSON</span>
-        </button>
-        <button className="tool-button" type="button" onClick={handleCsvExport}>
-          <Download aria-hidden="true" />
-          <span>Current log · CSV</span>
-        </button>
-        <label className="tool-button file-tool">
-          <Upload aria-hidden="true" />
-          <span>Import backup</span>
-          <input type="file" accept="application/json" onChange={handleImport} />
-        </label>
-      </div>
-
-        {signedInEmail && <p>Signed in as {signedInEmail}.</p>}
-        {storeStatus?.familyId && storeStatus.backend !== 'internal' && (
-          <>
-            <p>
-              Family ID <code className="family-id">{storeStatus.familyId}</code>
-            </p>
-            <p>Only people with a profile here can open this family. Add someone in Family with their Google account, then send them the invite link.</p>
-            <button className="secondary-button sheet-connect" type="button" onClick={() => void handleCopyInvite(storeStatus.familyId as string)}>
-              Copy invite link
+      {/* The internal app keeps backups and the legal links on its Account page. */}
+      {!internal && (
+        <DataBackups
+          events={events}
+          profile={profile}
+          profiles={profiles}
+          source={storeStatus?.backend === 'google-sheets' ? 'Google Sheets' : 'Local'}
+          summary={storeStatus?.message}
+          onExport={onExport}
+          onImport={onImport}
+        >
+          {signedInEmail && <p>Signed in as {signedInEmail}.</p>}
+          {storeStatus?.familyId && storeStatus.backend !== 'internal' && (
+            <>
+              <p>
+                Family ID <code className="family-id">{storeStatus.familyId}</code>
+              </p>
+              <p>Only people with a profile here can open this family. Add someone in Family with their Google account, then send them the invite link.</p>
+              <button className="secondary-button sheet-connect" type="button" onClick={() => void handleCopyInvite(storeStatus.familyId as string)}>
+                Copy invite link
+              </button>
+            </>
+          )}
+          {storeStatus?.sheetUrl && (
+            <a className="sheet-link" href={storeStatus.sheetUrl} target="_blank" rel="noreferrer">
+              Open sheet
+            </a>
+          )}
+          {storeStatus?.configured && !storeStatus.connected && storeStatus.backend !== 'internal' && (
+            <button className="primary-button sheet-connect" type="button" onClick={handleConnectSheet} disabled={connecting}>
+              {connecting ? 'Connecting' : 'Connect Google Sheet'}
             </button>
-          </>
-        )}
-        {storeStatus?.sheetUrl && (
-          <a className="sheet-link" href={storeStatus.sheetUrl} target="_blank" rel="noreferrer">
-            Open sheet
-          </a>
-        )}
-        {storeStatus?.configured && !storeStatus.connected && storeStatus.backend !== 'internal' && (
-          <button className="primary-button sheet-connect" type="button" onClick={handleConnectSheet} disabled={connecting}>
-            {connecting ? 'Connecting' : 'Connect Google Sheet'}
-          </button>
-        )}
-      </section>
-
-      <section className="section-block">
-        <div className="section-heading">
-          <div>
-            <h2>Learn</h2>
-            <span>What BabySteps tracks, what it will not do, and the reference tables behind it.</span>
-          </div>
-        </div>
-        <button className="secondary-button learn-link" type="button" onClick={onOpenLearn}>
-          <BookOpen aria-hidden="true" />
-          <span>Open the Learn page</span>
-        </button>
-      </section>
+          )}
+          </DataBackups>
+      )}
 
       {onSignOut && (
         <button className="secondary-button sign-out" type="button" onClick={onSignOut}>
@@ -981,10 +878,12 @@ export function SettingsPanel({
         </button>
       )}
 
-      <p className="legal-links">
-        <a href={`${import.meta.env.BASE_URL}privacy/index.html`}>Privacy Policy</a>
-        <a href={`${import.meta.env.BASE_URL}terms/index.html`}>Terms of Service</a>
-      </p>
+      {!internal && (
+        <p className="legal-links">
+          <a href={`${import.meta.env.BASE_URL}privacy/index.html`}>Privacy Policy</a>
+          <a href={`${import.meta.env.BASE_URL}terms/index.html`}>Terms of Service</a>
+        </p>
+      )}
 
       {status && <p className="toast" role="status">{status}</p>}
     </main>
