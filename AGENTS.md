@@ -818,7 +818,8 @@ stays on the phone.
   not inside it, on the same grid as the buttons. A missing card leaves an empty slot,
   so each card stays over its own button in the first quick-add row (four to a
   row, pump under feed). Sleep reads "Asleep" while a sleep runs and "Awake ·
-  slept 1h 30m" counted from the last one's end otherwise.
+  slept 1h 30m" counted from the last one's end otherwise. Each card has a gray
+  bottom border; past due, that border turns the family color (no amber fill).
 - **Each tab keeps its scroll** (`src/useTabScroll.ts`, used by `App` and
   `InternalApp`): a tab not visited yet opens at the top, and returning to one
   restores where it was left, retrying a few frames while charts and loaded

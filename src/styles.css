@@ -4132,9 +4132,8 @@ body { min-width: 0; }
 .care-hero-metrics .hero-metric .hero-metric-detail { border-top-color: var(--line); }
 .care-hero-metrics > .hero-metric.in-range strong { color: #b26a00; }
 :root[data-theme='dark'] .care-hero-metrics > .hero-metric.in-range strong { color: #f4c95d; }
-.care-hero-metrics > .hero-metric.past-due { color: #49340a; background: #f4c95d; border-color: #e0b03c; }
-.care-hero-metrics > .hero-metric.past-due:hover,
-.care-hero-metrics > .hero-metric.past-due:focus-visible { background: #f7d577; }
-.care-hero-metrics > .hero-metric.past-due .hero-metric-label { color: inherit; }
-.care-hero-metrics > .hero-metric.past-due .hero-metric-detail { border-top-color: rgba(73, 52, 10, 0.24); }
+/* A gray foot on every card; past due, it takes the family color instead of
+   flooding the card amber. */
+.care-hero-metrics > .hero-metric { border-bottom: 3px solid var(--muted); }
+.care-hero-metrics > .hero-metric.past-due { border-bottom-color: var(--event-tint, var(--blue-700)); }
 .hero-clock { white-space: nowrap; }
