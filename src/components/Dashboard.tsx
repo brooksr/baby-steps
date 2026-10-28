@@ -32,20 +32,20 @@ interface DashboardProps {
   onOpenLog?: (type: CareEventType) => void;
 }
 
-// Ordered by how often a caregiver reaches for it, three to a row: the awake
-// routine (tummy, bath) sits with sleep rather than trailing the grid.
+// Four to a row. The first row matches the hero cards above it column for
+// column, and pump sits under feed.
 const actions = [
   { icon: Milk, label: 'Feed', type: 'feed' },
-  { icon: Droplets, label: 'Pump', type: 'pump' },
   { icon: Wind, label: 'Diaper', type: 'diaper' },
-  { icon: Dumbbell, label: 'Tummy', type: 'tummytime' },
-  { icon: Bath, label: 'Bath', type: 'bath' },
   { icon: Bed, label: 'Sleep', type: 'sleep' },
-  { icon: Pill, label: 'Med', type: 'medication' },
-  { icon: Calendar, label: 'Visit', type: 'appointment' },
-  { icon: Ruler, label: 'Growth', type: 'growth' },
-  { icon: Thermometer, label: 'Temp', type: 'temperature' },
+  { icon: Bath, label: 'Bath', type: 'bath' },
+  { icon: Droplets, label: 'Pump', type: 'pump' },
   { icon: Smile, label: 'Mood', type: 'mood' },
+  { icon: Dumbbell, label: 'Tummy', type: 'tummytime' },
+  { icon: Pill, label: 'Med', type: 'medication' },
+  { icon: Thermometer, label: 'Temp', type: 'temperature' },
+  { icon: Ruler, label: 'Growth', type: 'growth' },
+  { icon: Calendar, label: 'Visit', type: 'appointment' },
   { icon: FileText, label: 'Note', type: 'note' }
 ] satisfies Array<{ icon: typeof Plus; label: string; type: CareEventType }>;
 
@@ -57,6 +57,16 @@ function HeroMetric({ children, className, label, onOpen }: { children: ReactNod
     </button>
   ) : (
     <div className={className}>{children}</div>
+  );
+}
+
+/** A hero card's heading: the family icon stands in for the word "Last". */
+function HeroLabel({ icon: Icon, label }: { icon: typeof Plus; label: string }) {
+  return (
+    <span className="hero-metric-label">
+      <Icon aria-hidden="true" />
+      {label}
+    </span>
   );
 }
 
@@ -94,6 +104,9 @@ export function Dashboard({ activeTimers, allowedTypes, events, profile, profile
   const lastDiaper = getLastEvent(events, (event) => event.type === 'diaper');
   const nextDiaper = predictNextDiaper(events, now);
   const lastBath = getLastEvent(events, (event) => event.type === 'bath');
+  const lastSleep = getLastEvent(events, (event) => event.type === 'sleep');
+  // A running timer or an open entry means asleep now; otherwise count from waking.
+  const asleepSince = activeTimers.sleep?.startedAt ?? getActiveSleep(events)?.startedAt;
   const nextBath = predictNextBath(events, now);
   const dayLabel = (dateKey: string) => (dateKey === todayKey ? 'Today' : formatWeekday(dateKey));
   const sideSuffix = nextSide ? ` · ${nextSide}` : '';
@@ -142,41 +155,63 @@ export function Dashboard({ activeTimers, allowedTypes, events, profile, profile
 
         {/* A card only appears once there is something to count from — an empty
             "None · Nothing logged yet" tile says nothing the quick-add grid doesn't. */}
-        {(lastFeed || lastDiaper || lastBath) && (
+        {/* An empty slot keeps each card over its own quick-add button. */}
+        {(lastFeed || lastDiaper || lastSleep || asleepSince || lastBath) && (
           <div className="hero-metrics care-hero-metrics">
-            {lastFeed && (
+            {lastFeed ? (
               <HeroMetric className={`hero-metric${cadenceClass(nextFeed, now)}`} label="View feed log" onOpen={openLog('feed')}>
-                <span>Last feed</span>
+                <HeroLabel icon={Milk} label="Feed" />
                 <strong>{formatAgo(lastFeed.startedAt).replace(/ ago$/, '')}</strong>
                 <small>{formatClock(lastFeed.startedAt)}</small>
                 {nextFeed && (
                   <small className="hero-metric-detail">
-                    {nextFeed.minutesAway > 0 ? `Next ~${formatClockRange(nextFeed.windowStartAt, nextFeed.windowEndAt)}` : 'Due now'}
+                    {nextFeed.minutesAway > 0 ? `~${formatClockRange(nextFeed.windowStartAt, nextFeed.windowEndAt)}` : 'Due now'}
                     {sideSuffix}
                   </small>
                 )}
               </HeroMetric>
+            ) : (
+              <div className="hero-metric-placeholder" aria-hidden="true" />
             )}
-            {lastDiaper && (
+            {lastDiaper ? (
               <HeroMetric className={`hero-metric${cadenceClass(nextDiaper, now)}`} label="View diaper log" onOpen={openLog('diaper')}>
-                <span>Last diaper</span>
+                <HeroLabel icon={Wind} label="Diaper" />
                 <strong>{formatAgo(lastDiaper.startedAt).replace(/ ago$/, '')}</strong>
                 <small>{formatClock(lastDiaper.startedAt)}</small>
                 {nextDiaper && (
                   <small className="hero-metric-detail">
-                    {now.getTime() <= Date.parse(nextDiaper.windowEndAt) ? `Next ~${formatClockRange(nextDiaper.windowStartAt, nextDiaper.windowEndAt)}` : 'Likely now'} · {nextDiaper.likelyKind}
+                    {now.getTime() <= Date.parse(nextDiaper.windowEndAt) ? `~${formatClockRange(nextDiaper.windowStartAt, nextDiaper.windowEndAt)}` : 'Likely now'} · {nextDiaper.likelyKind}
                   </small>
                 )}
               </HeroMetric>
+            ) : (
+              <div className="hero-metric-placeholder" aria-hidden="true" />
+            )}
+            {asleepSince ? (
+              <HeroMetric className="hero-metric" label="View sleep log" onOpen={openLog('sleep')}>
+                <HeroLabel icon={Bed} label="Sleep" />
+                <strong>{formatAgo(asleepSince).replace(/ ago$/, '')}</strong>
+                <small>{formatClock(asleepSince)}</small>
+                <small className="hero-metric-detail">Asleep</small>
+              </HeroMetric>
+            ) : lastSleep?.endedAt ? (
+              <HeroMetric className="hero-metric" label="View sleep log" onOpen={openLog('sleep')}>
+                <HeroLabel icon={Bed} label="Sleep" />
+                <strong>{formatAgo(lastSleep.endedAt).replace(/ ago$/, '')}</strong>
+                <small>{formatClock(lastSleep.endedAt)}</small>
+                <small className="hero-metric-detail">Awake · slept {formatDuration(getEventDurationMinutes(lastSleep))}</small>
+              </HeroMetric>
+            ) : (
+              <div className="hero-metric-placeholder" aria-hidden="true" />
             )}
             {lastBath && (
               <HeroMetric className={`hero-metric${cadenceClass(nextBath, now)}`} label="View bath log" onOpen={openLog('bath')}>
-                <span>Last bath</span>
+                <HeroLabel icon={Bath} label="Bath" />
                 <strong>{formatDaysSince(lastBath.startedAt)}</strong>
                 <small>{formatShortDate(lastBath.startedAt)} · <time className="hero-clock" dateTime={lastBath.startedAt}>{formatClock(lastBath.startedAt)}</time></small>
                 {nextBath && (
                   <small className="hero-metric-detail">
-                    {nextBath.due ? 'Due today' : `Next ${dayLabel(nextBath.windowStartKey)}–${dayLabel(nextBath.windowEndKey)}`}
+                    {nextBath.due ? 'Due today' : `${dayLabel(nextBath.windowStartKey)}–${dayLabel(nextBath.windowEndKey)}`}
                   </small>
                 )}
               </HeroMetric>

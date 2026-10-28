@@ -68,7 +68,7 @@ describe('Dashboard', () => {
     // The relative wording ("Yesterday", "3 days ago") is pinned to a fixed
     // clock in dates.test.ts; here it just has to stop saying nothing is logged.
     const bath = within(screen.getByRole('button', { name: 'View bath log' }));
-    expect(bath.getByText(/Last bath/i)).toBeInTheDocument();
+    expect(bath.getByText('Bath')).toBeInTheDocument();
     expect(bath.queryByText(/Nothing logged yet/i)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'View bath log' }));
@@ -87,11 +87,11 @@ describe('Dashboard', () => {
       const { rerender } = render(<Dashboard {...props} />);
       const tile = screen.getByRole('button', { name: 'View bath log' });
       expect(tile).not.toHaveClass('in-range', 'past-due');
-      expect(within(tile).getByText('Next Sun–Mon')).toBeInTheDocument();
+      expect(within(tile).getByText('Sun–Mon')).toBeInTheDocument();
       vi.setSystemTime(new Date('2026-09-13T19:00:00'));
       rerender(<Dashboard {...props} todayKey="2026-09-13" />);
       expect(tile).toHaveClass('in-range');
-      expect(within(tile).getByText('Next Today–Mon')).toBeInTheDocument();
+      expect(within(tile).getByText('Today–Mon')).toBeInTheDocument();
       vi.setSystemTime(new Date('2026-09-14T19:00:00'));
       rerender(<Dashboard {...props} todayKey="2026-09-14" />);
       expect(tile).toHaveClass('in-range');
@@ -176,7 +176,7 @@ describe('Dashboard', () => {
 
     const prediction = within(screen.getByRole('button', { name: 'View diaper log' }));
     // Gaps of exactly 3h give the narrowest window, ±15 minutes around 2pm.
-    expect(prediction.getByText('Next ~1:45–2:15 PM · wet')).toBeInTheDocument();
+    expect(prediction.getByText('~1:45–2:15 PM · wet')).toBeInTheDocument();
 
     vi.useRealTimers();
   });
@@ -251,7 +251,7 @@ describe('Dashboard', () => {
       const diaper = screen.getByRole('button', { name: 'View diaper log' });
       expect(diaper).toHaveClass('in-range');
       expect(diaper).not.toHaveClass('past-due');
-      expect(within(diaper).getByText(/Next ~9:45 PM–3:00 AM/)).toBeInTheDocument();
+      expect(within(diaper).getByText(/~9:45 PM–3:00 AM/)).toBeInTheDocument();
       vi.setSystemTime(new Date('2026-09-03T03:00:00'));
       rerender(<Dashboard {...props} />);
       expect(diaper).toHaveClass('in-range');
@@ -341,7 +341,7 @@ describe('Dashboard', () => {
 
     const feed = within(screen.getByRole('button', { name: 'View feed log' }));
     // The 2–3 hour window, on the hour at both ends.
-    expect(feed.getByText('Next ~6–7 AM · either')).toBeInTheDocument();
+    expect(feed.getByText('~6–7 AM · either')).toBeInTheDocument();
     expect(feed.queryByText(/· next:/i)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'View feed log' })).not.toHaveClass('past-due');
 
@@ -362,7 +362,30 @@ describe('Dashboard', () => {
     ];
     render(<Dashboard activeTimers={{}} events={events} profile={createDefaultBabyProfile(new Date('2026-06-19T12:00:00.000Z'))} todayKey="2026-09-02" onAdd={vi.fn()} onOpenLog={vi.fn()} />);
 
-    expect(within(screen.getByRole('button', { name: 'View diaper log' })).queryByText(/Next ~|Likely now/i)).not.toBeInTheDocument();
+    expect(within(screen.getByRole('button', { name: 'View diaper log' })).queryByText(/~|Likely now/i)).not.toBeInTheDocument();
+  });
+
+  it('shows the sleep card as awake since the last sleep ended, or asleep while one runs', () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-09-02T12:00:00'));
+      const sleep: CareEvent = { babyId: 'avery-example', createdAt: '2026-09-02T09:00:00', endedAt: '2026-09-02T10:30:00', id: 'sleep-1', startedAt: '2026-09-02T09:00:00', type: 'sleep', updatedAt: '2026-09-02T10:30:00' };
+      const props = { activeTimers: {}, profile: createDefaultBabyProfile(new Date('2026-06-19T12:00:00.000Z')), todayKey: '2026-09-02', onAdd: vi.fn(), onOpenLog: vi.fn() };
+      const { rerender } = render(<Dashboard {...props} events={[sleep]} />);
+      const card = within(screen.getByRole('button', { name: 'View sleep log' }));
+      expect(card.getByText('Sleep')).toBeInTheDocument();
+      expect(card.getByText('Awake · slept 1h 30m')).toBeInTheDocument();
+      rerender(<Dashboard {...props} events={[{ ...sleep, endedAt: undefined }]} />);
+      expect(within(screen.getByRole('button', { name: 'View sleep log' })).getByText('Asleep')).toBeInTheDocument();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('keeps each hero card over its own quick-add column', () => {
+    const feed: CareEvent = { babyId: 'avery-example', createdAt: '2026-09-02T09:00:00', id: 'feed-1', method: 'bottle', startedAt: '2026-09-02T09:00:00', type: 'feed', updatedAt: '2026-09-02T09:00:00' };
+    const { container } = render(<Dashboard activeTimers={{}} events={[feed]} profile={createDefaultBabyProfile(new Date('2026-06-19T12:00:00.000Z'))} todayKey="2026-09-02" onAdd={vi.fn()} />);
+    expect([...container.querySelector('.care-hero-metrics')!.children].map((child) => child.classList.contains('hero-metric-placeholder') ? 'empty' : 'card')).toEqual(['card', 'empty', 'empty']);
+    const quickAdd = screen.getByRole('region', { name: 'Quick add' });
+    expect(within(quickAdd).getAllByRole('button').slice(0, 5).map((button) => button.textContent)).toEqual(['Feed', 'Diaper', 'Sleep', 'Bath', 'Pump']);
   });
 
   it('offers a caregiver only the types they may log, and no way into the Log', () => {

@@ -1,4 +1,4 @@
-import { BarChart3, BookOpen, ClipboardCheck, Home, List, ListTodo, RefreshCw, Settings, ShoppingCart, UserRound } from 'lucide-react';
+import { BarChart3, BookOpen, ClipboardCheck, Home, List, ListTodo, RefreshCw, Settings, ShoppingCart, UserRound, WifiOff } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { startRegistration } from '@simplewebauthn/browser';
 import type { PublicKeyCredentialCreationOptionsJSON } from '@simplewebauthn/browser';
@@ -47,6 +47,8 @@ export default function InternalApp() {
   const [activeId,setActiveId] = useState(''); const [view,setView] = useState<View>('Home');
   const [logTypeFilter,setLogTypeFilter] = useState<CareEventType | null>(null);
   const [error,setError] = useState(''); const [notice,setNotice] = useState(''); const [offline,setOffline] = useState(false); const [busy,setBusy] = useState(false);
+  // Reads in flight, background polls included, so the sync button spins whenever one is.
+  const [syncing,setSyncing] = useState(0);
   const [dialog,setDialog] = useState<CareEventType | null>(null); const [editing,setEditing] = useState<CareEvent | null>(null);
   const [preset,setPreset] = useState<UnloggedSleep | null>(null);
   const [timers,setTimers] = useState<ActiveTimers>({}); const [theme,setTheme] = useState(getInitialTheme);
@@ -93,7 +95,7 @@ export default function InternalApp() {
     localStorage.setItem(CHOICE,JSON.stringify({ accountId:session.accountId,familyId:family }));
     let stopped = false; let running = false;
     async function refresh(full = false) {
-      if (stopped || running) return; running = true;
+      if (stopped || running) return; running = true; setSyncing((n) => n + 1);
       try {
         const cached = await next.state(); if (!stopped) { setData(cached.data); setQueue(cached.queue); }
         if (!cached.data) await next.bootstrap(); else if (full) await next.refresh(); else await next.sync();
@@ -103,7 +105,7 @@ export default function InternalApp() {
           if (e instanceof InternalRequestError && [401,403].includes(e.status)) { setData(undefined); setSession(undefined); setError('Sign in again to continue. Queued changes are kept for this account.'); }
           else setOffline(true);
         }
-      } finally { running = false; }
+      } finally { running = false; setSyncing((n) => n - 1); }
     }
     const resume = () => { if (document.visibilityState === 'visible') void refresh(true); };
     window.addEventListener('online',resume); window.addEventListener('focus',resume); document.addEventListener('visibilitychange',resume);
@@ -125,7 +127,8 @@ export default function InternalApp() {
   async function mutate(collection: RecordCollection,id: string,action: 'archive' | 'remove' | 'restore' | 'save',patch?: object) {
     if (!client) return;
     await client.queue(collection,id,action,patch as Record<string,unknown> | undefined); await reload();
-    try { await client.sync(); setOffline(false); } catch (e) { if (e instanceof InternalRequestError) throw e; setOffline(true); } finally { await reload(); }
+    setSyncing((n) => n + 1);
+    try { await client.sync(); setOffline(false); } catch (e) { if (e instanceof InternalRequestError) throw e; setOffline(true); } finally { setSyncing((n) => n - 1); await reload(); }
   }
   async function logout() {
     await internalRequest(api,'/auth/logout',{}); current.current = undefined; client?.close(); setClient(undefined); setData(undefined); setSession(undefined); setFamily(''); setQueue([]);
@@ -164,9 +167,15 @@ export default function InternalApp() {
   return <div className="app-shell internal-app">
     <header className="app-header"><a className="app-brand" href={import.meta.env.BASE_URL} aria-label="BabySteps home"><img src={`${import.meta.env.BASE_URL}icons/icon-96.png`} alt="" width="40" height="40" /></a><ChildSwitcher activeId={profile.id} profiles={people} onSelect={(id) => { setActiveId(id); setView('Home'); }} />
       {families.length > 1 && <label>Family<select value={family} onChange={(e) => { setData(undefined); setQueue([]); setFamily(e.target.value); }}>{families.map((f) => <option key={f.familyId} value={f.familyId}>{f.name}</option>)}</select></label>}
-      <button className="icon-button header-sync" type="button" aria-label="Sync now" title="Sync now" disabled={busy} onClick={() => void run(async () => { await client!.refresh(); setOffline(false); await reload(); })}><RefreshCw aria-hidden="true" className={busy ? 'spinning' : undefined} /></button>
+      <button className={offline && !busy && !syncing ? 'icon-button header-sync offline' : 'icon-button header-sync'} type="button" aria-label="Sync now" title={offline ? 'Offline · changes stay on this device until you reconnect' : 'Sync now'} disabled={busy} onClick={() => void run(async () => {
+        // No connection is the offline icon, not a banner pushing the page down.
+        try { await client!.refresh(); setOffline(false); } catch (e) { if (e instanceof InternalRequestError) throw e; setOffline(true); }
+        await reload();
+      })}>
+        {busy || syncing ? <RefreshCw aria-hidden="true" className="spinning" /> : offline ? <WifiOff aria-hidden="true" /> : <RefreshCw aria-hidden="true" />}
+      </button>
     </header>
-    {offline && <p className="notice">Offline · changes stay on this device until you reconnect.</p>}{error && <p role="alert" className="error-banner">{error}</p>}{notice && <p role="status" className="notice">{notice}</p>}{recoveryPanel}
+    {error && <p role="alert" className="error-banner">{error}</p>}{notice && <p role="status" className="notice">{notice}</p>}{recoveryPanel}
     {queue.length > 0 && <section className="card"><h2>Queued changes ({queue.length})</h2>{queue.map((row) => <div key={row.order}><p>{{ events:'Entry',nursery:'Nursery summary',profiles:'Person',shopping:'Shopping item',tasks:'Task' }[row.command.collection]} · {row.error ? 'Needs review before syncing' : 'Waiting to sync'}</p>
       {row.error && <button onClick={() => void run(async () => { await client!.retryWithLatest(row.order!); await client!.sync(); await reload(); })}>Apply to latest version</button>}
       <button onClick={() => void run(async () => { await client!.discard(row.order!); await reload(); })}>Discard queued change</button></div>)}

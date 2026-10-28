@@ -581,19 +581,20 @@ button {
   gap: 16px;
 }
 
-/* Last feed / diaper / bath — the things you check first, so they ride in the
-   hero card and open the matching slice of the Log. */
+/* Feed / diaper / sleep / bath — the things you check first, so they ride in
+   the hero card and open the matching slice of the Log. Four columns, lined up
+   over the first row of the quick-add grid. */
 .hero-metrics {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .hero-metric {
   display: grid;
   align-content: start;
   gap: 2px;
-  padding: 10px 12px;
+  padding: 8px;
   color: inherit;
   background: rgba(255, 255, 255, 0.16);
   border: 0;
@@ -624,8 +625,21 @@ button {
   border-top-color: rgba(73, 52, 10, 0.24);
 }
 
+.hero-metric-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.hero-metric-label svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+}
+
 .hero-metric span {
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -745,8 +759,8 @@ button {
 
 .quick-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .quick-button,
@@ -2846,10 +2860,6 @@ textarea {
     gap: 18px;
   }
 
-  .quick-grid {
-    grid-template-columns: repeat(9, minmax(0, 1fr));
-  }
-
   .metric-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
@@ -3994,6 +4004,7 @@ textarea {
 @media (max-width: 360px) {
   .date-range-presets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+.header-sync.offline { color: var(--muted); }
 .header-sync .spinning { animation: sync-rotate 1s linear infinite; }
 @keyframes sync-rotate { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
@@ -4080,6 +4091,7 @@ body { min-width: 0; }
 .settings-page .child-pick span { overflow-wrap: anywhere; }
 
 /* Share the timestamp and prediction rows even when one timestamp wraps. */
+.care-hero-metrics > .hero-metric-placeholder { grid-row: span 4; }
 .care-hero-metrics > .hero-metric {
   grid-row: span 4;
   grid-template-rows: subgrid;

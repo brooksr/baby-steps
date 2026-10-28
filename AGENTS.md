@@ -811,10 +811,14 @@ stays on the phone.
   not hours, so the card uses `formatDaysSince` (calendar-day diff — "1 day",
   not "14h"; "Yesterday" overflows a phone-width card) rather than `formatAgo`,
   and `predictNextBath` names the 2–3 day window by weekday ("Next ~Fri–Sat").
-- **Hero cards** (Last feed / Last diaper / Last bath) only render once that
-  type has an entry — an empty log shows the quick-add grid, not three "None"
-  tiles — and the `.hero-metrics` row is left out entirely while all three are.
-- **Hero card predictions** read "Next ~6:30–7:30 AM · left" (feed side) or
+- **Hero cards** (Feed / Diaper / Sleep / Bath, each headed by its icon rather
+  than the word "Last") only render once that type has an entry — an empty log
+  shows the quick-add grid, not four "None" tiles — and the `.hero-metrics` row
+  is left out entirely while all four are. A missing card leaves an empty slot,
+  so each card stays over its own button in the first quick-add row (four to a
+  row, pump under feed). Sleep reads "Asleep" while a sleep runs and "Awake ·
+  slept 1h 30m" counted from the last one's end otherwise.
+- **Hero card predictions** read "~6:30–7:30 AM · left" (feed side) or
   "· wet" (diaper kind), from `formatClockRange` — each prediction's window,
   rounded to the quarter hour, with the minutes dropped when both ends are on
   the hour. Past the estimate they read "Due now" / "Likely now".
