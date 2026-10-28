@@ -388,6 +388,15 @@ describe('Dashboard', () => {
     expect(within(quickAdd).getAllByRole('button').slice(0, 5).map((button) => button.textContent)).toEqual(['Feed', 'Diaper', 'Sleep', 'Bath', 'Pump']);
   });
 
+  it("opens one of today's entries for editing", async () => {
+    const user = userEvent.setup();
+    const onOpenEntry = vi.fn();
+    const feed: CareEvent = { babyId: 'avery-example', createdAt: '2026-09-02T09:00:00', id: 'feed-open', method: 'bottle', startedAt: '2026-09-02T09:00:00', type: 'feed', updatedAt: '2026-09-02T09:00:00' };
+    render(<Dashboard activeTimers={{}} events={[feed]} profile={createDefaultBabyProfile(new Date('2026-06-19T12:00:00.000Z'))} todayKey="2026-09-02" onAdd={vi.fn()} onOpenEntry={onOpenEntry} />);
+    await user.click(screen.getByRole('button', { name: /^Edit Feeding · / }));
+    expect(onOpenEntry).toHaveBeenCalledWith(feed);
+  });
+
   it('offers a caregiver only the types they may log, and no way into the Log', () => {
     render(
       <Dashboard

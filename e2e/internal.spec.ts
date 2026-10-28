@@ -194,12 +194,15 @@ test('real passkey account, family, offline queue, caregiver boundary and recove
       const cards = [...grid.querySelectorAll('.hero-metric')];
       return { dividers:cards.map(card => card.querySelector('.hero-metric-detail')!.getBoundingClientRect().top),
         edges:cards.map(card => card.getBoundingClientRect().right),right:grid.getBoundingClientRect().right,
-        heroRight:grid.closest('.profile-band')!.getBoundingClientRect().right,
-        headerRight:document.querySelector('.app-header')!.getBoundingClientRect().right };
+        lefts:[...grid.children].map(slot => Math.round(slot.getBoundingClientRect().left)),
+        buttonLefts:[...document.querySelectorAll('.quick-grid .quick-button')].slice(0,4).map(button => Math.round(button.getBoundingClientRect().left)),
+        quickRight:document.querySelector('.quick-grid')!.getBoundingClientRect().right };
     });
     expect(Math.max(...alignment.dividers)-Math.min(...alignment.dividers)).toBeLessThanOrEqual(1);
     expect(Math.max(...alignment.edges)).toBeLessThanOrEqual(alignment.right+1);
-    expect(Math.abs(alignment.heroRight-alignment.headerRight)).toBeLessThanOrEqual(1);
+    // Each card sits over its own button: same column edges as the first quick-add row.
+    expect(Math.abs(alignment.right-alignment.quickRight)).toBeLessThanOrEqual(1);
+    alignment.lefts.forEach((left,index) => expect(Math.abs(left-alignment.buttonLefts[index])).toBeLessThanOrEqual(1));
     if (width===390) {
       await page.evaluate(() => window.scrollTo(0,0));
       await page.screenshot({ path:'test-results/mobile-aligned-home.png',fullPage:false });
@@ -222,6 +225,17 @@ test('real passkey account, family, offline queue, caregiver boundary and recove
       await page.locator('.night-report').screenshot({ path:'test-results/mobile-night.png',style:'.bottom-nav { visibility: hidden; }' });
     }
   }
+  // Each tab keeps its own scroll: the bottom of Reports, the top of Log.
+  await page.setViewportSize({ width:390,height:844 });
+  await page.evaluate(() => window.scrollTo(0,document.documentElement.scrollHeight));
+  await page.waitForFunction(() => window.scrollY > 0);
+  const reportsBottom = await page.evaluate(() => window.scrollY);
+  await nav.getByRole('button',{ name:'Log',exact:true }).click();
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  await nav.getByRole('button',{ name:'Reports',exact:true }).click();
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(reportsBottom-2);
+  await nav.getByRole('button',{ name:'Log',exact:true }).click();
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
 
 
 });

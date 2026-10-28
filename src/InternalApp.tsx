@@ -31,6 +31,7 @@ import type { CareEvent, CareEventType, CreateCareEventInput, TrackerExport } fr
 import { showInternalGoogle } from './storage/internalGoogle';
 import { INTERNAL_API, InternalClient, InternalRequestError, internalRequest, type QueuedMutation } from './storage/internalClient';
 import { OtherAccountError, withRecentSignIn } from './storage/internalReauth';
+import { useTabScroll } from './useTabScroll';
 
 interface Session { accountId: string; needsPasskey?:boolean; families: InternalFamily[] }
 const icons = { Account:UserRound,Care:ClipboardCheck,Home,Learn:BookOpen,Log:List,Reports:BarChart3,Settings,Shopping:ShoppingCart,'To-do':ListTodo };
@@ -45,7 +46,7 @@ export default function InternalApp() {
   const [families,setFamilies] = useState<InternalFamily[]>([]); const [family,setFamily] = useState('');
   const [data,setData] = useState<BootstrapData>(); const [queue,setQueue] = useState<QueuedMutation[]>([]);
   const [client,setClient] = useState<InternalClient>(); const current = useRef<InternalClient>();
-  const [activeId,setActiveId] = useState(''); const [view,setView] = useState<View>('Home');
+  const [activeId,setActiveId] = useState(''); const [view,setView] = useState<View>('Home'); useTabScroll(view);
   const [logTypeFilter,setLogTypeFilter] = useState<CareEventType | null>(null);
   const [error,setError] = useState(''); const [notice,setNotice] = useState(''); const [offline,setOffline] = useState(false); const [busy,setBusy] = useState(false);
   // Reads in flight, background polls included, so the sync button spins whenever one is.
@@ -183,7 +184,8 @@ export default function InternalApp() {
       <button onClick={() => void run(async () => { await client!.discard(row.order!); await reload(); })}>Discard queued change</button></div>)}
       <button onClick={() => downloadText('babysteps-pending.json',JSON.stringify(queue,null,2),'application/json')}>Export pending changes</button></section>}
     {showing === 'Home' && (parent ? <ParentDashboard activeTimers={timers} childEvents={childEvents} events={events} profile={profile} profiles={people} todayKey={getLocalDateKey(new Date())} onAdd={setDialog} /> :
-      <Dashboard activeTimers={timers} allowedTypes={caregiver ? CAREGIVER_EVENT_TYPES : undefined} events={events} profile={profile} profiles={people} todayKey={getLocalDateKey(new Date())} onAdd={setDialog} onOpenLog={caregiver ? undefined : (type) => { setLogTypeFilter(type); setView('Log'); }} />)}
+      <Dashboard activeTimers={timers} allowedTypes={caregiver ? CAREGIVER_EVENT_TYPES : undefined} events={events} profile={profile} profiles={people} todayKey={getLocalDateKey(new Date())} onAdd={setDialog} onOpenLog={caregiver ? undefined : (type) => { setLogTypeFilter(type); setView('Log'); }}
+        onOpenEntry={caregiver ? undefined : (entry) => { setLogTypeFilter(null); setView('Log'); window.history.replaceState(null,'','#log'); setEditing(entry); }} />)}
     {showing === 'Log' && <Log key={`${profile.id}:${logTypeFilter ?? 'all'}`} initialType={logTypeFilter} events={events} firstYearEvents={getFirstYearEvents(profile,events)} profile={profile} profiles={people} onAdd={setDialog} onDelete={(id) => mutate('events',id,'remove')} onEdit={setEditing} />}
     {showing === 'Reports' && (parent ? <ParentReports childEvents={childEvents} events={events} profile={profile} profiles={people} /> : <Reports events={events} profile={profile} profiles={people}
         loadNursery={async () => (await internalRequest<{ nursery:NurseryData }>(api,`/families/${encodeURIComponent(family)}/nursery`)).nursery}

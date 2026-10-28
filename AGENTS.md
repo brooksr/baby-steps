@@ -814,10 +814,19 @@ stays on the phone.
 - **Hero cards** (Feed / Diaper / Sleep / Bath, each headed by its icon rather
   than the word "Last") only render once that type has an entry — an empty log
   shows the quick-add grid, not four "None" tiles — and the `.hero-metrics` row
-  is left out entirely while all four are. A missing card leaves an empty slot,
+  is left out entirely while all four are. The row sits under the blue band,
+  not inside it, on the same grid as the buttons. A missing card leaves an empty slot,
   so each card stays over its own button in the first quick-add row (four to a
   row, pump under feed). Sleep reads "Asleep" while a sleep runs and "Awake ·
   slept 1h 30m" counted from the last one's end otherwise.
+- **Each tab keeps its scroll** (`src/useTabScroll.ts`, used by `App` and
+  `InternalApp`): a tab not visited yet opens at the top, and returning to one
+  restores where it was left, retrying a few frames while charts and loaded
+  data grow the page back to that height.
+- **Home's entries open in the Log**: tapping one of today's rows switches to
+  an unfiltered Log with that entry's edit dialog open (`Timeline` `onOpen`, a
+  button stretched over the row). A caregiver has no Log, so their rows stay
+  inert.
 - **Hero card predictions** read "~6:30–7:30 AM · left" (feed side) or
   "· wet" (diaper kind), from `formatClockRange` — each prediction's window,
   rounded to the quarter hour, with the minutes dropped when both ends are on

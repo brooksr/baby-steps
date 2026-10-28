@@ -30,6 +30,8 @@ interface DashboardProps {
   onAdd: (type: CareEventType) => void;
   /** Unset where there is no Log to open — the caregiver view. */
   onOpenLog?: (type: CareEventType) => void;
+  /** Opens one of today's entries for editing in the Log. Unset leaves the rows inert. */
+  onOpenEntry?: (event: CareEvent) => void;
 }
 
 // Four to a row. The first row matches the hero cards above it column for
@@ -50,13 +52,13 @@ const actions = [
 ] satisfies Array<{ icon: typeof Plus; label: string; type: CareEventType }>;
 
 /** Opens the Log filtered to its type, or — with nowhere to open — is just a reading. */
-function HeroMetric({ children, className, label, onOpen }: { children: ReactNode; className: string; label: string; onOpen?: () => void }) {
+function HeroMetric({ children, className, event, label, onOpen }: { children: ReactNode; className: string; event: CareEventType; label: string; onOpen?: () => void }) {
   return onOpen ? (
-    <button aria-label={label} className={`${className} hero-metric-link`} type="button" onClick={onOpen}>
+    <button aria-label={label} className={`${className} hero-metric-link`} data-event={event} type="button" onClick={onOpen}>
       {children}
     </button>
   ) : (
-    <div className={className}>{children}</div>
+    <div className={className} data-event={event}>{children}</div>
   );
 }
 
@@ -77,7 +79,7 @@ function cadenceClass(prediction: { windowEndAt: string; windowStartAt: string }
   return now.getTime() >= Date.parse(prediction.windowStartAt) ? ' in-range' : '';
 }
 
-export function Dashboard({ activeTimers, allowedTypes, events, profile, profiles = [], todayKey, onAdd, onOpenLog }: DashboardProps) {
+export function Dashboard({ activeTimers, allowedTypes, events, profile, profiles = [], todayKey, onAdd, onOpenLog, onOpenEntry }: DashboardProps) {
   const now = new Date();
   const canAdd = (type: CareEventType) => !allowedTypes || allowedTypes.includes(type);
   const openLog = (type: CareEventType) => (onOpenLog ? () => onOpenLog(type) : undefined);
@@ -153,72 +155,74 @@ export function Dashboard({ activeTimers, allowedTypes, events, profile, profile
           )}
         </div>
 
-        {/* A card only appears once there is something to count from — an empty
-            "None · Nothing logged yet" tile says nothing the quick-add grid doesn't. */}
-        {/* An empty slot keeps each card over its own quick-add button. */}
-        {(lastFeed || lastDiaper || lastSleep || asleepSince || lastBath) && (
-          <div className="hero-metrics care-hero-metrics">
-            {lastFeed ? (
-              <HeroMetric className={`hero-metric${cadenceClass(nextFeed, now)}`} label="View feed log" onOpen={openLog('feed')}>
-                <HeroLabel icon={Milk} label="Feed" />
-                <strong>{formatAgo(lastFeed.startedAt).replace(/ ago$/, '')}</strong>
-                <small>{formatClock(lastFeed.startedAt)}</small>
-                {nextFeed && (
-                  <small className="hero-metric-detail">
-                    {nextFeed.minutesAway > 0 ? `~${formatClockRange(nextFeed.windowStartAt, nextFeed.windowEndAt)}` : 'Due now'}
-                    {sideSuffix}
-                  </small>
-                )}
-              </HeroMetric>
-            ) : (
-              <div className="hero-metric-placeholder" aria-hidden="true" />
-            )}
-            {lastDiaper ? (
-              <HeroMetric className={`hero-metric${cadenceClass(nextDiaper, now)}`} label="View diaper log" onOpen={openLog('diaper')}>
-                <HeroLabel icon={Wind} label="Diaper" />
-                <strong>{formatAgo(lastDiaper.startedAt).replace(/ ago$/, '')}</strong>
-                <small>{formatClock(lastDiaper.startedAt)}</small>
-                {nextDiaper && (
-                  <small className="hero-metric-detail">
-                    {now.getTime() <= Date.parse(nextDiaper.windowEndAt) ? `~${formatClockRange(nextDiaper.windowStartAt, nextDiaper.windowEndAt)}` : 'Likely now'} · {nextDiaper.likelyKind}
-                  </small>
-                )}
-              </HeroMetric>
-            ) : (
-              <div className="hero-metric-placeholder" aria-hidden="true" />
-            )}
-            {asleepSince ? (
-              <HeroMetric className="hero-metric" label="View sleep log" onOpen={openLog('sleep')}>
-                <HeroLabel icon={Bed} label="Sleep" />
-                <strong>{formatAgo(asleepSince).replace(/ ago$/, '')}</strong>
-                <small>{formatClock(asleepSince)}</small>
-                <small className="hero-metric-detail">Asleep</small>
-              </HeroMetric>
-            ) : lastSleep?.endedAt ? (
-              <HeroMetric className="hero-metric" label="View sleep log" onOpen={openLog('sleep')}>
-                <HeroLabel icon={Bed} label="Sleep" />
-                <strong>{formatAgo(lastSleep.endedAt).replace(/ ago$/, '')}</strong>
-                <small>{formatClock(lastSleep.endedAt)}</small>
-                <small className="hero-metric-detail">Awake · slept {formatDuration(getEventDurationMinutes(lastSleep))}</small>
-              </HeroMetric>
-            ) : (
-              <div className="hero-metric-placeholder" aria-hidden="true" />
-            )}
-            {lastBath && (
-              <HeroMetric className={`hero-metric${cadenceClass(nextBath, now)}`} label="View bath log" onOpen={openLog('bath')}>
-                <HeroLabel icon={Bath} label="Bath" />
-                <strong>{formatDaysSince(lastBath.startedAt)}</strong>
-                <small>{formatShortDate(lastBath.startedAt)} · <time className="hero-clock" dateTime={lastBath.startedAt}>{formatClock(lastBath.startedAt)}</time></small>
-                {nextBath && (
-                  <small className="hero-metric-detail">
-                    {nextBath.due ? 'Due today' : `${dayLabel(nextBath.windowStartKey)}–${dayLabel(nextBath.windowEndKey)}`}
-                  </small>
-                )}
-              </HeroMetric>
-            )}
-          </div>
-        )}
       </section>
+
+      {/* A card only appears once there is something to count from — an empty
+          "None · Nothing logged yet" tile says nothing the quick-add grid doesn't.
+          The row sits outside the band, and an empty slot holds a missing card's
+          place, so each card lines up over its own quick-add button. */}
+      {(lastFeed || lastDiaper || lastSleep || asleepSince || lastBath) && (
+        <section className="hero-metrics care-hero-metrics" aria-label="Last and next">
+          {lastFeed ? (
+            <HeroMetric className={`hero-metric${cadenceClass(nextFeed, now)}`} event="feed" label="View feed log" onOpen={openLog('feed')}>
+              <HeroLabel icon={Milk} label="Feed" />
+              <strong>{formatAgo(lastFeed.startedAt).replace(/ ago$/, '')}</strong>
+              <small>{formatClock(lastFeed.startedAt)}</small>
+              {nextFeed && (
+                <small className="hero-metric-detail">
+                  {nextFeed.minutesAway > 0 ? `~${formatClockRange(nextFeed.windowStartAt, nextFeed.windowEndAt)}` : 'Due now'}
+                  {sideSuffix}
+                </small>
+              )}
+            </HeroMetric>
+          ) : (
+            <div className="hero-metric-placeholder" aria-hidden="true" />
+          )}
+          {lastDiaper ? (
+            <HeroMetric className={`hero-metric${cadenceClass(nextDiaper, now)}`} event="diaper" label="View diaper log" onOpen={openLog('diaper')}>
+              <HeroLabel icon={Wind} label="Diaper" />
+              <strong>{formatAgo(lastDiaper.startedAt).replace(/ ago$/, '')}</strong>
+              <small>{formatClock(lastDiaper.startedAt)}</small>
+              {nextDiaper && (
+                <small className="hero-metric-detail">
+                  {now.getTime() <= Date.parse(nextDiaper.windowEndAt) ? `~${formatClockRange(nextDiaper.windowStartAt, nextDiaper.windowEndAt)}` : 'Likely now'} · {nextDiaper.likelyKind}
+                </small>
+              )}
+            </HeroMetric>
+          ) : (
+            <div className="hero-metric-placeholder" aria-hidden="true" />
+          )}
+          {asleepSince ? (
+            <HeroMetric className="hero-metric" event="sleep" label="View sleep log" onOpen={openLog('sleep')}>
+              <HeroLabel icon={Bed} label="Sleep" />
+              <strong>{formatAgo(asleepSince).replace(/ ago$/, '')}</strong>
+              <small>{formatClock(asleepSince)}</small>
+              <small className="hero-metric-detail">Asleep</small>
+            </HeroMetric>
+          ) : lastSleep?.endedAt ? (
+            <HeroMetric className="hero-metric" event="sleep" label="View sleep log" onOpen={openLog('sleep')}>
+              <HeroLabel icon={Bed} label="Sleep" />
+              <strong>{formatAgo(lastSleep.endedAt).replace(/ ago$/, '')}</strong>
+              <small>{formatClock(lastSleep.endedAt)}</small>
+              <small className="hero-metric-detail">Awake · slept {formatDuration(getEventDurationMinutes(lastSleep))}</small>
+            </HeroMetric>
+          ) : (
+            <div className="hero-metric-placeholder" aria-hidden="true" />
+          )}
+          {lastBath && (
+            <HeroMetric className={`hero-metric${cadenceClass(nextBath, now)}`} event="bath" label="View bath log" onOpen={openLog('bath')}>
+              <HeroLabel icon={Bath} label="Bath" />
+              <strong>{formatDaysSince(lastBath.startedAt)}</strong>
+              <small>{formatShortDate(lastBath.startedAt)} · <time className="hero-clock" dateTime={lastBath.startedAt}>{formatClock(lastBath.startedAt)}</time></small>
+              {nextBath && (
+                <small className="hero-metric-detail">
+                  {nextBath.due ? 'Due today' : `${dayLabel(nextBath.windowStartKey)}–${dayLabel(nextBath.windowEndKey)}`}
+                </small>
+              )}
+            </HeroMetric>
+          )}
+        </section>
+      )}
 
       <section className="quick-grid" aria-label="Quick add">
         {actions.filter((action) => canAdd(action.type)).map((action) => {
@@ -339,7 +343,7 @@ export function Dashboard({ activeTimers, allowedTypes, events, profile, profile
             <strong>{summary.dirtyDiapers}</strong>
           </article>
         </div>
-        <Timeline events={todayEvents.slice(0, 8)} emptyMessage="No entries for today." profile={profile} profiles={profiles} />
+        <Timeline events={todayEvents.slice(0, 8)} emptyMessage="No entries for today." profile={profile} profiles={profiles} onOpen={onOpenEntry} />
       </section>
     </main>
   );

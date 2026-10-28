@@ -31,6 +31,7 @@ import { canShareFamilySheet, getSheetShareAccess, shareFamilySheet, takeJoinPar
 import { pickFamilySheet } from './storage/googlePicker';
 import { createHybridBabyTrackerStore, NoFamilyError, type NewFamilyInput } from './storage/hybridStore';
 import type { StoreStatus } from './storage/store';
+import { useTabScroll } from './useTabScroll';
 
 type View = 'dashboard' | 'log' | 'reports' | 'care' | 'shopping' | 'todos' | 'learn' | 'settings';
 
@@ -113,6 +114,7 @@ function App() {
   const [shopping, setShopping] = useState<ShoppingItem[]>([]);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [activeView, setActiveView] = useState<View>(viewFromHash);
+  useTabScroll(activeView);
   const [logTypeFilter, setLogTypeFilter] = useState<CareEventType | null>(null);
   const [dialogType, setDialogType] = useState<CareEventType | null>(null);
   const [editEvent, setEditEvent] = useState<CareEvent | null>(null);
@@ -272,6 +274,13 @@ function App() {
     setActiveView(view);
     history.pushState(null, '', `#${view}`);
   }, []);
+
+  /** A Home entry opens in the Log, unfiltered so the row is there behind the dialog. */
+  const openLogEntry = useCallback((event: CareEvent) => {
+    setLogTypeFilter(null);
+    navigate('log');
+    setEditEvent(event);
+  }, [navigate]);
 
   const openFilteredLog = useCallback((type: CareEventType) => {
     setLogTypeFilter(type);
@@ -900,6 +909,7 @@ function App() {
             todayKey={todayKey}
             onAdd={setDialogType}
             onOpenLog={caregiverMode ? undefined : openFilteredLog}
+            onOpenEntry={caregiverMode ? undefined : openLogEntry}
           />
         ))}
 

@@ -581,13 +581,14 @@ button {
   gap: 16px;
 }
 
-/* Feed / diaper / sleep / bath — the things you check first, so they ride in
-   the hero card and open the matching slice of the Log. Four columns, lined up
-   over the first row of the quick-add grid. */
+/* Feed / diaper / sleep / bath — the things you check first, opening the
+   matching slice of the Log. On a baby's Home they sit just under the hero
+   band, four columns over the first row of the quick-add grid; a parent's two
+   still ride inside the band. */
 .hero-metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
+  gap: 6px;
 }
 
 .hero-metric {
@@ -1434,6 +1435,25 @@ button {
 
 .timeline-body {
   min-width: 0;
+}
+
+/* Home's rows open the entry: one button stretched over the card. */
+.timeline-item.opens {
+  position: relative;
+}
+
+.timeline-open {
+  position: absolute;
+  inset: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: inherit;
+  cursor: pointer;
+}
+
+.timeline-item.opens:hover {
+  border-color: var(--line-strong);
 }
 
 .timeline-actions {
@@ -3982,8 +4002,9 @@ textarea {
   .log-heading { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
   .log-heading .button-row { justify-content: flex-start; }
   .log-heading .segmented-control { margin-right: auto; }
-  .log-controls { grid-template-columns: minmax(0, 1fr); }
-  .log-filter { width: 100%; }
+  /* Search and type stay on one line, the search taking the larger share. */
+  .log-controls { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+  .log-filter { width: 100%; min-width: 0; }
   .expect-card-actions { width: 100%; justify-content: space-between; }
   .expect-navigation { flex: 1; }
   .expect-navigation button { min-height: 36px; }
@@ -3998,9 +4019,6 @@ textarea {
   .log-heading .segmented-control { width: 100%; }
 }
 .date-range-inputs label, .date-range-inputs input { min-width: 0; max-width: 100%; }
-@media (max-width: 420px) {
-  .date-range-inputs { grid-template-columns: minmax(0, 1fr); }
-}
 @media (max-width: 360px) {
   .date-range-presets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -4098,4 +4116,25 @@ body { min-width: 0; }
   grid-template-rows: subgrid;
   min-width: 0;
 }
+
+/* Below the band, on the page: panels like the buttons under them, same gap,
+   with the family hue on the icon. */
+.care-hero-metrics { gap: 8px; }
+.care-hero-metrics > .hero-metric {
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--line);
+}
+.care-hero-metrics > .hero-metric-link:hover,
+.care-hero-metrics > .hero-metric-link:focus-visible { background: var(--panel-blue); border-color: var(--line-strong); }
+.care-hero-metrics .hero-metric-label { color: var(--muted); opacity: 1; }
+.care-hero-metrics .hero-metric-label svg { color: var(--event-tint, var(--blue-700)); }
+.care-hero-metrics .hero-metric .hero-metric-detail { border-top-color: var(--line); }
+.care-hero-metrics > .hero-metric.in-range strong { color: #b26a00; }
+:root[data-theme='dark'] .care-hero-metrics > .hero-metric.in-range strong { color: #f4c95d; }
+.care-hero-metrics > .hero-metric.past-due { color: #49340a; background: #f4c95d; border-color: #e0b03c; }
+.care-hero-metrics > .hero-metric.past-due:hover,
+.care-hero-metrics > .hero-metric.past-due:focus-visible { background: #f7d577; }
+.care-hero-metrics > .hero-metric.past-due .hero-metric-label { color: inherit; }
+.care-hero-metrics > .hero-metric.past-due .hero-metric-detail { border-top-color: rgba(73, 52, 10, 0.24); }
 .hero-clock { white-space: nowrap; }

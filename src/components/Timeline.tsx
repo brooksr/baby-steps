@@ -13,6 +13,8 @@ interface TimelineProps {
   emptyMessage?: string;
   onDelete?: (id: string) => void;
   onEdit?: (event: CareEvent) => void;
+  /** Makes the whole row a button — Home uses it to open the entry in the Log. */
+  onOpen?: (event: CareEvent) => void;
   profile?: BabyProfile;
   /** Everyone tracked, so an entry can name the parent who logged it. */
   profiles?: BabyProfile[];
@@ -127,7 +129,7 @@ function eventDetail(event: CareEvent, profile?: BabyProfile) {
   }
 }
 
-export function Timeline({ events, emptyMessage = 'No entries yet.', onDelete, onEdit, profile, profiles = [] }: TimelineProps) {
+export function Timeline({ events, emptyMessage = 'No entries yet.', onDelete, onEdit, onOpen, profile, profiles = [] }: TimelineProps) {
   if (events.length === 0) {
     return <p className="empty-state">{emptyMessage}</p>;
   }
@@ -139,7 +141,10 @@ export function Timeline({ events, emptyMessage = 'No entries yet.', onDelete, o
         const caregiver = getCaregiverName(profiles, event.caregiverId);
 
         return (
-          <li className="timeline-item" key={event.id}>
+          <li className={onOpen ? 'timeline-item opens' : 'timeline-item'} key={event.id}>
+            {onOpen && (
+              <button className="timeline-open" type="button" aria-label={`Edit ${careEventLabels[event.type]} · ${formatClock(event.startedAt)}`} onClick={() => onOpen(event)} />
+            )}
             <span className="timeline-icon" data-event={event.type}>
               <Icon aria-hidden="true" />
             </span>
