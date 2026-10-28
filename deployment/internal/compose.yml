@@ -5,6 +5,7 @@ services:
       dockerfile: deployment/internal/Dockerfile
     image: babysteps-internal:local
     restart: unless-stopped
+    init: true
     env_file: internal.env
     ports:
       - "127.0.0.1:8790:8790"

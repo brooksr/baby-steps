@@ -50,7 +50,7 @@ restore_container() {
   if [ -n "$previous" ]; then docker rename "$previous" babysteps-internal; docker start babysteps-internal >/dev/null; fi
 }
 if ! docker run -d --name babysteps-internal --restart unless-stopped \
-  --network babysteps --env-file "$root/internal.env" -p 127.0.0.1:8790:8790 \
+  --init --network babysteps --env-file "$root/internal.env" -p 127.0.0.1:8790:8790 \
   --mount type=volume,source=babysteps-internal,target=/var/lib/babysteps \
   --read-only --memory 192m --memory-swap 256m --tmpfs /tmp:size=16m,noexec,nosuid \
   --security-opt no-new-privileges:true --cap-drop ALL \
