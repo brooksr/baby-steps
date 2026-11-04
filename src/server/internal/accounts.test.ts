@@ -108,6 +108,7 @@ describe('internal accounts and HTTP boundary',() => {
     const result = await get(`/families/${first.familyId}/bootstrap`); const bootstrap = await result.json();
     expect(result.status).toBe(200); expect(bootstrap.data.profiles.every((p: { kind:string }) => p.kind === 'child')).toBe(true);
     expect(bootstrap.data.profile.careInfo).toBeUndefined();
+    expect(bootstrap.loggers).toEqual([expect.objectContaining({ id:bootstrap.actorProfileId,kind:'parent',name:'Alex Example' })]);
     expect((await (await get('/session')).json()).families).toHaveLength(1);
     expect((await get('/account/sessions')).status).toBe(403);
     const denied = await api.handle(new Request(`${config.origin}/api/v1/families/${first.familyId}/mutations`,{ body:JSON.stringify({ action:'save',collection:'tasks',expectedRevision:0,id:'task',operationId:'task',patch:{ status:'open',title:'No' } }),headers:{ Authorization:`Bearer ${native.token}`,'Content-Type':'application/json' },method:'POST' }));

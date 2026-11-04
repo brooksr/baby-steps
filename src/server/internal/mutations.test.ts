@@ -38,6 +38,16 @@ describe('internal mutation and migration transactions',() => {
     expect(repo.exportData().profiles!.find((p) => p.id === child.id)!.archivedAt).toBeTruthy();
     expect(repo.snapshot().profile.id).toBe(parent.id);
   });
+  it('lets a parent say who logged a new child entry, and defaults to the signed-in parent',() => {
+    const child = boot.data.profiles!.find((p) => p.kind === 'child')!;
+    repo.mutation(mutation('profiles','second-parent',{ kind:'parent',name:'Sam Example',parentRole:'mom',timezone:'America/Los_Angeles' }));
+    const feed = { babyId:child.id,method:'bottle',startedAt:'2026-10-16T01:00:00Z',type:'feed' };
+    expect(repo.mutation(mutation('events','mine',feed)).payload.caregiverId).toBe(boot.actorProfileId);
+    expect(repo.mutation(mutation('events','theirs',{ ...feed,caregiverId:'second-parent' })).payload.caregiverId).toBe('second-parent');
+    expect(() => repo.mutation(mutation('events','nobody',{ ...feed,caregiverId:child.id }))).toThrow('invalid');
+    expect(repo.bootstrap(true).loggers!.map((p) => p.name).sort()).toEqual(['Alex Example','Sam Example']);
+    expect(repo.bootstrap().loggers).toBeUndefined();
+  });
   it('imports an entire reviewed family once, rejects bad references and requires paused source writes',() => {
     const input: FamilyImport = { data:repo.exportData(),familyId:'migrated-family',ownerAccountId:'account',ownerProfileId:boot.actorProfileId,sheetId:'legacy-sheet' };
     const preview = planFamilyImport(input); expect(preview.report.profiles).toBe(2);

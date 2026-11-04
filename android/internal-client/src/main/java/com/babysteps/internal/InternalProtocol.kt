@@ -31,7 +31,23 @@ object InternalProtocol {
             })
         }
     }
-    fun watchCommand(request: JSONObject,meta: JSONObject,child: String): JSONObject {
+    data class Logger(val id: String,val name: String)
+
+    /** Who a parent's watch can log as, from its last bootstrap; empty for a caregiver account or an older Pi. */
+    fun loggers(meta: JSONObject): List<Logger> {
+        val list=meta.optJSONArray("loggers") ?: return emptyList()
+        return (0 until list.length()).mapNotNull { list.optJSONObject(it) }.filter { it.optString("id").isNotEmpty() }
+            .map { Logger(it.getString("id"),it.optString("name").ifEmpty { "Unnamed" }) }
+    }
+
+    /** The person entries go out as: the chosen one while still in the family, else the signed-in account. */
+    fun logAs(meta: JSONObject,chosen: String): Logger? {
+        val people=loggers(meta)
+        return people.find { it.id==chosen } ?: people.find { it.id==meta.optString("actorProfileId") }
+    }
+
+    /** [logAs] is a profile id from [loggers]; one no longer offered falls back to the account rather than failing. */
+    fun watchCommand(request: JSONObject,meta: JSONObject,child: String,logAs: String=""): JSONObject {
         request.optJSONObject("_internalCommand")?.let { return it }
         val profiles=meta.getJSONObject("data").getJSONArray("profiles")
         val children=(0 until profiles.length()).map { profiles.getJSONObject(it) }.filter { it.optString("kind","child")=="child" && !it.has("archivedAt") }
@@ -44,6 +60,7 @@ object InternalProtocol {
             if(request.has("amount")) patch.put("amountOz",request.getDouble("amount"))
             for(key in listOf("durationMinutes","side")) if(request.has(key)) patch.put(key,request.get(key))
         }
+        if(logAs.isNotEmpty() && loggers(meta).any { it.id==logAs }) patch.put("caregiverId",logAs)
         return JSONObject().put("action","save").put("collection","events").put("expectedRevision",0).put("id",UUID.randomUUID().toString()).put("operationId",UUID.randomUUID().toString()).put("patch",patch)
     }
 

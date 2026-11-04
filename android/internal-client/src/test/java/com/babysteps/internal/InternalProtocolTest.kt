@@ -25,4 +25,17 @@ class InternalProtocolTest {
         assertEquals("baby",command.getJSONObject("patch").getString("babyId"))
         assertEquals(0,command.getInt("expectedRevision"))
     }
+
+    @Test fun watchLogsAsTheChosenPersonOnlyWhileTheyAreOffered() {
+        val loggers=JSONArray().put(JSONObject().put("id","brooks").put("name","Brooks")).put(JSONObject().put("id","jenni").put("name","Jenni"))
+        val meta=JSONObject().put("actorProfileId","brooks").put("loggers",loggers)
+            .put("data",JSONObject().put("profiles",JSONArray().put(JSONObject().put("id","baby").put("kind","child"))))
+        fun request()=JSONObject().put("type","diaper").put("diaperType","wet").put("timestamp","2026-10-16T01:00:00-07:00")
+        assertEquals("jenni",InternalProtocol.watchCommand(request(),meta,"","jenni").getJSONObject("patch").getString("caregiverId"))
+        assertFalse(InternalProtocol.watchCommand(request(),meta,"","gone").getJSONObject("patch").has("caregiverId"))
+        assertFalse(InternalProtocol.watchCommand(request(),meta,"").getJSONObject("patch").has("caregiverId"))
+        assertEquals("Jenni",InternalProtocol.logAs(meta,"jenni")?.name)
+        assertEquals("Brooks",InternalProtocol.logAs(meta,"gone")?.name)
+        assertEquals(null,InternalProtocol.logAs(JSONObject(),"jenni"))
+    }
 }

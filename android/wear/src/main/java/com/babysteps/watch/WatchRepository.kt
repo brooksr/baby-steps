@@ -37,6 +37,9 @@ class WatchSettings(context: Context) {
     private val childPrefs get()=if(internal.selected) app.getSharedPreferences("babysteps-watch-choice-${internal.scope}",Context.MODE_PRIVATE) else prefs
     val child get()=childPrefs.getString("child","")!!
     fun saveChild(value: String) { check(childPrefs.edit().putString("child",value.trim()).commit()) }
+    /** "Log as" on a shared watch: a profile id, blank for the signed-in account. Kept per account. */
+    val logAs get()=childPrefs.getString("logAs","")!!
+    fun saveLogAs(value: String) { check(childPrefs.edit().putString("logAs",value).commit()) }
     val configured get()=if(internal.selected) internal.configured else validEndpoint(endpoint) && token.length in 32..128
 
     fun save(endpoint: String,token: String,child: String) {
@@ -75,6 +78,12 @@ object WatchRepository {
     val timer=timerFlow.asStateFlow()
     val pending=pendingFlow.asStateFlow()
     val notice=noticeFlow.asStateFlow()
+    private val loggersFlow=MutableStateFlow<List<InternalProtocol.Logger>>(emptyList())
+    private val logAsFlow=MutableStateFlow<InternalProtocol.Logger?>(null)
+    /** Who this watch can log as: empty unless a parent's account is connected. */
+    val loggers=loggersFlow.asStateFlow()
+    /** Who the next entry goes out as. */
+    val logAs=logAsFlow.asStateFlow()
     private val refusedFlow=MutableStateFlow<String?>(null)
     /** The Pi turned an entry down for good: worth interrupting for, unlike a retry. */
     val refused=refusedFlow.asStateFlow()
@@ -88,7 +97,7 @@ object WatchRepository {
 
     fun load(context: Context) {
         val connection=WatchSettings(context).internal
-        if(connection.selected && !connection.configured) { statusFlow.value=null; timerFlow.value=null; loaded=false; return }
+        if(connection.selected && !connection.configured) { statusFlow.value=null; timerFlow.value=null; loggersFlow.value=emptyList(); logAsFlow.value=null; loaded=false; return }
         val scope=WatchSettings(context).internal.scope
         if(loaded && loadedScope==scope) return
         loaded=true; loadedScope=scope; statusFlow.value=null
@@ -96,6 +105,19 @@ object WatchRepository {
         // A timer saved by an older build has another shape; dropping it beats crashing on it.
         timerFlow.value=prefs.getString("timer",null)?.let { runCatching { FeedTimer.fromJson(JSONObject(it)) }.getOrNull() }
         pendingFlow.value=queue(context).length()
+        readLoggers(context)
+    }
+
+    // ── Log as ──────────────────────────────────────────────────────────────────
+
+    fun setLogAs(context: Context,id: String) { WatchSettings(context).saveLogAs(id); readLoggers(context) }
+
+    private fun readLoggers(context: Context) {
+        val settings=WatchSettings(context)
+        if(!settings.internal.selected) { loggersFlow.value=emptyList(); logAsFlow.value=null; return }
+        val meta=runCatching { JSONObject(prefs(context).getString("internalMeta","{}")!!) }.getOrDefault(JSONObject())
+        loggersFlow.value=InternalProtocol.loggers(meta)
+        logAsFlow.value=InternalProtocol.logAs(meta,settings.logAs)
     }
 
     fun clearNotice() { noticeFlow.value=null }
@@ -138,7 +160,7 @@ object WatchRepository {
             val settings=WatchSettings(context)
             if(settings.internal.selected) {
                 val meta=runCatching { JSONObject(prefs(context).getString("internalMeta","{}")!!) }.getOrDefault(JSONObject())
-                val command=try { InternalProtocol.watchCommand(request,meta,settings.child) } catch(e: Exception) { return Outcome.Refused(e.message ?: "Sync before logging") }
+                val command=try { InternalProtocol.watchCommand(request,meta,settings.child,settings.logAs) } catch(e: Exception) { return Outcome.Refused(e.message ?: "Sync before logging") }
                 request.put("_internalCommand",command)
             }
             val q=queue(context); q.put(request.toString()); saveQueue(context,q)
@@ -187,6 +209,7 @@ object WatchRepository {
                 val reply=settings.internal.call(settings.internal.familyPath("bootstrap"))
                 if(reply.code !in 200..299) { noticeFlow.value=Notice("Sign in again · queued entries are kept",false); statusFlow.value=null; return@withContext }
                 prefs(context).edit().putString("internalMeta",reply.body.toString()).commit()
+                readLoggers(context)
                 val status=CareStatus.fromBootstrap(reply.body.getJSONObject("data"),settings.child,Instant.now())
                 if(status==null) { noticeFlow.value=Notice("Choose a child in Settings",false); return@withContext }
                 statusFlow.value=status

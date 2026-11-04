@@ -182,7 +182,9 @@ export function createFamilyRepository(database: DatabaseSync, familyId: string,
         const parentTypes = ['sleep','mood','temperature','medication','appointment','note','menses','intake','output'];
         if (person.kind === 'caregiver' || (person.kind === 'parent' ? !parentTypes.includes(String(payload.type)) : ['menses','intake','output'].includes(String(payload.type)))) fail('invalid');
         if (payload.type === 'menses' && person.parentRole !== 'mom') fail('invalid');
-        if (member.role === 'caregiver' || (!row && person.kind !== 'parent')) payload.caregiverId = member.profileId;
+        // A parent may say who did it (a shared watch's "Log as", the web "Logged by"); a caregiver
+        // account is always itself, and a new child entry with no choice is the signed-in parent's.
+        if (member.role === 'caregiver' || (!row && person.kind !== 'parent' && !patch.caregiverId)) payload.caregiverId = member.profileId;
         if (payload.caregiverId) {
           const caregiver = database.prepare('SELECT payload FROM profiles WHERE family_id = ? AND id = ?').get(familyId, text(payload.caregiverId));
           if (!caregiver) fail('invalid');
@@ -261,7 +263,10 @@ export function createFamilyRepository(database: DatabaseSync, familyId: string,
         if (member.role === 'parent' && !limited) revisions[`${row.collection}:${row.id}`] = Number(row.revision);
       }
       const after = Number(database.prepare('SELECT COALESCE(MAX(sequence),0) AS n FROM changes WHERE family_id = ?').get(familyId)!.n);
-      return { accountId: principal.accountId, actorProfileId: member.profileId, cursor: { after, familyId }, data, familyId, revisions, role: member.role };
+      // Who a parent's limited client (the watch) can log as; a caregiver account only logs as itself.
+      const loggers = limited && member.role === 'parent' ? profiles().filter((p) => (p.kind === 'parent' || p.kind === 'caregiver') && !p.archivedAt)
+        .map((p) => ({ id: p.id, kind: p.kind as 'parent' | 'caregiver', name: p.name })) : undefined;
+      return { accountId: principal.accountId, actorProfileId: member.profileId, cursor: { after, familyId }, data, familyId, ...(loggers ? { loggers } : {}), revisions, role: member.role };
     }, true);
   }
 

@@ -123,6 +123,8 @@ fun HomeScreen(onTimer: () -> Unit,onBottle: () -> Unit,onDiaper: () -> Unit,onS
     val timer by WatchRepository.timer.collectAsState()
     val pending by WatchRepository.pending.collectAsState()
     val notice by WatchRepository.notice.collectAsState()
+    val loggers by WatchRepository.loggers.collectAsState()
+    val logAs by WatchRepository.logAs.collectAsState()
     val now=rememberNow()
     val configured=remember(status) { WatchSettings(context).configured }
     val askNotifications=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { FeedNotification.update(context,WatchRepository.timer.value) }
@@ -155,6 +157,18 @@ fun HomeScreen(onTimer: () -> Unit,onBottle: () -> Unit,onDiaper: () -> Unit,onS
                     Action("Bottle",icon=CareIcons.milk,onClick=onBottle),
                     Action("Diaper",icon=CareIcons.wind,tint=Care.diaper,container=Care.diaperContainer,onClick=onDiaper))
             }
+            // A shared watch: say who entries go out as, one tap to hand it to the next person.
+            if(loggers.size>1) logAs?.let { who -> item {
+                CompactButton(onClick={
+                        val next=loggers[(loggers.indexOfFirst { it.id==who.id }+1)%loggers.size]
+                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                        WatchRepository.setLogAs(context,next.id)
+                    },
+                    icon={ Icon(CareIcons.user,null,modifier=Modifier.size(16.dp)) },
+                    colors=ButtonDefaults.buttonColors(containerColor=Care.surface,contentColor=Care.text,iconColor=Care.feed),
+                    transformation=SurfaceTransformation(spec),
+                    modifier=Modifier.transformedHeight(this,spec)) { Text("As ${who.name.substringBefore(' ')}",maxLines=1) }
+            } }
             item { SyncLine(status,pending,notice,now) }
             item {
                 CompactButton(onClick=onSettings,
@@ -454,6 +468,8 @@ fun SettingsScreen(onDone: () -> Unit) {
     val scope=rememberCoroutineScope()
     var pairCode by remember { mutableStateOf("") }
     var accountApi by remember { mutableStateOf("https://raspberrypi.tailc2b8e3.ts.net:8443/api/v1") }
+    val loggers by WatchRepository.loggers.collectAsState()
+    val logAs by WatchRepository.logAs.collectAsState()
     ScreenScaffold(scrollState=state,
         edgeButton={
             EdgeButton(onClick={ try { if(!settings.internal.selected) settings.save(endpoint,token,child) else settings.saveChild(child); onDone() } catch(e: IllegalArgumentException) { error=e.message } },
@@ -461,6 +477,16 @@ fun SettingsScreen(onDone: () -> Unit) {
         }) { padding ->
         TransformingLazyColumn(state=state,contentPadding=padding) {
             item { Caption("Settings",Care.dim,CareIcons.settings) }
+            if(loggers.size>1) {
+                item { Caption("Log as",Care.dim,CareIcons.user,Modifier.padding(top=4.dp)) }
+                for(person in loggers) item {
+                    val chosen=person.id==logAs?.id
+                    Button(onClick={ WatchRepository.setLogAs(context,person.id) },modifier=Modifier.fillMaxWidth(),
+                        colors=if(chosen) ButtonDefaults.buttonColors(containerColor=Care.feed,contentColor=Care.onFeed) else ButtonDefaults.filledTonalButtonColors()) {
+                        Text(if(chosen) "✓ ${person.name}" else person.name,maxLines=1)
+                    }
+                }
+            }
             item { Field("BabySteps account server",accountApi) { accountApi=it } }
             item { Button(onClick={ scope.launch { try { val reply=withContext(Dispatchers.IO) { settings.internal.begin(accountApi,"watch") }; pairCode=reply.getString("userCode"); error="Approve $pairCode in the website Account page" } catch(e: Exception) { error=e.message } } }) { Text("Connect account") } }
             if(pairCode.isNotEmpty() || settings.internal.pairing) item { Button(onClick={ scope.launch { try { if(withContext(Dispatchers.IO) { settings.internal.complete() }) { settings.saveChild(""); WatchRepository.load(context); WatchRepository.refresh(context); onDone() } else error="Not approved yet" } catch(e: Exception) { error=e.message } } }) { Text("I approved the code") } }

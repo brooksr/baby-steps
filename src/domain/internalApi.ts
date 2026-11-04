@@ -23,6 +23,8 @@ export interface BootstrapData {
   cursor: { after: number; familyId: string };
   data: TrackerExport;
   familyId: string;
+  /** Parents and caregivers a parent's watch can log as; only on a limited (watch) bootstrap. */
+  loggers?: Array<{ id: string; kind: 'caregiver' | 'parent'; name: string }>;
   revisions: Record<string, number>;
   role: 'caregiver' | 'parent';
 }

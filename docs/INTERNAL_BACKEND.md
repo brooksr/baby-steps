@@ -238,6 +238,10 @@ Capabilities are bound server-side to installation and family:
 
 - Phone: the signed-in member's parent/caregiver permissions.
 - Watch: limited status plus new feeds/diapers; no profile/list edits or exports.
+  A parent's watch bootstrap also lists the family's active parents/caregivers
+  (`loggers`) so a shared watch can "Log as" one of them; the server keeps a
+  parent's chosen `caregiverId` on a new entry and still forces a caregiver
+  account's own profile.
 - Nursery: validated numeric/classification metadata delivery and minimal latest
   care status; no care-log mutation/export. It uses a separate credential and
   family-specific nursery SQLite file. Stop monitoring before changing families.
