@@ -14,7 +14,8 @@ import type { CareEvent, CareEventType } from './types';
  *   at 2am is one wake, not three.
  * - **Sleep windows** are the stretches between wakes. Where a sleep entry was
  *   logged it is used as written; anywhere else the stretch is an *estimate*
- *   (the night minus each wake and `SETTLE_MINUTES` to settle back down), and
+ *   (the night minus each wake and `SETTLE_MINUTES` to settle back down — none
+ *   after a timed feed, which a baby mostly falls asleep at the end of), and
  *   every surface says which it is.
  * - **Heard crying** from the nursery sensor is laid over the top as a
  *   suggestion. It never adds a wake and never touches logged sleep: how much a
@@ -39,6 +40,8 @@ export const WAKE_CLUSTER_MINUTES = 30;
  * A sleep entry logged after a wake replaces it with the time actually written.
  */
 export const SETTLE_MINUTES = 15;
+// A wake that ends on a timed feed charges no settling: a baby fed at night is
+// usually asleep by the end of it, so estimated sleep starts when the feed ends.
 
 /**
  * A stretch shorter than this is not counted as sleep. Two wakes with less
@@ -97,7 +100,10 @@ export interface NightWake {
   startedAt: string;
   /** The last entry's end. */
   endedAt: string;
-  /** Back asleep: a logged sleep's start, or `endedAt` plus `SETTLE_MINUTES`. */
+  /**
+   * Back asleep: a logged sleep's start, `endedAt` when the wake ended on a
+   * timed feed, or `endedAt` plus `SETTLE_MINUTES`.
+   */
   resumedAt: string;
   /** Entries in the wake. */
   entries: number;
@@ -149,6 +155,8 @@ interface Span {
 
 interface Cluster extends Span {
   entries: number;
+  /** The entry that ends the wake is a timed feed, so no settling follows it. */
+  endsOnFeed: boolean;
   items: Array<{ start: number; type: CareEventType }>;
   resume: number;
   types: Set<CareEventType>;
@@ -351,13 +359,16 @@ export function getBabyNight(events: CareEvent[], dateKey: string, nursery?: Nur
   for (const entry of entries) {
     const last = clusters[clusters.length - 1];
 
+    const fed = entry.type === 'feed' && entry.end > entry.start;
+
     if (last && entry.start <= last.end + WAKE_CLUSTER_MINUTES * MINUTE_MS) {
+      last.endsOnFeed = entry.end >= last.end ? fed : last.endsOnFeed;
       last.end = Math.max(last.end, entry.end);
       last.entries += 1;
       last.items.push({ start: entry.start, type: entry.type });
       last.types.add(entry.type);
     } else {
-      clusters.push({ end: entry.end, entries: 1, items: [{ start: entry.start, type: entry.type }], resume: entry.end, start: entry.start, types: new Set([entry.type]) });
+      clusters.push({ end: entry.end, endsOnFeed: fed, entries: 1, items: [{ start: entry.start, type: entry.type }], resume: entry.end, start: entry.start, types: new Set([entry.type]) });
     }
   }
 
@@ -368,7 +379,7 @@ export function getBabyNight(events: CareEvent[], dateKey: string, nursery?: Nur
     const resettled = sleepSpans.find((sleep) => sleep.start >= cluster.end && sleep.start <= cluster.end + RESETTLE_LOOKAHEAD_MINUTES * MINUTE_MS);
 
     cluster.start = ended ? ended.end : cluster.start;
-    cluster.resume = Math.min(until, resettled ? resettled.start : cluster.end + SETTLE_MINUTES * MINUTE_MS);
+    cluster.resume = Math.min(until, resettled ? resettled.start : cluster.end + (cluster.endsOnFeed ? 0 : SETTLE_MINUTES) * MINUTE_MS);
   }
 
   // Too little between two wakes to count as sleep makes them one long wake.

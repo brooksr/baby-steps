@@ -1027,7 +1027,8 @@ stays on the phone.
   - **Wakes** are feeds, changes, meds and temperatures within 30 minutes of
     each other. A logged sleep that ended just before one is when it began, and
     one starting within an hour after is when the baby went back down; otherwise
-    `SETTLE_MINUTES` (15) is charged. Two wakes under `MIN_STRETCH_MINUTES` (30)
+    a wake ending on a timed feed resumes sleep when the feed ends (babies mostly
+    drop off feeding), and any other wake is charged `SETTLE_MINUTES` (15). Two wakes under `MIN_STRETCH_MINUTES` (30)
     apart are one wake. Pumping is the parent's and never a wake.
   - **Going down and getting up are not wakes.** Entries within 30 minutes of
     either end are `edges`, and with no bedtime logged everything before 9pm is

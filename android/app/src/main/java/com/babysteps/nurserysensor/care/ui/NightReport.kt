@@ -122,7 +122,7 @@ fun NightReport(ui: Ui,averageRange: DateRange?,scopeLabel: String) {
             }
         }
 
-        Disclosure("How sleep is estimated") { Muted("Wakes are night feeds, changes and meds logged within 30 minutes of each other. Sleep not logged as a sleep entry is estimated: the time between wakes, less ${BabyNights.SETTLE_MINUTES} minutes to settle. Crying the sensor heard is taken out of estimated sleep the same way, but it never adds a wake or changes a logged sleep: the sensor only hears what reaches the phone.",size=12) }
+        Disclosure("How sleep is estimated") { Muted("Wakes are night feeds, changes and meds logged within 30 minutes of each other. Sleep not logged as a sleep entry is estimated: the time between wakes, less ${BabyNights.SETTLE_MINUTES} minutes to settle, or from the end of a timed feed, since a baby usually falls asleep feeding. Crying the sensor heard is taken out of estimated sleep the same way, but it never adds a wake or changes a logged sleep: the sensor only hears what reaches the phone.",size=12) }
     }
 }
 

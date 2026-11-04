@@ -161,6 +161,15 @@ class CareDomainTest {
         assertEquals(2,night.sleeps.size)
     }
 
+    @Test fun nightSleepStartsWhenATimedFeedEnds() {
+        val events=listOf(event("feed",at("2026-10-15T22:00").toString(),"method" to "nursing","durationMinutes" to 20),
+            event("feed",at("2026-10-16T01:00").toString(),"method" to "nursing","durationMinutes" to 20),
+            event("diaper",at("2026-10-16T01:25").toString(),"kind" to "wet"),
+            event("feed",at("2026-10-16T04:00").toString(),"method" to "nursing","durationMinutes" to 0))
+        val night=BabyNights.night(events,"2026-10-15",null,at("2026-10-16T12:00"))
+        assertEquals(listOf(at("2026-10-15T22:20"),at("2026-10-16T01:40"),at("2026-10-16T04:15")),night.wakes.map { it.resumed })
+    }
+
     @Test fun shoppingMatchesNamesLooselyAndKeepsTheCatalogue() {
         assertEquals("oat milk",Shopping.normalize("  Oat-Milk! "))
         val items=listOf(com.babysteps.nurserysensor.care.model.ShoppingItem(JSONObject().put("id","s1").put("name","Oat milk").put("status","done").put("category","dairy")))

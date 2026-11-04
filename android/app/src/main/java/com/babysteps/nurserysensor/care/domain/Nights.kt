@@ -67,7 +67,8 @@ object BabyNights {
     data class Stat(val average: Double,val max: Double,val min: Double)
     data class Report(val nights: List<Night>,val span: Int,val sleepMinutes: Stat?,val wakes: Stat?,val longestStretchMinutes: Stat?,val napMinutes: Stat?,val estimatedNights: Int)
 
-    private class Cluster(var start: Long,var end: Long,var entries: Int,val items: MutableList<Pair<Long,EventType>>,var resume: Long,val types: MutableSet<EventType>)
+    // endsOnFeed: the entry that ends the wake is a timed feed, so no settling follows it.
+    private class Cluster(var start: Long,var end: Long,var entries: Int,val items: MutableList<Pair<Long,EventType>>,var resume: Long,val types: MutableSet<EventType>,var endsOnFeed: Boolean=false)
 
     private fun ms(t: Long)=Instant.ofEpochMilli(t)
     private fun minutesOf(s: Span)=Math.round((s.end-s.start).toDouble()/MIN)
@@ -127,14 +128,14 @@ object BabyNights {
 
         val entries=events.filter { it.type in WAKE_TYPES }.map { Triple(it.start.toEpochMilli(),entryEnd(it),it.type!!) }.filter { it.first>=span.start && it.first<until }.sortedBy { it.first }
         val clusters=ArrayList<Cluster>()
-        for((s,e,t) in entries) { val last=clusters.lastOrNull()
-            if(last!=null && s<=last.end+WAKE_CLUSTER_MINUTES*MIN) { last.end=max(last.end,e); last.entries++; last.items.add(s to t); last.types.add(t) }
-            else clusters.add(Cluster(s,e,1,mutableListOf(s to t),e,mutableSetOf(t))) }
+        for((s,e,t) in entries) { val last=clusters.lastOrNull(); val fed=t==EventType.FEED && e>s
+            if(last!=null && s<=last.end+WAKE_CLUSTER_MINUTES*MIN) { if(e>=last.end) last.endsOnFeed=fed; last.end=max(last.end,e); last.entries++; last.items.add(s to t); last.types.add(t) }
+            else clusters.add(Cluster(s,e,1,mutableListOf(s to t),e,mutableSetOf(t),fed)) }
         for(c in clusters) {
             val ended=spans.find { it.end<=c.start && it.end>=c.start-WAKE_CLUSTER_MINUTES*MIN && it.end>span.start }
             val resettled=spans.find { it.start>=c.end && it.start<=c.end+RESETTLE_LOOKAHEAD_MINUTES*MIN }
             c.start=ended?.end ?: c.start
-            c.resume=min(until,resettled?.start ?: (c.end+SETTLE_MINUTES*MIN))
+            c.resume=min(until,resettled?.start ?: (c.end+(if(c.endsOnFeed) 0 else SETTLE_MINUTES)*MIN))
         }
         val wakes=ArrayList<Cluster>()
         for(c in clusters) { val last=wakes.lastOrNull()

@@ -60,10 +60,10 @@ describe('a baby’s night', () => {
     expect(clock(night.bedtime as string)).toBe('19:00');
     // The 21:52 change and 21:55 feed are one wake, which began when the logged sleep ended.
     expect(night.wakes.map((wake) => [clock(wake.startedAt), clock(wake.resumedAt), wake.entries])).toEqual([
-      ['21:50', '22:30', 2],
-      ['01:13', '01:48', 1],
-      ['03:08', '03:43', 1],
-      ['05:32', '06:07', 2]
+      ['21:50', '22:15', 2],
+      ['01:13', '01:33', 1],
+      ['03:08', '03:28', 1],
+      ['05:32', '05:52', 2]
     ]);
     expect(night.wakes[0].items.map((item) => [clock(item.startedAt), item.type])).toEqual([
       ['21:52', 'diaper'],
@@ -73,13 +73,13 @@ describe('a baby’s night', () => {
     expect(night.wakes.flatMap((wake) => wake.types)).not.toContain('pump');
     expect(night.sleeps.map((stretch) => [clock(stretch.startedAt), stretch.minutes, stretch.source])).toEqual([
       ['19:00', 170, 'logged'],
-      ['22:30', 163, 'estimated'],
-      ['01:48', 80, 'estimated'],
-      ['03:43', 109, 'estimated'],
-      ['06:07', 53, 'estimated']
+      ['22:15', 178, 'estimated'],
+      ['01:33', 95, 'estimated'],
+      ['03:28', 124, 'estimated'],
+      ['05:52', 68, 'estimated']
     ]);
-    expect(night.sleepMinutes).toBe(575);
-    expect(night.longestStretchMinutes).toBe(170);
+    expect(night.sleepMinutes).toBe(635);
+    expect(night.longestStretchMinutes).toBe(178);
     expect(night.estimated).toBe(true);
   });
 
@@ -88,13 +88,13 @@ describe('a baby’s night', () => {
     const heard = getBabyNight(loggedNight, '2026-10-12', nursery, afternoon);
 
     // 01:12 cry trims the stretch before the 01:13 feed; the 02:30 one ends the
-    // 01:48 stretch, and the 22 minutes after it settles are too short to be sleep.
+    // 01:33 stretch, and the 22 minutes after it settles are too short to be sleep.
     expect(heard.sleeps.map((stretch) => [clock(stretch.startedAt), clock(stretch.endedAt), stretch.source])).toEqual([
       ['19:00', '21:50', 'logged'],
-      ['22:30', '01:12', 'estimated'],
-      ['01:48', '02:30', 'estimated'],
-      ['03:43', '05:32', 'estimated'],
-      ['06:07', '07:00', 'estimated']
+      ['22:15', '01:12', 'estimated'],
+      ['01:33', '02:30', 'estimated'],
+      ['03:28', '05:32', 'estimated'],
+      ['05:52', '07:00', 'estimated']
     ]);
     expect(heard.sleepMinutes).toBe(plain.sleepMinutes - 1 - 38);
     expect(heard.wakes).toHaveLength(plain.wakes.length);
@@ -126,8 +126,8 @@ describe('a baby’s night', () => {
     expect(night.wakes).toHaveLength(1);
     expect(night.edges.map((edge) => clock(edge.startedAt))).toEqual(['19:10', '06:45']);
     expect(night.sleeps.map((stretch) => [clock(stretch.startedAt), stretch.minutes])).toEqual([
-      ['19:40', 380],
-      ['02:35', 250]
+      ['19:25', 395],
+      ['02:20', 265]
     ]);
   });
 
@@ -137,7 +137,7 @@ describe('a baby’s night', () => {
 
     expect(unlogged.wakes.map((wake) => clock(wake.startedAt))).toEqual(['01:00']);
     expect(unlogged.edges.map((edge) => [clock(edge.startedAt), edge.entries])).toEqual([['19:30', 2]]);
-    expect(clock(unlogged.sleeps[0].startedAt)).toBe('20:45');
+    expect(clock(unlogged.sleeps[0].startedAt)).toBe('20:30');
     // Down at 7, up for a feed at 8: with the bedtime logged, that feed broke the night.
     const logged = getBabyNight(
       [sleep('2026-10-12T19:00', '2026-10-12T20:00'), feed('2026-10-12T20:10'), sleep('2026-10-12T20:45', '2026-10-13T00:50'), feed('2026-10-13T01:00')],
@@ -147,14 +147,30 @@ describe('a baby’s night', () => {
     );
     expect(logged.wakes.map((wake) => [clock(wake.startedAt), clock(wake.resumedAt)])).toEqual([
       ['20:00', '20:45'],
-      ['00:50', '01:35']
+      ['00:50', '01:20']
     ]);
   });
 
   it('joins two wakes with too little between them to count as sleep', () => {
-    const night = getBabyNight([feed('2026-10-13T01:00', 15), feed('2026-10-13T01:50', 15)], '2026-10-12', null, afternoon);
+    const night = getBabyNight([feed('2026-10-13T01:00', 15), feed('2026-10-13T01:40', 15)], '2026-10-12', null, afternoon);
 
-    expect(night.wakes.map((wake) => [clock(wake.startedAt), clock(wake.resumedAt), wake.entries])).toEqual([['01:00', '02:20', 2]]);
+    expect(night.wakes.map((wake) => [clock(wake.startedAt), clock(wake.resumedAt), wake.entries])).toEqual([['01:00', '01:55', 2]]);
+  });
+
+  it('starts estimated sleep when a timed feed ends, and charges settling after anything else', () => {
+    // Asleep by the end of the feed; a change after it, or a feed with no length, still takes settling.
+    const night = getBabyNight(
+      [feed('2026-10-12T22:00'), feed('2026-10-13T01:00'), diaper('2026-10-13T01:25'), feed('2026-10-13T04:00', 0)],
+      '2026-10-12',
+      null,
+      afternoon
+    );
+
+    expect(night.wakes.map((wake) => [clock(wake.startedAt), clock(wake.resumedAt)])).toEqual([
+      ['22:00', '22:20'],
+      ['01:00', '01:40'],
+      ['04:00', '04:15']
+    ]);
   });
 
   it('takes a logged resettle over the settling allowance', () => {
@@ -176,7 +192,7 @@ describe('a baby’s night', () => {
     expect(clock(night.bedtime as string)).toBe('19:30');
     expect(night.sleeps.map((stretch) => [clock(stretch.startedAt), clock(stretch.endedAt)])).toEqual([
       ['19:30', '01:00'],
-      ['01:35', '02:30']
+      ['01:20', '02:30']
     ]);
     // A sleep still running already covers both.
     expect(night.sleeps.flatMap((stretch) => stretch.unlogged)).toEqual([]);
@@ -184,11 +200,11 @@ describe('a baby’s night', () => {
     const unlogged = getBabyNight([feed('2026-10-12T21:00'), feed('2026-10-13T01:00')], '2026-10-12', null, new Date('2026-10-13T02:30'));
     expect(unlogged.sleeps.map((stretch) => stretch.unlogged.map((part) => [clock(part.startedAt), part.endedAt && clock(part.endedAt)]))).toEqual([
       [['19:00', '21:00']],
-      [['21:35', '01:00']],
-      [['01:35', null]]
+      [['21:20', '01:00']],
+      [['01:20', null]]
     ]);
     // Twenty-five minutes back down is not yet a stretch.
-    expect(getBabyNight(events, '2026-10-12', null, new Date('2026-10-13T02:00')).sleeps).toHaveLength(1);
+    expect(getBabyNight(events, '2026-10-12', null, new Date('2026-10-13T01:45')).sleeps).toHaveLength(1);
   });
 
   it('says nothing about a night nobody logged around', () => {

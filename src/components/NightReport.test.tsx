@@ -78,18 +78,18 @@ describe('NightReport', () => {
 
     // The logged bedtime stretch is labelled too, but only estimated ones are buttons.
     expect(document.querySelector('.night-sleep-length')).toHaveTextContent('2h 50m');
-    expect(document.querySelector('.night-sleep-labels')).toHaveTextContent(formatClock(at('2026-10-12T22:30')));
+    expect(document.querySelector('.night-sleep-labels')).toHaveTextContent(formatClock(at('2026-10-12T22:15')));
     const bars = screen.getAllByRole('button', { name: /^Log estimated sleep/ });
     expect(bars).toHaveLength(3);
 
     fireEvent.click(bars[0]);
-    expect(onLogSleep).toHaveBeenCalledWith({ endedAt: at('2026-10-13T01:13'), startedAt: at('2026-10-12T22:30') });
+    expect(onLogSleep).toHaveBeenCalledWith({ endedAt: at('2026-10-13T01:13'), startedAt: at('2026-10-12T22:15') });
 
     fireEvent.click(screen.getByRole('button', { name: 'Log 3 estimated sleeps' }));
     expect(onLogSleeps).toHaveBeenCalledWith([
-      { endedAt: at('2026-10-13T01:13'), startedAt: at('2026-10-12T22:30') },
-      { endedAt: at('2026-10-13T03:08'), startedAt: at('2026-10-13T01:48') },
-      { endedAt: at('2026-10-13T07:00'), startedAt: at('2026-10-13T03:43') }
+      { endedAt: at('2026-10-13T01:13'), startedAt: at('2026-10-12T22:15') },
+      { endedAt: at('2026-10-13T03:08'), startedAt: at('2026-10-13T01:33') },
+      { endedAt: at('2026-10-13T07:00'), startedAt: at('2026-10-13T03:28') }
     ]);
     expect(await screen.findByRole('button', { name: 'Log 3 estimated sleeps' })).toBeEnabled();
   });
