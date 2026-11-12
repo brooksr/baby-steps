@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { getAgeDays } from '../domain/dates';
 import { getFirstName } from '../domain/family';
-import { assessLatestGrowth, estimateSdScore, getGestationInfo, getGrowthMeasurements, getMetricPlots, interpolateStandard, sdScoreToPercentile, type AgeBasis, type GrowthBand } from '../domain/growth/assess';
+import { assessLatestGrowth, getGestationInfo, getGrowthMeasurements, getMetricPlots, type AgeBasis, type GrowthBand, type MetricPlot } from '../domain/growth/assess';
 import { getGrowthStandardSex, getGrowthStandards } from '../domain/growth/standards';
-import type { GrowthMetric } from '../domain/growth/whoBoyStandards';
+import type { GrowthMetric, GrowthStandard } from '../domain/growth/whoBoyStandards';
 import type { BabyProfile, CareEvent, PreferredUnits } from '../domain/types';
 import { centimetersToInches, formatLength, formatWeight, getPreferredUnits, kilogramsToOunces } from '../domain/units';
-import { GrowthChart, type GrowthSeries } from './GrowthChart';
+import { GrowthChart } from './GrowthChart';
 
 interface GrowthStandardsProps {
   events: CareEvent[];
@@ -23,10 +23,53 @@ const bandLabel: Record<GrowthBand, string> = {
   within: 'On track'
 };
 
+/** WHO standards are canonical in kg/cm; charts plot whatever the profile reads in. */
+function convertGrowthValue(metric: GrowthMetric, value: number, preferredUnits: PreferredUnits) {
+  if (preferredUnits.system === 'metric') {
+    return value;
+  }
+
+  if (metric !== 'weight') {
+    return centimetersToInches(value);
+  }
+
+  const ounces = kilogramsToOunces(value);
+  return preferredUnits.weightDisplay === 'ounces' ? ounces : ounces / 16;
+}
+
+function growthUnitLabel(metric: GrowthMetric, preferredUnits: PreferredUnits) {
+  if (metric !== 'weight') {
+    return 'in';
+  }
+
+  return preferredUnits.weightDisplay === 'ounces' ? 'oz' : 'lb';
+}
+
 function displayGrowthValue(metric: GrowthMetric, value: number, preferredUnits: PreferredUnits) {
   return metric === 'weight'
     ? formatWeight(kilogramsToOunces(value), preferredUnits)
     : formatLength(centimetersToInches(value), preferredUnits.system);
+}
+
+function displayPlots(plots: MetricPlot[], metric: GrowthMetric, preferredUnits: PreferredUnits): MetricPlot[] {
+  return plots.map((plot) => ({ ...plot, value: convertGrowthValue(metric, plot.value, preferredUnits) }));
+}
+
+function displayStandard(standard: GrowthStandard, preferredUnits: PreferredUnits): GrowthStandard {
+  if (preferredUnits.system === 'metric') {
+    return standard;
+  }
+
+  return {
+    ...standard,
+    points: standard.points.map((point) => ({
+      median: convertGrowthValue(standard.metric, point.median, preferredUnits),
+      month: point.month,
+      p2: convertGrowthValue(standard.metric, point.p2, preferredUnits),
+      p98: convertGrowthValue(standard.metric, point.p98, preferredUnits)
+    })),
+    unit: growthUnitLabel(standard.metric, preferredUnits)
+  };
 }
 
 export function GrowthStandards({ events, profile }: GrowthStandardsProps) {
@@ -57,25 +100,11 @@ export function GrowthStandards({ events, profile }: GrowthStandardsProps) {
   const showCorrected = Boolean(gestation?.preterm && gestation.correctionDays > 0);
   const activeBasis: AgeBasis = showCorrected ? basis : 'actual';
   const assessments = assessLatestGrowth(profile, events, activeBasis);
+  const assessmentByMetric = new Map(assessments.map((assessment) => [assessment.metric, assessment]));
   const actualAssessments = new Map(assessLatestGrowth(profile, events, 'actual').map((assessment) => [assessment.metric, assessment]));
   const correctedAssessments = new Map(assessLatestGrowth(profile, events, 'corrected').map((assessment) => [assessment.metric, assessment]));
   const latestAgeMonths = measurements[measurements.length - 1]?.ageMonths ?? 0;
   const chartMaxAgeMonths = Math.max(1, getAgeDays(profile) / AVG_DAYS_PER_MONTH, latestAgeMonths);
-  // One chart for all three: each reading is placed by its SD score at the age
-  // the comparison is read at, since kilograms and centimeters share no axis.
-  const series: GrowthSeries[] = METRIC_ORDER.map((metric) => ({
-    label: METRIC_LABELS[metric],
-    metric,
-    points: getMetricPlots(measurements, metric).map((plot) => {
-      const ageMonths = activeBasis === 'corrected' ? plot.correctedAgeMonths : plot.ageMonths;
-      const score = estimateSdScore(plot.value, interpolateStandard(standards[metric], ageMonths));
-      return {
-        ageMonths,
-        score,
-        title: `${METRIC_LABELS[metric]} ${displayGrowthValue(metric, plot.value, preferredUnits)} · P${sdScoreToPercentile(score)} at ${ageMonths.toFixed(1)} months`
-      };
-    })
-  }));
 
   return (
     <>
@@ -133,53 +162,56 @@ export function GrowthStandards({ events, profile }: GrowthStandardsProps) {
         </details>}
 
 
-        {assessments.length === 0 ? (
+        {assessments.length === 0 && (
           <p className="empty-state">Add a growth entry (weight, length, or head) to see how {firstName} compares.</p>
-        ) : (
-          <div className="assess-list">
-            {assessments.map((assessment) => (
-              <article className={`assess-row band-${assessment.band}`} key={assessment.metric}>
-                <div className="assess-head">
-                  <strong>{assessment.label}</strong>
-                  <span className={`assess-pill band-${assessment.band}`}>{bandLabel[assessment.band]}</span>
-                </div>
-                <p className="growth-reading">{displayGrowthValue(assessment.metric, assessment.value, preferredUnits)} <span className="growth-percentile" aria-label={`Estimated percentile P${assessment.percentile}`}>· P{assessment.percentile}</span></p>
-                <details className="reference-details growth-detail"><summary>Percentiles & reference</summary>
-                <p>
-                  Median{' '}
-                  {displayGrowthValue(assessment.metric, assessment.standard.median, preferredUnits)} (range{' '}
-                  {displayGrowthValue(assessment.metric, assessment.standard.p2, preferredUnits)}–
-                  {displayGrowthValue(assessment.metric, assessment.standard.p98, preferredUnits)})
-                </p>
-                <small>
-                  Estimated P{actualAssessments.get(assessment.metric)?.percentile} actual age
-                  {showCorrected ? ` · P${correctedAssessments.get(assessment.metric)?.percentile} corrected age` : ''}
-                </small>
-                <small>{assessment.summary}</small>
-                </details>
-              </article>
-            ))}
-          </div>
         )}
-      </section>
 
-      <section className="chart-card growth-combined" aria-label="WHO growth standard chart">
-        <div className="chart-heading">
-          <h3>Weight, length &amp; head</h3>
-          <small>Against WHO, by age · the band is the usual range, the dashed line the median</small>
+        {/* One column per metric: the latest reading over its own WHO chart. */}
+        <div className="growth-columns">
+          {METRIC_ORDER.map((metric) => {
+            const assessment = assessmentByMetric.get(metric);
+            const standard = displayStandard(standards[metric], preferredUnits);
+            const plots = displayPlots(getMetricPlots(measurements, metric), metric, preferredUnits);
+
+            return (
+              <article className={`growth-column${assessment ? ` band-${assessment.band}` : ''}`} data-event="growth" data-metric={metric} key={metric}>
+                <div className="growth-column-head">
+                  <h3>{METRIC_LABELS[metric]}</h3>
+                  <small>{standard.unit}</small>
+                </div>
+                {assessment ? (
+                  <>
+                    <p className="growth-reading">{displayGrowthValue(metric, assessment.value, preferredUnits)}</p>
+                    <p className="growth-standing">
+                      <span className="growth-percentile" aria-label={`Estimated percentile P${assessment.percentile}`}>P{assessment.percentile}</span>
+                      <span className={`assess-pill band-${assessment.band}`}>{bandLabel[assessment.band]}</span>
+                    </p>
+                  </>
+                ) : (
+                  <p className="growth-standing">No reading yet</p>
+                )}
+                <GrowthChart maxAgeMonths={chartMaxAgeMonths} standard={standard} plots={plots} showCorrected={showCorrected} />
+                {assessment && (
+                  <details className="reference-details growth-detail"><summary>Reference</summary>
+                    <p>
+                      Median {displayGrowthValue(metric, assessment.standard.median, preferredUnits)} (range{' '}
+                      {displayGrowthValue(metric, assessment.standard.p2, preferredUnits)}–
+                      {displayGrowthValue(metric, assessment.standard.p98, preferredUnits)})
+                    </p>
+                    <small>
+                      Estimated P{actualAssessments.get(metric)?.percentile} actual age
+                      {showCorrected ? ` · P${correctedAssessments.get(metric)?.percentile} corrected age` : ''}
+                    </small>
+                    <small>{assessment.summary}</small>
+                  </details>
+                )}
+              </article>
+            );
+          })}
         </div>
-        <GrowthChart maxAgeMonths={chartMaxAgeMonths} series={series} />
-        <div className="chart-legend">
-          {series.map((line) => (
-            <span className="chart-legend-item growth-legend" data-metric={line.metric} key={line.metric}>
-              {line.label}
-            </span>
-          ))}
-        </div>
-        <div className="chart-stats">
-          <span>WHO reference · −2 to +2 SD{showCorrected ? ` · ${activeBasis === 'corrected' ? 'corrected' : 'actual'} age` : ''}</span>
-          <span>{series.reduce((sum, line) => sum + line.points.length, 0)} plotted</span>
-        </div>
+        <p className="growth-key">
+          Shaded: WHO −2 to +2 SD · dashed: median{showCorrected ? ' · purple dots: corrected age' : ''}
+        </p>
       </section>
     </>
   );

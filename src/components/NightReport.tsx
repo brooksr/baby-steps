@@ -23,10 +23,6 @@ import { careEventLabels, type CareEvent, type CareEventType } from '../domain/t
 
 interface NightReportProps {
   events: CareEvent[];
-  /** The nights the averages cover — the Reports period. Null (the Day period) shows the one night only. */
-  averageRange: DateRange | null;
-  /** How the period names itself — "this week", "selected range". */
-  scopeLabel: string;
   /** Reads the nursery sensor's tabs; absent or null means no sensor layer. */
   loadNursery?: () => Promise<NurseryData | null>;
   /** Opens the sleep form on one estimated stretch. Absent, the track is read-only. */
@@ -430,9 +426,9 @@ function entryTypes(night: BabyNight): CareEventType[] {
  * nights of the selected Reports period. See `domain/babyNights.ts` for how a
  * night is read.
  */
-export function NightReport({ averageRange, events, loadNursery, now: fixedNow, onLogSleep, onLogSleeps, onMarkCries, scopeLabel }: NightReportProps) {
+export function NightReport({ events, loadNursery, now: fixedNow, onLogSleep, onLogSleeps, onMarkCries }: NightReportProps) {
   const now = fixedNow ?? new Date();
-  const [nursery, setNursery] = useState<NurseryData | null>(null);
+  const nursery = useNursery(loadNursery);
   const [logging, setLogging] = useState(false);
   const [nightKey, setNightKeyState] = useState(() => getDefaultNightKey(now));
   const [selectedCry, setSelectedCry] = useState<string | null>(null);
@@ -442,29 +438,12 @@ export function NightReport({ averageRange, events, loadNursery, now: fixedNow, 
   };
   const selectCry = (startedAt: string) => setSelectedCry((current) => (current === startedAt ? null : startedAt));
 
-  useEffect(() => {
-    let current = true;
-
-    loadNursery?.()
-      .then((data) => {
-        if (current) {
-          setNursery(data);
-        }
-      })
-      .catch(() => undefined);
-
-    return () => {
-      current = false;
-    };
-  }, [loadNursery]);
-
   const latestKey = getCurrentNightKey(now);
   const earliestEvent = events.reduce<string | null>((earliest, event) => (!earliest || event.startedAt < earliest ? event.startedAt : earliest), null);
   const earliestKey = earliestEvent ? shiftNightKey(getLocalDateKey(earliestEvent), -1) : latestKey;
   const night = getBabyNight(events, nightKey, nursery, now);
   const day = getBabyDay(events, nightKey, nursery, now);
   const dayTracked = !day.upcoming && (day.items.length > 0 || day.naps.length > 0);
-  const report = averageRange ? getBabyNightsReport(events, nursery, averageRange, now) : null;
   // A stretch still going is left to the form: logged in bulk it would be a
   // sleep still running when the baby may be up.
   const toLog = night.sleeps.flatMap((stretch) => stretch.unlogged).filter((part) => part.endedAt);
@@ -593,48 +572,6 @@ export function NightReport({ averageRange, events, loadNursery, now: fixedNow, 
 
       <SensorLine night={night} nursery={nursery} />
 
-      {report && (
-        <>
-          <div className="section-heading night-span-heading">
-            <h3>Averages</h3>
-            <span>{scopeLabel}</span>
-          </div>
-
-          {report.nights.length === 0 ? (
-            <p className="empty-state compact">No finished night logged {scopeLabel === 'selected range' ? 'in the selected range' : scopeLabel}.</p>
-          ) : (
-            <>
-              <div className="metric-grid report-grid" aria-label={`Night averages ${scopeLabel}`}>
-                <article className="metric-card" data-event="sleep">
-                  <span>Night sleep</span>
-                  <strong>{report.sleepMinutes ? minutes(report.sleepMinutes.average) : '—'}</strong>
-                  {report.sleepMinutes && <small>{durationRange(report.sleepMinutes)} range</small>}
-                </article>
-                <article className="metric-card" data-event="sleep">
-                  <span>Wakes/night</span>
-                  <strong>{report.wakes ? Number(report.wakes.average.toFixed(1)) : '—'}</strong>
-                  {report.wakes && <small>{countRange(report.wakes)} range</small>}
-                </article>
-                <article className="metric-card" data-event="sleep">
-                  <span>Longest stretch</span>
-                  <strong>{report.longestStretchMinutes ? minutes(report.longestStretchMinutes.average) : '—'}</strong>
-                  {report.longestStretchMinutes && <small>best {minutes(report.longestStretchMinutes.max)}</small>}
-                </article>
-                <article className="metric-card" data-event="sleep">
-                  <span>Naps/day</span>
-                  <strong>{report.napMinutes ? minutes(report.napMinutes.average) : '—'}</strong>
-                  <small>{report.napMinutes ? `${durationRange(report.napMinutes)} range` : 'no naps logged'}</small>
-                </article>
-              </div>
-              <p className="night-note">
-                {report.nights.length} of {plural(report.span, 'night')} logged
-                {report.estimatedNights > 0 && ` · ${report.estimatedNights} with sleep estimated`}
-              </p>
-            </>
-          )}
-        </>
-      )}
-
       <details className="reference-details night-explanation"><summary>How sleep is estimated</summary>
       <p className="night-note">
         Wakes are night feeds, changes and meds logged within 30 minutes of each other. Sleep not logged as a sleep entry is
@@ -643,6 +580,97 @@ export function NightReport({ averageRange, events, loadNursery, now: fixedNow, 
         sleep the same way, but it never adds a wake or changes a logged sleep: the sensor only hears what reaches the phone.
       </p>
       </details>
+    </section>
+  );
+}
+
+/** Reads the nursery sensor's tabs once; null until they arrive, or with no sensor. */
+function useNursery(loadNursery?: () => Promise<NurseryData | null>) {
+  const [nursery, setNursery] = useState<NurseryData | null>(null);
+
+  useEffect(() => {
+    let current = true;
+
+    loadNursery?.()
+      .then((data) => {
+        if (current) {
+          setNursery(data);
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      current = false;
+    };
+  }, [loadNursery]);
+
+  return nursery;
+}
+
+interface NightAveragesProps {
+  events: CareEvent[];
+  /** The nights the averages cover — the Reports period. Null (the Day period) shows nothing. */
+  averageRange: DateRange | null;
+  /** How the period names itself — "this week", "selected range". */
+  scopeLabel: string;
+  loadNursery?: () => Promise<NurseryData | null>;
+  now?: Date;
+}
+
+/**
+ * Night sleep, wakes, longest stretch and naps averaged over the finished
+ * nights of the Reports period. It sits with the period's other results, apart
+ * from the night-by-night card, which does not depend on the period.
+ */
+export function NightAverages({ averageRange, events, loadNursery, now: fixedNow, scopeLabel }: NightAveragesProps) {
+  const now = fixedNow ?? new Date();
+  const nursery = useNursery(loadNursery);
+
+  if (!averageRange) {
+    return null;
+  }
+
+  const report = getBabyNightsReport(events, nursery, averageRange, now);
+
+  return (
+    <section className="section-block night-report night-averages" data-event="sleep">
+      <div className="section-heading">
+        <h2>Sleep averages</h2>
+        <span>{scopeLabel}</span>
+      </div>
+
+      {report.nights.length === 0 ? (
+        <p className="empty-state compact">No finished night logged {scopeLabel === 'selected range' ? 'in the selected range' : scopeLabel}.</p>
+      ) : (
+        <>
+          <div className="metric-grid report-grid" aria-label={`Night averages ${scopeLabel}`}>
+            <article className="metric-card" data-event="sleep">
+              <span>Night sleep</span>
+              <strong>{report.sleepMinutes ? minutes(report.sleepMinutes.average) : '—'}</strong>
+              {report.sleepMinutes && <small>{durationRange(report.sleepMinutes)} range</small>}
+            </article>
+            <article className="metric-card" data-event="sleep">
+              <span>Wakes/night</span>
+              <strong>{report.wakes ? Number(report.wakes.average.toFixed(1)) : '—'}</strong>
+              {report.wakes && <small>{countRange(report.wakes)} range</small>}
+            </article>
+            <article className="metric-card" data-event="sleep">
+              <span>Longest stretch</span>
+              <strong>{report.longestStretchMinutes ? minutes(report.longestStretchMinutes.average) : '—'}</strong>
+              {report.longestStretchMinutes && <small>best {minutes(report.longestStretchMinutes.max)}</small>}
+            </article>
+            <article className="metric-card" data-event="sleep">
+              <span>Naps/day</span>
+              <strong>{report.napMinutes ? minutes(report.napMinutes.average) : '—'}</strong>
+              <small>{report.napMinutes ? `${durationRange(report.napMinutes)} range` : 'no naps logged'}</small>
+            </article>
+          </div>
+          <p className="night-note">
+            {report.nights.length} of {plural(report.span, 'night')} logged
+            {report.estimatedNights > 0 && ` · ${report.estimatedNights} with sleep estimated`}
+          </p>
+        </>
+      )}
     </section>
   );
 }

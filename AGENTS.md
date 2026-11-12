@@ -868,7 +868,7 @@ stays on the phone.
   the `diaper` and `feed` events already logged.
   - `getFeedToDiaperLags()` — mean wait from a feed to the next wet / next dirty
     diaper, dropping pairs more than 6h apart as unrelated. Shown as one Reports
-    insight card, **Feed → diaper**, with wet and dirty side by side.
+    insight card, **Feed → diaper**, wet stacked over dirty.
   - `predictNextDiaper()` — a recency-weighted average of recent gaps between
     changes (weights halve every 3 days, so a changing routine shows up fast),
     projected off the last change and pulled toward the usual feed → wet lag when
@@ -1016,14 +1016,18 @@ stays on the phone.
   overdue). Copy suggests offering a feed or a bath and points at the
   pediatrician — never more than that.
 - **Daily trend charts share one card** (`components/TrendCharts.tsx`):
-  Feeds/day, Sleep/day, Diapers/day and Milk/day are one `MiniChart` with a
-  Feeds · Sleep · Diapers · Milk picker above its heading, both in the recent
-  trends and under the selected period. Each metric keeps its own heading,
-  family color, stacked parts and expand-to-detail.
+  Feeds/day, Sleep/day, Diapers/day and Milk/day for the last 14 logged days,
+  all four at once as `compact` `MiniChart`s in side-by-side columns (four
+  across where there is room, two by two on a phone). Each keeps its heading,
+  family color, stacked parts and expand-to-detail. There is no second copy
+  under the period control; the period's per-day figures are its summary cards.
 - **Reports page order** — the period control sits directly above the first
   thing it changes. Everything above it (First Year, recent trends, growth
-  standards) is period-independent; everything below (Nights, Insights, Feed
-  clock, Feed order, and the day/period summary) reads from the selected period. The control
+  standards, and the night-by-night **Night & Day** card) is period-independent;
+  everything below (Sleep averages, Insights, Feed clock, Feed order, and the
+  day/period summary) reads from the selected period. `NightAverages` lives in
+  `NightReport.tsx` but renders under the control; Reports hands both one cached
+  nursery loader so the sensor tabs are read once. The control
   block carries the Custom date picker and the Check-Up summary with it, since
   those are part of choosing a period rather than results of one. Weight gain
   is deliberately all-time and says so on the card. The all-time Longest sleep
@@ -1179,11 +1183,10 @@ stays on the phone.
   trick `--accent` already plays) so one dark ink reads on all five; only the
   tints are re-picked under `[data-theme='dark']`, where the light ones would
   disappear into the panel.
-- **One growth chart** — weight, length and head share a single chart. Their
-  units share no axis, so each reading is placed by its approximate SD score
-  (`estimateSdScore`, the same skew-aware scaling the percentile uses) at the
-  age being compared, under one −2 to +2 SD band and median line; the readings
-  in the profile's units stay in the list above and on each point's tooltip.
+- **Growth standards in three columns** — weight, length and head side by
+  side, each the latest reading, its percentile and band pill over its own
+  narrow WHO chart in the profile's units (`GrowthChart` is drawn 160×150 for
+  that column), with the reference range behind a details toggle.
 - **Age basis** — `GrowthStandards` opens on **corrected** age, since the WHO
   curves are built on term births. The control only appears when there is
   gestation to correct for, and `activeBasis` falls back to actual otherwise, so

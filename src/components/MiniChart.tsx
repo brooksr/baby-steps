@@ -1,5 +1,5 @@
 import { Maximize2 } from 'lucide-react';
-import { type ReactNode, useState } from 'react';
+import { useState } from 'react';
 import type { MetricStats } from '../domain/firstYear';
 import type { CareEventType } from '../domain/types';
 import { BAR_LABEL_LIMIT, formatBarValue, formatDayLabel, formatParts, formatStat, type ChartPoint } from './chartFormat';
@@ -21,22 +21,21 @@ export interface MiniChartProps {
   /** True when bars average several days together, so a bar is not one day's total. */
   sampled?: boolean;
   values: ChartPoint[];
-  /** Controls drawn above the heading — the trend picker that swaps metrics. */
-  picker?: ReactNode;
+  /** A narrow column beside other charts: no per-bar numbers or day ticks. */
+  compact?: boolean;
 }
 
-export function MiniChart({ event, label, stats, suffix = '', partAverages, partLabels, partTotals, picker, sampled = false, total, values }: MiniChartProps) {
+export function MiniChart({ event, label, stats, suffix = '', partAverages, partLabels, compact = false, partTotals, sampled = false, total, values }: MiniChartProps) {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const max = Math.max(1, ...values.map((point) => point.value));
   const cols = Math.max(1, values.length);
-  const showBarLabels = values.length > 0 && values.length <= BAR_LABEL_LIMIT;
+  const showBarLabels = !compact && values.length > 0 && values.length <= BAR_LABEL_LIMIT;
   // Defaults to the most recent bar so a day total is always on screen.
   const activePoint = values.length > 0 ? values[Math.min(activeIndex ?? values.length - 1, values.length - 1)] : null;
   const dayWord = sampled ? 'avg/day from' : '';
 
   return (
     <article className="chart-card" data-event={event}>
-      {picker}
       <div className="chart-heading">
         <h3>{label}</h3>
         <strong>{formatStat(stats.average, suffix)} avg</strong>

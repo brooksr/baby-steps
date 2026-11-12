@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { formatDuration, getLocalDateKey, isSameLocalDate } from '../domain/dates';
 import { getRecentNightsRange } from '../domain/babyNights';
 import { getCheckupSpan } from '../domain/checkup';
@@ -17,7 +17,7 @@ import { FeedClock } from './FeedClock';
 import { FeedOrder } from './FeedOrder';
 import { GrowthStandards } from './GrowthStandards';
 import { NewbornStatus } from './NewbornStatus';
-import { NightReport, type UnloggedSleep } from './NightReport';
+import { NightAverages, NightReport, type UnloggedSleep } from './NightReport';
 import { ReportExplorer } from './ReportExplorer';
 import { Timeline } from './Timeline';
 
@@ -126,30 +126,6 @@ function poopSizeBreakdown(counts: { large: number; medium: number; small: numbe
 }
 
 // Reduces daily data to at most maxBars by averaging groups of days.
-function samplePoints(values: ChartPoint[], maxBars: number): ChartPoint[] {
-  if (values.length <= maxBars) return values;
-  const step = values.length / maxBars;
-  const round = (value: number) => Math.round(value * 10) / 10;
-
-  return Array.from({ length: maxBars }, (_, i) => {
-    const start = Math.floor(i * step);
-    const end = Math.floor((i + 1) * step);
-    const bucket = values.slice(start, end);
-    const average = (selector: (point: ChartPoint) => number) =>
-      round(bucket.reduce((sum, p) => sum + selector(p), 0) / bucket.length);
-
-    return {
-      label: bucket[0].label,
-      parts: bucket[0].parts?.map((_, partIndex) => average((p) => p.parts?.[partIndex] ?? 0)),
-      value: average((p) => p.value)
-    };
-  });
-}
-
-/**
- * Wet and dirty per day, averaged over the days that logged any diaper — the
- * same denominator the total uses, so the two splits add up to it.
- */
 function diaperSplitAverages(points: FirstYearPoint[]) {
   const onDiaperDays = (selector: (point: FirstYearPoint) => number) =>
     periodStat(points, (point) => (point.diapers > 0 ? selector(point) : undefined)).average;
@@ -235,6 +211,11 @@ function periodLabel(points: FirstYearPoint[]): string {
 
 export function Reports({ events, loadNursery, onLogSleep, onLogSleeps, onMarkCries, profile, profiles = [] }: ReportsProps) {
   const [period, setPeriod] = useState<ReportPeriod>('day');
+  // The night card and the averages both read the sensor; one fetch serves both.
+  const nurseryOnce = useMemo(() => {
+    let pending: Promise<NurseryData | null> | null = null;
+    return loadNursery ? () => (pending ??= loadNursery()) : undefined;
+  }, [loadNursery]);
   const [dateKey, setDateKey] = useState(() => getLocalDateKey(new Date()));
   const [range, setRange] = useState<DateRange>(() => getPresetRange('30d'));
   const preferredUnits = getPreferredUnits(profile);
@@ -284,15 +265,6 @@ export function Reports({ events, loadNursery, onLogSleep, onLogSleeps, onMarkCr
   const periodPoints = isCalendarPeriod(period)
     ? (calendarRange ? analytics.points.filter((point) => isDateKeyInRange(point.dateKey, calendarRange)) : [])
     : analytics.points.slice(-Math.min(periodCount, analytics.points.length));
-  const maxBars = period === 'week' ? 7 : period === 'month' ? 30 : isCalendarPeriod(period) ? 31 : 52;
-  // Above maxBars the bars average groups of days, so they stop being day totals.
-  const sampled = periodPoints.length > maxBars;
-
-  const periodFeedValues = samplePoints(periodPoints.map((p) => ({ label: p.dateKey, value: p.feeds })), maxBars);
-  const periodDiaperValues = samplePoints(diaperPoints(periodPoints), maxBars);
-  const periodSleepValues = samplePoints(periodPoints.map((p) => ({ label: p.dateKey, value: p.sleepMinutes / 60 })), maxBars);
-  const periodMilkValues = samplePoints(periodPoints.map((p) => ({ label: p.dateKey, value: toPreferredVolume(p.bottleOunces + p.pumpOunces) })), maxBars);
-
   const periodDiaperAverages = diaperSplitAverages(periodPoints);
 
   const periodStats = {
@@ -391,28 +363,33 @@ export function Reports({ events, loadNursery, onLogSleep, onLogSleeps, onMarkCr
       </section>
 
       <TrendCharts
-        label="Recent trends"
-        metrics={[
-          { chart: { event: 'feed', label: 'Feeds/day', stats: analytics.stats.feeds, total: recentTotals.feeds, values: recentFeedValues }, name: 'Feeds' },
-          { chart: { event: 'sleep', label: 'Sleep/day', stats: analytics.stats.sleepHours, suffix: 'h', total: recentTotals.sleepHours, values: recentSleepValues }, name: 'Sleep' },
+        charts={[
+          { event: 'feed', label: 'Feeds/day', stats: analytics.stats.feeds, total: recentTotals.feeds, values: recentFeedValues },
+          { event: 'sleep', label: 'Sleep/day', stats: analytics.stats.sleepHours, suffix: 'h', total: recentTotals.sleepHours, values: recentSleepValues },
           {
-            chart: {
-              event: 'diaper',
-              label: 'Diapers/day',
-              partAverages: [analytics.stats.wetDiapers.average, analytics.stats.dirtyDiapers.average],
-              partLabels: DIAPER_PART_LABELS,
-              partTotals: [recentTotals.wet, recentTotals.dirty],
-              stats: analytics.stats.diapers,
-              total: recentTotals.diapers,
-              values: recentDiaperValues
-            },
-            name: 'Diapers'
+            event: 'diaper',
+            label: 'Diapers/day',
+            partAverages: [analytics.stats.wetDiapers.average, analytics.stats.dirtyDiapers.average],
+            partLabels: DIAPER_PART_LABELS,
+            partTotals: [recentTotals.wet, recentTotals.dirty],
+            stats: analytics.stats.diapers,
+            total: recentTotals.diapers,
+            values: recentDiaperValues
           },
-          { chart: { event: 'pump', label: 'Milk/day', stats: recentMilkStats, suffix: milkSuffix, total: recentTotals.milk, values: recentMilkValues }, name: 'Milk' }
+          { event: 'pump', label: 'Milk/day', stats: recentMilkStats, suffix: milkSuffix, total: recentTotals.milk, values: recentMilkValues }
         ]}
+        label="Recent trends"
       />
 
       <GrowthStandards events={events} profile={profile} />
+
+      <NightReport
+        events={events}
+        loadNursery={nurseryOnce}
+        onLogSleep={onLogSleep}
+        onLogSleeps={onLogSleeps}
+        onMarkCries={onMarkCries}
+      />
 
       <section className="section-block">
         <div className="section-heading wrap">
@@ -468,15 +445,7 @@ export function Reports({ events, loadNursery, onLogSleep, onLogSleeps, onMarkCr
         )}
       </section>
 
-      <NightReport
-        averageRange={nightRange}
-        events={events}
-        loadNursery={loadNursery}
-        onLogSleep={onLogSleep}
-        onLogSleeps={onLogSleeps}
-        onMarkCries={onMarkCries}
-        scopeLabel={periodScopeLabel(period)}
-      />
+      <NightAverages averageRange={nightRange} events={events} loadNursery={nurseryOnce} scopeLabel={periodScopeLabel(period)} />
 
       <section className="metric-grid report-grid" aria-label="Insights">
         <article className="metric-card" data-event="feed">
@@ -485,8 +454,8 @@ export function Reports({ events, loadNursery, onLogSleep, onLogSleeps, onMarkCr
           {feedGap.average > 0 && <small>{formatDurationRange(feedGap.min, feedGap.max)} range</small>}
           <small>{periodScopeLabel(period)}</small>
         </article>
-        {/* One card, two waits: how long after a feed the next wet and the
-            next dirty change usually come. */}
+        {/* One card, two waits, stacked: how long after a feed the next wet
+            and the next dirty change usually come. */}
         <article className="metric-card feed-diaper-card" data-event="diaper">
           <span>Feed → diaper</span>
           <div className="metric-split">
@@ -494,13 +463,13 @@ export function Reports({ events, loadNursery, onLogSleep, onLogSleeps, onMarkCr
               const lag = diaperLags[kind];
 
               return (
-                <div key={kind}>
+                <div className="metric-split-row" key={kind}>
                   <small className="metric-split-label">{kind === 'wet' ? 'Wet' : 'Dirty'}</small>
                   <strong>{lag.averageMinutes !== null ? formatDuration(Math.round(lag.averageMinutes)) : '—'}</strong>
-                  {lag.minMinutes !== null && lag.maxMinutes !== null && (
-                    <small>{formatDurationRange(lag.minMinutes, lag.maxMinutes)}</small>
-                  )}
-                  <small>{lag.samples > 0 ? `${lag.samples} feed${lag.samples === 1 ? '' : 's'}` : 'no pairs yet'}</small>
+                  <small className="metric-split-note">
+                    {lag.minMinutes !== null && lag.maxMinutes !== null ? `${formatDurationRange(lag.minMinutes, lag.maxMinutes)} · ` : ''}
+                    {lag.samples > 0 ? `${lag.samples} feed${lag.samples === 1 ? '' : 's'}` : 'no pairs yet'}
+                  </small>
                 </div>
               );
             })}
@@ -631,28 +600,6 @@ export function Reports({ events, loadNursery, onLogSleep, onLogSleeps, onMarkCr
             </article>
           </section>
 
-          <TrendCharts
-            label={`Charts for ${periodScopeLabel(period)}`}
-            metrics={[
-              { chart: { event: 'feed', label: 'Feeds/day', sampled, stats: periodStats.feeds, total: periodTotals.feeds, values: periodFeedValues }, name: 'Feeds' },
-              { chart: { event: 'sleep', label: 'Sleep/day', sampled, stats: periodStats.sleepHours, suffix: 'h', total: periodTotals.sleepHours, values: periodSleepValues }, name: 'Sleep' },
-              {
-                chart: {
-                  event: 'diaper',
-                  label: 'Diapers/day',
-                  partAverages: [periodDiaperAverages.wet, periodDiaperAverages.dirty],
-                  partLabels: DIAPER_PART_LABELS,
-                  partTotals: [periodTotals.wet, periodTotals.dirty],
-                  sampled,
-                  stats: periodStats.diapers,
-                  total: periodTotals.diapers,
-                  values: periodDiaperValues
-                },
-                name: 'Diapers'
-              },
-              { chart: { event: 'pump', label: 'Milk/day', sampled, stats: periodStats.milk, suffix: milkSuffix, total: periodTotals.milk, values: periodMilkValues }, name: 'Milk' }
-            ]}
-          />
         </>
       )}
     </ReportExplorer>
