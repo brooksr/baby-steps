@@ -376,7 +376,18 @@ describe('Dashboard', () => {
       expect(card.getByText('Sleep')).toBeInTheDocument();
       expect(card.getByText('Awake · slept 1h 30m')).toBeInTheDocument();
       rerender(<Dashboard {...props} events={[{ ...sleep, endedAt: undefined }]} />);
-      expect(within(screen.getByRole('button', { name: 'View sleep log' })).getByText('Asleep')).toBeInTheDocument();
+      expect(within(screen.getByRole('button', { name: 'View sleep log' })).getByText(/^Asleep · /)).toBeInTheDocument();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('estimates the next nap on the sleep card from the recent rhythm', () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-09-02T15:00:00'));
+      const nap = (day: string, hour: string): CareEvent => ({ babyId: 'avery-example', createdAt: `${day}T${hour}:00:00`, endedAt: `${day}T${String(Number(hour) + 1).padStart(2, '0')}:30:00`, id: `nap-${day}-${hour}`, startedAt: `${day}T${hour}:00:00`, type: 'sleep', updatedAt: `${day}T${hour}:00:00` });
+      const events = ['2026-08-31', '2026-09-01', '2026-09-02'].flatMap((day) => [nap(day, '09'), nap(day, '13')]);
+      render(<Dashboard activeTimers={{}} events={events} profile={createDefaultBabyProfile(new Date('2026-06-19T12:00:00.000Z'))} todayKey="2026-09-02" onAdd={vi.fn()} onOpenLog={vi.fn()} />);
+      expect(within(screen.getByRole('button', { name: 'View sleep log' })).getByText(/· nap$/)).toBeInTheDocument();
     } finally { vi.useRealTimers(); }
   });
 

@@ -32,7 +32,7 @@ const tracked: Array<{ title: string; detail: string }> = [
 /** Things the app derives from the entries above — nothing extra to log. */
 const derived: Array<{ title: string; detail: string }> = [
   { detail: 'In the first weeks, checks the day’s diapers and feeds against typical newborn minimums for that day of life — judged on pace while the day is still running, so a half-done day stays neutral rather than alarming.', title: 'Newborn daily check' },
-  { detail: 'Plots weight, length and head circumference against the WHO curves for the baby’s sex (−2 SD to +2 SD), with a corrected-age view when the birth was preterm.', title: 'Growth charts' },
+  { detail: 'Plots weight, length and head circumference together on one chart against the WHO curves for the baby’s sex (−2 SD to +2 SD), with a corrected-age view when the birth was preterm.', title: 'Growth chart' },
   { detail: 'Before the birth, the week of the pregnancy; after it, what this day, week or month of life usually looks like — written through age two, in your baby’s name and pronouns, and read at corrected age once a preterm birth is past the newborn window.', title: 'What to expect' },
   { detail: 'Learns the recent gap between changes — weighted so a changing routine shows up fast — and projects the next one with a window and a confidence. It stays quiet under four intervals rather than guessing.', title: 'Next-diaper prediction' },
   { detail: 'Average wait from a feed to the next wet and the next dirty diaper, ignoring pairs more than six hours apart.', title: 'Feed → diaper timing' },

@@ -217,12 +217,14 @@ test('real passkey account, family, offline queue, caregiver boundary and recove
     expect(await page.locator('.growth-age-options').evaluate(element => (element as HTMLDetailsElement).open)).toBe(false);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
     if (width===390) {
-      const grid = await page.locator('.growth-charts').boundingBox();
-      const chart = await page.locator('.growth-charts .chart-card').first().boundingBox();
+      const grid = await page.locator('.growth-overview').boundingBox();
+      const chart = await page.locator('.growth-combined').boundingBox();
       expect(chart!.width).toBeGreaterThanOrEqual(grid!.width-2);
       await page.locator('.growth-overview').screenshot({ path:'test-results/mobile-growth-overview.png',style:'.bottom-nav { visibility: hidden; }' });
-      await page.locator('.growth-charts').screenshot({ path:'test-results/mobile-growth-charts.png',style:'.bottom-nav { visibility: hidden; }' });
+      await page.locator('.growth-combined').screenshot({ path:'test-results/mobile-growth-charts.png',style:'.bottom-nav { visibility: hidden; }' });
       await page.locator('.night-report').screenshot({ path:'test-results/mobile-night.png',style:'.bottom-nav { visibility: hidden; }' });
+      await page.locator('.feed-diaper-card').screenshot({ path:'test-results/mobile-feed-diaper.png',style:'.bottom-nav { visibility: hidden; }' });
+      if (await page.locator('.feed-clock-chart').count()) await page.locator('.feed-clock-chart').screenshot({ path:'test-results/mobile-feed-clock.png',style:'.bottom-nav { visibility: hidden; }' });
     }
   }
   // Each tab keeps its own scroll: the bottom of Reports, the top of Log.

@@ -17,18 +17,12 @@ interface FeedClockProps {
 
 interface ClockChartProps {
   bands: FeedTimeBand[];
-  /** The big number under the title. */
-  headline: string;
-  label: string;
-  /** The line under the headline. */
-  note: string;
-  /** The pair along the bottom, already worded. */
-  stats: [string, string];
-  /** What a bar is drawn from — null draws no bar and reads as "—". */
-  valueOf: (band: FeedTimeBand) => number | null;
-  formatValue: (value: number) => string;
-  /** What the band says when it is picked, without repeating its own name. */
-  readoutOf: (band: FeedTimeBand) => string;
+  feeds: number;
+  timed: number;
+  averageMinutes: number | null;
+  busiest: FeedTimeBand | null;
+  longest: FeedTimeBand | null;
+  shortest: FeedTimeBand | null;
 }
 
 /** Above this many bands a per-bar number has nowhere to sit. */
@@ -39,9 +33,37 @@ function formatRate(value: number) {
   return `${Number(value.toFixed(1)).toLocaleString()}`;
 }
 
-function ClockChart({ bands, headline, label, note, stats, valueOf, formatValue, readoutOf }: ClockChartProps) {
+function feedWord(count: number) {
+  return `${count} feed${count === 1 ? '' : 's'}`;
+}
+
+function countReadout(band: FeedTimeBand) {
+  return band.feedsPerDay === null ? feedWord(band.feeds) : `${feedWord(band.feeds)} · ${formatRate(band.feedsPerDay)}/day`;
+}
+
+function lengthReadout(band: FeedTimeBand) {
+  if (band.averageMinutes === null) {
+    return 'no timed feeds';
+  }
+
+  const shortest = formatDuration(Math.round(band.minMinutes as number));
+  const longest = formatDuration(Math.round(band.maxMinutes as number));
+  const range = shortest === longest ? '' : ` · ${shortest}–${longest}`;
+
+  return `${formatDuration(Math.round(band.averageMinutes))} avg${range} · ${band.timed} timed`;
+}
+
+/**
+ * One chart for both questions: the bar is how many feeds started in a band,
+ * and the mark across it is how long those feeds ran on average, on its own
+ * scale. Bars are raw counts — that is the shape of the day, and a band today
+ * that has not come round yet is honestly empty. The per-day rate, which does
+ * account for that, is on the readout.
+ */
+function ClockChart({ averageMinutes, bands, busiest, feeds, longest, shortest, timed }: ClockChartProps) {
   const [activeHour, setActiveHour] = useState<number | null>(null);
-  const max = Math.max(1, ...bands.map((band) => valueOf(band) ?? 0));
+  const maxCount = Math.max(1, ...bands.map((band) => band.feeds));
+  const maxLength = Math.max(1, ...bands.map((band) => band.averageMinutes ?? 0));
   const activeBand = bands.find((band) => band.startHour === activeHour) ?? null;
   // Twenty-four bars leave no room for a number over each one, and the hour
   // ticks have to thin out to every third — the readout still names any bar.
@@ -49,20 +71,21 @@ function ClockChart({ bands, headline, label, note, stats, valueOf, formatValue,
   const showsTick = (startHour: number) => bands.length <= MAX_LABELLED_BANDS || startHour % 3 === 0;
 
   return (
-    <article className="chart-card" data-event="feed">
+    <article className="chart-card feed-clock-chart" data-event="feed">
       <div className="chart-heading">
-        <h3>{label}</h3>
-        <strong>{headline}</strong>
-        <small>{note}</small>
+        <h3>Feeds &amp; length by time of day</h3>
+        <strong>{busiest ? busiest.label : '—'}</strong>
+        <small>
+          busiest · {feedWord(feeds)} · {averageMinutes === null ? 'no timed feeds' : `${formatDuration(Math.round(averageMinutes))} avg, ${timed} of ${feeds} timed`}
+        </small>
       </div>
       <div
         className="chart-bars"
-        aria-label={`${label} chart`}
+        aria-label="Feeds and length by time of day chart"
         style={{ gridTemplateColumns: `repeat(${bands.length}, minmax(0, 1fr))` }}
       >
         {bands.map((band) => {
-          const value = valueOf(band);
-          const readout = `${band.label}: ${readoutOf(band)}`;
+          const readout = `${band.label}: ${countReadout(band)} · ${lengthReadout(band)}`;
 
           return (
             <button
@@ -73,28 +96,39 @@ function ClockChart({ bands, headline, label, note, stats, valueOf, formatValue,
               title={readout}
               onClick={() => setActiveHour(band.startHour)}
             >
-              {showValues && <b className="chart-bar-value">{value === null ? '—' : formatValue(value)}</b>}
+              {showValues && <b className="chart-bar-value">{band.feeds}</b>}
               <span className="chart-bar">
                 {/* An hour with nothing in it draws no bar: on a clock a gap is
-                    the point, and a stub would read as a small something. A band
-                    nobody timed is empty the same way — an absent average is not
-                    a zero-length feed. */}
-                <i style={{ height: value ? `${Math.max(8, (value / max) * 100)}%` : '0%' }} />
+                    the point, and a stub would read as a small something. */}
+                <i style={{ height: band.feeds ? `${Math.max(8, (band.feeds / maxCount) * 100)}%` : '0%' }} />
+                {/* A band nobody timed has no mark — an absent average is not a
+                    zero-length feed. */}
+                {band.averageMinutes !== null && (
+                  <s className="feed-length-mark" style={{ bottom: `${(band.averageMinutes / maxLength) * 100}%` }} />
+                )}
               </span>
               <em className="chart-bar-day">{showsTick(band.startHour) ? band.shortLabel : ''}</em>
             </button>
           );
         })}
       </div>
+      <div className="chart-legend">
+        <span className="chart-legend-item feed-legend-count">Feeds</span>
+        <span className="chart-legend-item feed-legend-length">Avg length{averageMinutes === null ? '' : ` (top ${formatDuration(Math.round(maxLength))})`}</span>
+      </div>
       {activeBand && (
         <p className="chart-readout">
           <span>{activeBand.label}</span>
-          <strong>{readoutOf(activeBand)}</strong>
+          <strong>{countReadout(activeBand)}</strong>
+          <strong>{lengthReadout(activeBand)}</strong>
         </p>
       )}
       <div className="chart-stats">
-        <span>{stats[0]}</span>
-        <span>{stats[1]}</span>
+        <span>
+          Busiest {busiest?.label ?? '—'}
+          {busiest?.feedsPerDay != null ? ` · ${formatRate(busiest.feedsPerDay)}/day` : ''}
+        </span>
+        <span>Longest {longest?.label ?? '—'} · Shortest {shortest?.label ?? '—'}</span>
       </div>
     </article>
   );
@@ -102,14 +136,12 @@ function ClockChart({ bands, headline, label, note, stats, valueOf, formatValue,
 
 /**
  * When feeds happen across the day and how long they run at each of those
- * times: one chart for the shape of the day, one for the length of a feed in
- * each part of it. Both read the same three-hour bands, so a tall bar on the
- * left and a tall bar on the right are the same stretch of clock.
+ * times, on one chart over the same bands — the bar counts feeds, the mark
+ * across it is their average length.
  */
 export function FeedClock({ events, scopeLabel }: FeedClockProps) {
   const [bandHours, setBandHours] = useState<FeedBandHours>(DEFAULT_FEED_BAND_HOURS);
   const report = getFeedClockReport(events, bandHours);
-  const feedWord = (count: number) => `${count} feed${count === 1 ? '' : 's'}`;
   // "Today" already says the span is one day, so the day count is left off there.
   const spread = report.days === 1 ? '' : ` across ${report.days} days`;
   const scope = `${scopeLabel.charAt(0).toUpperCase()}${scopeLabel.slice(1)}`;
@@ -145,44 +177,13 @@ export function FeedClock({ events, scopeLabel }: FeedClockProps) {
       {report.feeds > 0 && (
         <section className="chart-grid clock-grid" aria-label="Feeds by time of day">
           <ClockChart
+            averageMinutes={report.averageMinutes}
             bands={report.bands}
-            formatValue={(value) => `${value}`}
-            headline={report.busiest ? report.busiest.label : '—'}
-            label="Feeds by time of day"
-            note={`busiest · ${feedWord(report.feeds)}`}
-            readoutOf={(band) =>
-              band.feedsPerDay === null
-                ? feedWord(band.feeds)
-                : `${feedWord(band.feeds)} · ${formatRate(band.feedsPerDay)}/day`
-            }
-            stats={[
-              `Busiest ${report.busiest?.label ?? '—'}`,
-              report.busiest?.feedsPerDay != null ? `${formatRate(report.busiest.feedsPerDay)}/day` : 'per day —'
-            ]}
-            /* Bars are raw counts: that is the shape of the day, and a band
-               today that has not come round yet is honestly empty. The per-day
-               rate, which does account for that, is on the readout. */
-            valueOf={(band) => band.feeds}
-          />
-          <ClockChart
-            bands={report.bands}
-            formatValue={(value) => formatDuration(Math.round(value))}
-            headline={report.averageMinutes === null ? '—' : formatDuration(Math.round(report.averageMinutes))}
-            label="Feed length by time"
-            note={`avg feed · ${report.timed} of ${report.feeds} timed`}
-            readoutOf={(band) => {
-              if (band.averageMinutes === null) {
-                return 'no timed feeds';
-              }
-
-              const shortest = formatDuration(Math.round(band.minMinutes as number));
-              const longest = formatDuration(Math.round(band.maxMinutes as number));
-              const range = shortest === longest ? '' : ` · ${shortest}–${longest}`;
-
-              return `${formatDuration(Math.round(band.averageMinutes))} avg${range} · ${band.timed} timed`;
-            }}
-            stats={[`Longest ${report.longest?.label ?? '—'}`, `Shortest ${report.shortest?.label ?? '—'}`]}
-            valueOf={(band) => band.averageMinutes}
+            busiest={report.busiest}
+            feeds={report.feeds}
+            longest={report.longest}
+            shortest={report.shortest}
+            timed={report.timed}
           />
         </section>
       )}

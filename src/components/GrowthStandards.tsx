@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { getAgeDays } from '../domain/dates';
 import { getFirstName } from '../domain/family';
-import { assessLatestGrowth, getGestationInfo, getGrowthMeasurements, getMetricPlots, type AgeBasis, type GrowthBand, type MetricPlot } from '../domain/growth/assess';
+import { assessLatestGrowth, estimateSdScore, getGestationInfo, getGrowthMeasurements, getMetricPlots, interpolateStandard, sdScoreToPercentile, type AgeBasis, type GrowthBand } from '../domain/growth/assess';
 import { getGrowthStandardSex, getGrowthStandards } from '../domain/growth/standards';
-import type { GrowthMetric, GrowthStandard } from '../domain/growth/whoBoyStandards';
+import type { GrowthMetric } from '../domain/growth/whoBoyStandards';
 import type { BabyProfile, CareEvent, PreferredUnits } from '../domain/types';
 import { centimetersToInches, formatLength, formatWeight, getPreferredUnits, kilogramsToOunces } from '../domain/units';
-import { GrowthChart } from './GrowthChart';
+import { GrowthChart, type GrowthSeries } from './GrowthChart';
 
 interface GrowthStandardsProps {
   events: CareEvent[];
@@ -14,6 +14,7 @@ interface GrowthStandardsProps {
 }
 
 const METRIC_ORDER: GrowthMetric[] = ['weight', 'length', 'head'];
+const METRIC_LABELS: Record<GrowthMetric, string> = { head: 'Head', length: 'Length', weight: 'Weight' };
 const AVG_DAYS_PER_MONTH = 365.25 / 12;
 
 const bandLabel: Record<GrowthBand, string> = {
@@ -22,53 +23,10 @@ const bandLabel: Record<GrowthBand, string> = {
   within: 'On track'
 };
 
-/** WHO standards are canonical in kg/cm; charts plot whatever the profile reads in. */
-function convertGrowthValue(metric: GrowthMetric, value: number, preferredUnits: PreferredUnits) {
-  if (preferredUnits.system === 'metric') {
-    return value;
-  }
-
-  if (metric !== 'weight') {
-    return centimetersToInches(value);
-  }
-
-  const ounces = kilogramsToOunces(value);
-  return preferredUnits.weightDisplay === 'ounces' ? ounces : ounces / 16;
-}
-
-function growthUnitLabel(metric: GrowthMetric, preferredUnits: PreferredUnits) {
-  if (metric !== 'weight') {
-    return 'in';
-  }
-
-  return preferredUnits.weightDisplay === 'ounces' ? 'oz' : 'lb';
-}
-
 function displayGrowthValue(metric: GrowthMetric, value: number, preferredUnits: PreferredUnits) {
   return metric === 'weight'
     ? formatWeight(kilogramsToOunces(value), preferredUnits)
     : formatLength(centimetersToInches(value), preferredUnits.system);
-}
-
-function displayPlots(plots: MetricPlot[], metric: GrowthMetric, preferredUnits: PreferredUnits): MetricPlot[] {
-  return plots.map((plot) => ({ ...plot, value: convertGrowthValue(metric, plot.value, preferredUnits) }));
-}
-
-function displayStandard(standard: GrowthStandard, preferredUnits: PreferredUnits): GrowthStandard {
-  if (preferredUnits.system === 'metric') {
-    return standard;
-  }
-
-  return {
-    ...standard,
-    points: standard.points.map((point) => ({
-      median: convertGrowthValue(standard.metric, point.median, preferredUnits),
-      month: point.month,
-      p2: convertGrowthValue(standard.metric, point.p2, preferredUnits),
-      p98: convertGrowthValue(standard.metric, point.p98, preferredUnits)
-    })),
-    unit: growthUnitLabel(standard.metric, preferredUnits)
-  };
 }
 
 export function GrowthStandards({ events, profile }: GrowthStandardsProps) {
@@ -103,6 +61,21 @@ export function GrowthStandards({ events, profile }: GrowthStandardsProps) {
   const correctedAssessments = new Map(assessLatestGrowth(profile, events, 'corrected').map((assessment) => [assessment.metric, assessment]));
   const latestAgeMonths = measurements[measurements.length - 1]?.ageMonths ?? 0;
   const chartMaxAgeMonths = Math.max(1, getAgeDays(profile) / AVG_DAYS_PER_MONTH, latestAgeMonths);
+  // One chart for all three: each reading is placed by its SD score at the age
+  // the comparison is read at, since kilograms and centimeters share no axis.
+  const series: GrowthSeries[] = METRIC_ORDER.map((metric) => ({
+    label: METRIC_LABELS[metric],
+    metric,
+    points: getMetricPlots(measurements, metric).map((plot) => {
+      const ageMonths = activeBasis === 'corrected' ? plot.correctedAgeMonths : plot.ageMonths;
+      const score = estimateSdScore(plot.value, interpolateStandard(standards[metric], ageMonths));
+      return {
+        ageMonths,
+        score,
+        title: `${METRIC_LABELS[metric]} ${displayGrowthValue(metric, plot.value, preferredUnits)} · P${sdScoreToPercentile(score)} at ${ageMonths.toFixed(1)} months`
+      };
+    })
+  }));
 
   return (
     <>
@@ -190,31 +163,23 @@ export function GrowthStandards({ events, profile }: GrowthStandardsProps) {
         )}
       </section>
 
-      <section className="chart-grid growth-charts" aria-label="WHO growth standard charts">
-        {METRIC_ORDER.map((metric) => {
-          const standard = displayStandard(standards[metric], preferredUnits);
-          const plots = displayPlots(getMetricPlots(measurements, metric), metric, preferredUnits);
-
-          return (
-            <article className="chart-card" key={metric}>
-              <div className="chart-heading">
-                <h3>{standard.label}</h3>
-                <strong>{standard.unit}</strong>
-              </div>
-              <GrowthChart maxAgeMonths={chartMaxAgeMonths} standard={standard} plots={plots} showCorrected={showCorrected} />
-              {showCorrected && (
-                <details className="reference-details"><summary>Chart key</summary><div className="chart-legend">
-                  <span className="chart-legend-item growth-legend-actual">Actual age</span>
-                  <span className="chart-legend-item growth-legend-corrected">Corrected age</span>
-                </div></details>
-              )}
-              <div className="chart-stats">
-                <span>WHO reference · −2 to +2 SD</span>
-                <span>{plots.length} plotted</span>
-              </div>
-            </article>
-          );
-        })}
+      <section className="chart-card growth-combined" aria-label="WHO growth standard chart">
+        <div className="chart-heading">
+          <h3>Weight, length &amp; head</h3>
+          <small>Against WHO, by age · the band is the usual range, the dashed line the median</small>
+        </div>
+        <GrowthChart maxAgeMonths={chartMaxAgeMonths} series={series} />
+        <div className="chart-legend">
+          {series.map((line) => (
+            <span className="chart-legend-item growth-legend" data-metric={line.metric} key={line.metric}>
+              {line.label}
+            </span>
+          ))}
+        </div>
+        <div className="chart-stats">
+          <span>WHO reference · −2 to +2 SD{showCorrected ? ` · ${activeBasis === 'corrected' ? 'corrected' : 'actual'} age` : ''}</span>
+          <span>{series.reduce((sum, line) => sum + line.points.length, 0)} plotted</span>
+        </div>
       </section>
     </>
   );

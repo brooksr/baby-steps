@@ -2241,21 +2241,24 @@ button {
   margin: 6px 0 0;
 }
 
+/* Pinned flush to the bottom edge: the home indicator's inset is padding
+   inside the bar rather than a gap under it. */
 .bottom-nav {
   position: fixed;
-  right: 12px;
-  bottom: calc(12px + env(safe-area-inset-bottom));
-  left: 12px;
+  right: 0;
+  bottom: 0;
+  left: 0;
   z-index: 20;
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   max-width: 720px;
   margin: 0 auto;
-  padding: 8px;
+  padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
   background: rgba(255, 255, 255, 0.96);
   border: 1px solid var(--line);
-  border-radius: 8px;
-  box-shadow: 0 12px 40px var(--shadow);
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  box-shadow: 0 -8px 30px var(--shadow);
 }
 
 .bottom-nav button {
@@ -2918,22 +2921,31 @@ textarea {
   stroke-dasharray: 4 3;
 }
 
+.growth-series {
+  --growth-series: var(--blue-500);
+}
+
+.growth-series[data-metric='length'],
+.growth-legend[data-metric='length'] {
+  --growth-series: #2f9e6e;
+}
+
+.growth-series[data-metric='head'],
+.growth-legend[data-metric='head'] {
+  --growth-series: #c9568f;
+}
+
+.growth-line {
+  stroke: var(--growth-series);
+  stroke-width: 1.75;
+  stroke-linejoin: round;
+  opacity: 0.8;
+}
+
 .growth-point {
-  fill: var(--blue-500);
+  fill: var(--growth-series);
   stroke: var(--panel);
   stroke-width: 1.5;
-}
-
-/* Same measurement, plotted again at its preterm-corrected age. */
-.growth-point.corrected {
-  fill: var(--accent-strong);
-}
-
-.growth-shift {
-  stroke: var(--accent-strong);
-  stroke-width: 1;
-  stroke-dasharray: 2 2;
-  opacity: 0.7;
 }
 
 .gestation-note {
@@ -2954,12 +2966,8 @@ textarea {
   font-size: 0.82rem;
 }
 
-.chart-legend-item.growth-legend-actual::before {
-  background: var(--blue-500);
-}
-
-.chart-legend-item.growth-legend-corrected::before {
-  background: var(--accent-strong);
+.chart-legend-item.growth-legend::before {
+  background: var(--growth-series, var(--blue-500));
 }
 
 .growth-axis-label {
@@ -3981,7 +3989,6 @@ textarea {
 .growth-reading span { color: var(--muted); font-size: 0.82rem; font-weight: 500; }
 .growth-detail { margin-top: 0; }
 .growth-detail small { display: block; margin-top: 5px; }
-.growth-charts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .chart-card, .section-block, .view-stack { min-width: 0; }
 .night-period { padding: 16px 0; border-bottom: 1px solid var(--line); }
 .night-period-heading, .night-period .night-span-heading { margin: 0 0 12px; }
@@ -3997,7 +4004,7 @@ textarea {
 .log-heading h1 { margin-bottom: 2px; }
 .log-heading .button-row { align-items: center; }
 @media (max-width: 719px) {
-  .chart-grid, .growth-charts { grid-template-columns: minmax(0, 1fr); }
+  .chart-grid { grid-template-columns: minmax(0, 1fr); }
   .chart-card { width: 100%; min-height: auto; padding: 14px 12px; }
   .log-heading { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
   .log-heading .button-row { justify-content: flex-start; }
@@ -4137,3 +4144,18 @@ body { min-width: 0; }
 .care-hero-metrics > .hero-metric { border-bottom: 3px solid var(--muted); }
 .care-hero-metrics > .hero-metric.past-due { border-bottom-color: var(--event-tint, var(--blue-700)); }
 .hero-clock { white-space: nowrap; }
+/* One chart for weight, length and head; capped so a wide screen doesn't
+   blow its 320×200 drawing up to the full content width. */
+.growth-combined .growth-chart { display: block; max-width: 640px; margin: 0 auto; }
+/* Feed clock: the bar counts feeds, the dark mark across it is their average
+   length on its own scale. */
+.feed-clock-chart .chart-bar { position: relative; }
+.feed-length-mark { position: absolute; right: -2px; left: -2px; height: 3px; margin-bottom: -1.5px; background: var(--ink); border-radius: 2px; text-decoration: none; }
+.chart-legend-item.feed-legend-count::before { background: var(--event-tint, var(--blue-400)); }
+.chart-legend-item.feed-legend-length::before { height: 3px; background: var(--ink); border-radius: 2px; }
+.feed-clock-chart .chart-readout strong + strong { font-weight: 600; }
+.feed-clock-chart .chart-readout { flex-wrap: wrap; }
+/* Feed → diaper: the wet and dirty waits side by side in one card. */
+.metric-split { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.metric-split > div { display: grid; gap: 4px; min-width: 0; }
+.metric-split .metric-split-label { color: var(--ink); font-weight: 800; }

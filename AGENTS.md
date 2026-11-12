@@ -820,6 +820,18 @@ stays on the phone.
   row, pump under feed). Sleep reads "Asleep" while a sleep runs and "Awake ·
   slept 1h 30m" counted from the last one's end otherwise. Each card has a gray
   bottom border; past due, that border turns the family color (no amber fill).
+- **Next sleep / wake** (`domain/sleepPrediction.ts`) — the sleep card's foot
+  reads "~7–7:30 AM · wake" while asleep and "~1:30–2 PM · nap" (or "· back
+  down" at night) while awake. Asleep, it is this baby's recent sleep length of
+  the same kind (a start 7pm–6am is night, otherwise a nap); awake, the recent
+  time up between sleeps from the same part of the day. Recency-weighted over
+  14 days (half-life 3 days), overlapping entries merged, window ±15–60 min. It
+  declines under 3 samples and once the window is a whole typical stretch
+  stale. A reading of the log, never advice about when a baby should sleep.
+  Not yet ported to Kotlin (see docs/BABYSTEPS_APP.md).
+- **The bottom nav is pinned flush to the screen's bottom edge**; the home
+  indicator inset is padding inside the bar (`viewport-fit=cover` in
+  `index.html` is what makes `env(safe-area-inset-bottom)` non-zero).
 - **Each tab keeps its scroll** (`src/useTabScroll.ts`, used by `App` and
   `InternalApp`): a tab not visited yet opens at the top, and returning to one
   restores where it was left, retrying a few frames while charts and loaded
@@ -855,8 +867,8 @@ stays on the phone.
 - **Diaper rhythm** (`domain/diapers.ts`) — no new event type, all derived from
   the `diaper` and `feed` events already logged.
   - `getFeedToDiaperLags()` — mean wait from a feed to the next wet / next dirty
-    diaper, dropping pairs more than 6h apart as unrelated. Shown as two Reports
-    insight cards.
+    diaper, dropping pairs more than 6h apart as unrelated. Shown as one Reports
+    insight card, **Feed → diaper**, with wet and dirty side by side.
   - `predictNextDiaper()` — a recency-weighted average of recent gaps between
     changes (weights halve every 3 days, so a changing routine shows up fast),
     projected off the last change and pulled toward the usual feed → wet lag when
@@ -868,9 +880,10 @@ stays on the phone.
 - **Feed clock** (`domain/feedClock.ts` + `components/FeedClock.tsx`) — no new
   event type: the shape of the feeding day, derived from the `feed` events
   already logged, scoped by the selected Reports period.
-  - Two charts over the same bands, so a bar on the left and a bar on the right
-    are the same stretch of clock: **Feeds by time of day** (counts) and **Feed
-    length by time** (mean length of the feeds that started there). Feeds are
+  - One chart, **Feeds & length by time of day**: each band's bar counts the
+    feeds that started there, and a dark mark across it is their mean length on
+    its own scale (the legend names the top of that scale). A band with no timed
+    feed has no mark. Feeds are
     bucketed by the hour they *started*, so a session running past its band
     still belongs to the time it was offered.
   - Band width is a 1h/2h/3h control on the section heading. Three is the
@@ -1161,6 +1174,11 @@ stays on the phone.
   trick `--accent` already plays) so one dark ink reads on all five; only the
   tints are re-picked under `[data-theme='dark']`, where the light ones would
   disappear into the panel.
+- **One growth chart** — weight, length and head share a single chart. Their
+  units share no axis, so each reading is placed by its approximate SD score
+  (`estimateSdScore`, the same skew-aware scaling the percentile uses) at the
+  age being compared, under one −2 to +2 SD band and median line; the readings
+  in the profile's units stay in the list above and on each point's tooltip.
 - **Age basis** — `GrowthStandards` opens on **corrected** age, since the WHO
   curves are built on term births. The control only appears when there is
   gestation to correct for, and `activeBasis` falls back to actual otherwise, so

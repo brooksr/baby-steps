@@ -4,6 +4,7 @@ import { getCadenceReminders, predictNextBath, predictNextFeed } from '../domain
 import { getFirstName } from '../domain/family';
 import { formatAgeSummary, formatAgo, formatClock, formatClockRange, formatDaysSince, formatDuration, formatShortDate, formatWeekday, getAgeDays, getDaysUntilDue, getDueDateStatus, isSameLocalDate } from '../domain/dates';
 import { predictNextDiaper } from '../domain/diapers';
+import { predictNextSleepChange } from '../domain/sleepPrediction';
 import { classifyTemperatureC } from '../domain/reference';
 import { getActiveSleep, getDailySummary, getEventDurationMinutes, getLastEvent, getUpcomingAppointments, getUpcomingMedicationEvents, sortEventsDescending } from '../domain/summary';
 import { HOSPITAL } from '../domain/medicalInfo';
@@ -110,6 +111,17 @@ export function Dashboard({ activeTimers, allowedTypes, events, profile, profile
   // A running timer or an open entry means asleep now; otherwise count from waking.
   const asleepSince = activeTimers.sleep?.startedAt ?? getActiveSleep(events)?.startedAt;
   const nextBath = predictNextBath(events, now);
+  const nextSleepChange = predictNextSleepChange(events, { asleepSince, now });
+  // Past its window, a wake is just "soon"; a nap or bedtime is due.
+  const sleepChangeDetail = nextSleepChange
+    ? nextSleepChange.minutesAway > 0
+      ? `~${formatClockRange(nextSleepChange.windowStartAt, nextSleepChange.windowEndAt)} · ${nextSleepChange.transition === 'wake' ? 'wake' : nextSleepChange.isNight ? 'back down' : 'nap'}`
+      : nextSleepChange.transition === 'wake'
+        ? 'Waking soon'
+        : nextSleepChange.isNight
+          ? 'Back down soon'
+          : 'Nap due'
+    : null;
   const dayLabel = (dateKey: string) => (dateKey === todayKey ? 'Today' : formatWeekday(dateKey));
   const sideSuffix = nextSide ? ` · ${nextSide}` : '';
   const cadenceReminders = getCadenceReminders(events, { feedInProgress: Boolean(activeTimers.feed), now });
@@ -196,15 +208,16 @@ export function Dashboard({ activeTimers, allowedTypes, events, profile, profile
             <HeroMetric className="hero-metric" event="sleep" label="View sleep log" onOpen={openLog('sleep')}>
               <HeroLabel icon={Bed} label="Sleep" />
               <strong>{formatAgo(asleepSince).replace(/ ago$/, '')}</strong>
-              <small>{formatClock(asleepSince)}</small>
-              <small className="hero-metric-detail">Asleep</small>
+              <small>Asleep · {formatClock(asleepSince)}</small>
+              {/* Every card keeps its foot, so the dividers line up across the row. */}
+              <small className="hero-metric-detail">{sleepChangeDetail ?? 'Asleep'}</small>
             </HeroMetric>
           ) : lastSleep?.endedAt ? (
-            <HeroMetric className="hero-metric" event="sleep" label="View sleep log" onOpen={openLog('sleep')}>
+            <HeroMetric className={`hero-metric${cadenceClass(nextSleepChange, now)}`} event="sleep" label="View sleep log" onOpen={openLog('sleep')}>
               <HeroLabel icon={Bed} label="Sleep" />
               <strong>{formatAgo(lastSleep.endedAt).replace(/ ago$/, '')}</strong>
-              <small>{formatClock(lastSleep.endedAt)}</small>
-              <small className="hero-metric-detail">Awake · slept {formatDuration(getEventDurationMinutes(lastSleep))}</small>
+              <small>Awake · slept {formatDuration(getEventDurationMinutes(lastSleep))}</small>
+              <small className="hero-metric-detail">{sleepChangeDetail ?? `Woke ${formatClock(lastSleep.endedAt)}`}</small>
             </HeroMetric>
           ) : (
             <div className="hero-metric-placeholder" aria-hidden="true" />

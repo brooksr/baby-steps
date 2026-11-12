@@ -204,6 +204,8 @@ single shared bearer token, and every phone with it is the full view. Better:
   auth first).
 - Import currently adds only rows the sheet lacks; the web import also merges.
 - Night-shift backfill, if it is ever switched back on in the web app.
+- The Home sleep card's next sleep/wake estimate (`domain/sleepPrediction.ts`);
+  port it to a `SleepPrediction` object with its test cases.
 
 **Android-native extras**
 

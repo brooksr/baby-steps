@@ -86,12 +86,24 @@ function normalCdf(z: number) {
   return (1 + sign * erf) / 2;
 }
 
-function estimatePercentile(value: number, standard: InterpolatedStandard) {
+/**
+ * Approximate SD score from the bundled −2 SD/median/+2 SD curves, scaled on
+ * whichever side of the median the value sits — the WHO curves are skewed.
+ */
+export function estimateSdScore(value: number, standard: InterpolatedStandard) {
   const halfSpan = value < standard.median
     ? standard.median - standard.p2
     : standard.p98 - standard.median;
-  const z = halfSpan === 0 ? 0 : (value - standard.median) / halfSpan * 2;
-  return Math.max(1, Math.min(99, Math.round(normalCdf(z) * 100)));
+  return halfSpan === 0 ? 0 : (value - standard.median) / halfSpan * 2;
+}
+
+function estimatePercentile(value: number, standard: InterpolatedStandard) {
+  return sdScoreToPercentile(estimateSdScore(value, standard));
+}
+
+/** Rounded the way `GrowthAssessment.percentile` is, for one score. */
+export function sdScoreToPercentile(score: number) {
+  return Math.max(1, Math.min(99, Math.round(normalCdf(score) * 100)));
 }
 
 export interface GrowthMeasurement {

@@ -1,119 +1,88 @@
-import { useMemo } from 'react';
-import type { GrowthStandard } from '../domain/growth/whoBoyStandards';
-import type { MetricPlot } from '../domain/growth/assess';
+import type { GrowthMetric } from '../domain/growth/whoBoyStandards';
+
+export interface GrowthSeriesPoint {
+  ageMonths: number;
+  /** Approximate SD score against the WHO standard at that age. */
+  score: number;
+  /** The reading as the profile shows it, for the point's tooltip. */
+  title: string;
+}
+
+export interface GrowthSeries {
+  label: string;
+  metric: GrowthMetric;
+  points: GrowthSeriesPoint[];
+}
 
 interface GrowthChartProps {
-  maxAgeMonths?: number;
-  standard: GrowthStandard;
-  plots: MetricPlot[];
-  /** When set, each measurement is also plotted at its preterm-corrected age. */
-  showCorrected?: boolean;
+  maxAgeMonths: number;
+  series: GrowthSeries[];
 }
 
 const WIDTH = 320;
 const HEIGHT = 200;
-const PAD_LEFT = 34;
-const PAD_RIGHT = 8;
+const PAD_LEFT = 44;
+const PAD_RIGHT = 10;
 const PAD_TOP = 12;
 const PAD_BOTTOM = 24;
+/** The band always shows with room either side; an outlier widens the scale. */
+const BASE_SCORE_LIMIT = 3;
 
-export function GrowthChart({ maxAgeMonths, standard, plots, showCorrected = false }: GrowthChartProps) {
-  const geometry = useMemo(() => {
-    const chartMaxMonth = Math.min(maxAgeMonths ?? standard.points[standard.points.length - 1].month, standard.points[standard.points.length - 1].month);
-    const standardPoints = standard.points.filter((point) => point.month <= chartMaxMonth);
-    const last = standardPoints[standardPoints.length - 1];
-    if (last.month < chartMaxMonth) {
-      const upper = standard.points.find((point) => point.month > chartMaxMonth) ?? last;
-      const ratio = (chartMaxMonth - last.month) / (upper.month - last.month || 1);
-      const mix = (a: number, b: number) => a + (b - a) * ratio;
-      standardPoints.push({
-        median: mix(last.median, upper.median),
-        month: chartMaxMonth,
-        p2: mix(last.p2, upper.p2),
-        p98: mix(last.p98, upper.p98)
-      });
-    }
-    const months = standardPoints.map((point) => point.month);
-    const minMonth = months[0];
-    const maxMonth = months[months.length - 1];
-
-    const lows = standardPoints.map((point) => point.p2);
-    const highs = standardPoints.map((point) => point.p98);
-    const plotValues = plots.map((plot) => plot.value);
-    let minValue = Math.min(...lows, ...plotValues);
-    let maxValue = Math.max(...highs, ...plotValues);
-    const valuePad = (maxValue - minValue) * 0.08 || 1;
-    minValue -= valuePad;
-    maxValue += valuePad;
-
-    const x = (month: number) =>
-      PAD_LEFT + ((month - minMonth) / (maxMonth - minMonth || 1)) * (WIDTH - PAD_LEFT - PAD_RIGHT);
-    const y = (value: number) =>
-      PAD_TOP + (1 - (value - minValue) / (maxValue - minValue || 1)) * (HEIGHT - PAD_TOP - PAD_BOTTOM);
-
-    const line = (selector: (index: number) => number) =>
-      standardPoints.map((point, index) => `${x(point.month)},${y(selector(index))}`).join(' ');
-
-    const bandPath = [
-      ...standardPoints.map((point) => `${x(point.month)},${y(point.p98)}`),
-      ...[...standardPoints].reverse().map((point) => `${x(point.month)},${y(point.p2)}`)
-    ].join(' ');
-
-    return {
-      band: bandPath,
-      maxMonth,
-      maxValue,
-      median: line((index) => standardPoints[index].median),
-      minMonth,
-      minValue,
-      // Two readings of the same measurement: where it lands against peers of
-      // the same birthday, and against peers of the same corrected age.
-      corrected: showCorrected
-        ? plots.map((plot) => ({ cx: x(plot.correctedAgeMonths), cy: y(plot.value), x2: x(plot.ageMonths) }))
-        : [],
-      points: plots.map((plot) => ({ cx: x(plot.ageMonths), cy: y(plot.value) })),
-      x,
-      y
-    };
-  }, [maxAgeMonths, plots, showCorrected, standard]);
-
-  const yTicks = [geometry.minValue, (geometry.minValue + geometry.maxValue) / 2, geometry.maxValue];
-  const xTicks = [geometry.minMonth, geometry.maxMonth / 2, geometry.maxMonth];
+/**
+ * Weight, length and head on one chart. Their units cannot share an axis, so
+ * each reading is placed by where it sits against the WHO standard for its age
+ * — the shaded band is −2 to +2 SD for all three, and the dashed line is the
+ * median. The readings themselves, in the profile's units, are listed above the
+ * chart and on each point's tooltip.
+ */
+export function GrowthChart({ maxAgeMonths, series }: GrowthChartProps) {
+  const scores = series.flatMap((line) => line.points.map((point) => Math.abs(point.score)));
+  const limit = Math.max(BASE_SCORE_LIMIT, Math.ceil(Math.max(0, ...scores) * 2) / 2 + 0.5);
+  const maxMonth = Math.max(1, maxAgeMonths);
+  const x = (month: number) => PAD_LEFT + (Math.min(month, maxMonth) / maxMonth) * (WIDTH - PAD_LEFT - PAD_RIGHT);
+  const y = (score: number) => PAD_TOP + ((limit - score) / (2 * limit)) * (HEIGHT - PAD_TOP - PAD_BOTTOM);
+  const left = x(0);
+  const right = x(maxMonth);
+  const xTicks = [0, maxMonth / 2, maxMonth];
+  const yTicks = [
+    { label: '+2 SD', score: 2 },
+    { label: 'Median', score: 0 },
+    { label: '−2 SD', score: -2 }
+  ];
 
   return (
-    <svg className="growth-chart" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" aria-label={`${standard.label} chart in ${standard.unit}`}>
-      <polygon className="growth-band" points={geometry.band} />
-      <polyline className="growth-median" points={geometry.median} fill="none" />
+    <svg
+      className="growth-chart"
+      viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+      role="img"
+      aria-label={`Weight, length and head against WHO standards: ${series.map((line) => `${line.label} ${line.points.length} plotted`).join(', ')}`}
+    >
+      <rect className="growth-band" x={left} y={y(2)} width={right - left} height={y(-2) - y(2)} />
+      <line className="growth-median" x1={left} x2={right} y1={y(0)} y2={y(0)} />
 
       {yTicks.map((tick) => (
-        <text key={`y-${tick}`} className="growth-axis-label" x={PAD_LEFT - 4} y={geometry.y(tick) + 3} textAnchor="end">
-          {tick.toFixed(tick < 10 ? 1 : 0)}
+        <text key={tick.label} className="growth-axis-label" x={PAD_LEFT - 4} y={y(tick.score) + 3} textAnchor="end">
+          {tick.label}
         </text>
       ))}
 
       {xTicks.map((tick, index) => (
-        <text key={`x-${index}`} className="growth-axis-label" x={geometry.x(tick)} y={HEIGHT - 6} textAnchor="middle">
+        <text key={`x-${index}`} className="growth-axis-label" x={x(tick)} y={HEIGHT - 6} textAnchor={index === 0 ? 'start' : index === 2 ? 'end' : 'middle'}>
           {Number.isInteger(tick) ? tick : tick.toFixed(1)}m
         </text>
       ))}
 
-      {geometry.corrected.map((point, index) => (
-        <line
-          key={`shift-${index}`}
-          className="growth-shift"
-          x1={point.cx}
-          y1={point.cy}
-          x2={point.x2}
-          y2={point.cy}
-        />
-      ))}
-
-      {geometry.corrected.map((point, index) => (
-        <circle key={`corrected-${index}`} className="growth-point corrected" cx={point.cx} cy={point.cy} r={3.5} />
-      ))}
-
-      {geometry.points.map((point, index) => (
-        <circle key={index} className="growth-point" cx={point.cx} cy={point.cy} r={3.5} />
+      {series.map((line) => (
+        <g className="growth-series" data-metric={line.metric} key={line.metric}>
+          {line.points.length > 1 && (
+            <polyline className="growth-line" fill="none" points={line.points.map((point) => `${x(point.ageMonths)},${y(point.score)}`).join(' ')} />
+          )}
+          {line.points.map((point, index) => (
+            <circle className="growth-point" cx={x(point.ageMonths)} cy={y(point.score)} key={index} r={3.5}>
+              <title>{point.title}</title>
+            </circle>
+          ))}
+        </g>
       ))}
     </svg>
   );

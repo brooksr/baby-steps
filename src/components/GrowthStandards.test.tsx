@@ -21,18 +21,31 @@ describe('GrowthStandards units', () => {
   it('converts WHO centimeters to inches for the American default', () => {
     const profile = { ...createDefaultBabyProfile(), birthDate: birth.startedAt };
 
-    render(<GrowthStandards events={[birth]} profile={profile} />);
+    const { container } = render(<GrowthStandards events={[birth]} profile={profile} />);
+    const tooltips = [...container.querySelectorAll('.growth-chart title')].map((title) => title.textContent);
 
-    expect(screen.getAllByText('in')).toHaveLength(2);
-    expect(screen.queryByText('cm')).not.toBeInTheDocument();
-    expect(screen.getByText(/7 lb 4 oz/)).toBeInTheDocument();
-    expect(screen.getByText('lb')).toBeInTheDocument();
+    expect(tooltips).toEqual([
+      expect.stringMatching(/^Weight 7 lb 4 oz · P\d+/),
+      expect.stringMatching(/^Length 20 in · P\d+/),
+      expect.stringMatching(/^Head 13.5 in · P\d+/)
+    ]);
+    expect(screen.getByText(/7 lb 4 oz/, { selector: '.growth-reading' })).toBeInTheDocument();
     const percentiles = screen.getAllByLabelText(/Estimated percentile P\d+/);
     expect(percentiles).toHaveLength(3);
     percentiles.forEach(percentile => expect(percentile).toBeVisible());
   });
 
-  it('labels the weight chart in ounces when the profile reads weights that way', () => {
+  it('draws weight, length and head on one chart', () => {
+    const profile = { ...createDefaultBabyProfile(), birthDate: birth.startedAt };
+
+    const { container } = render(<GrowthStandards events={[birth]} profile={profile} />);
+
+    expect(container.querySelectorAll('.growth-chart')).toHaveLength(1);
+    expect([...container.querySelectorAll('.growth-series')].map((series) => series.getAttribute('data-metric'))).toEqual(['weight', 'length', 'head']);
+    expect(screen.getByText('Median')).toBeInTheDocument();
+  });
+
+  it('reads weights in ounces when the profile reads weights that way', () => {
     const profile = {
       ...createDefaultBabyProfile(),
       birthDate: birth.startedAt,
@@ -41,9 +54,8 @@ describe('GrowthStandards units', () => {
 
     render(<GrowthStandards events={[birth]} profile={profile} />);
 
-    expect(screen.getByText('oz')).toBeInTheDocument();
-    expect(screen.queryByText('lb')).not.toBeInTheDocument();
-    expect(screen.getByText(/116 oz/)).toBeInTheDocument();
+    expect(screen.queryByText(/ lb/)).not.toBeInTheDocument();
+    expect(screen.getByText(/116 oz/, { selector: '.growth-reading' })).toBeInTheDocument();
   });
 
   // The WHO curves are built on term births, so a preterm baby opens corrected.
@@ -66,7 +78,7 @@ describe('GrowthStandards units', () => {
     expect(screen.queryByRole('button', { name: 'Corrected' })).not.toBeInTheDocument();
   });
 
-  it('keeps the WHO kilogram and centimeter labels for metric profiles', () => {
+  it('keeps WHO kilograms and centimeters for metric profiles', () => {
     const profile = {
       ...createDefaultBabyProfile(),
       birthDate: birth.startedAt,
@@ -75,8 +87,8 @@ describe('GrowthStandards units', () => {
 
     render(<GrowthStandards events={[birth]} profile={profile} />);
 
-    expect(screen.getAllByText('cm')).toHaveLength(2);
-    expect(screen.queryByText('in')).not.toBeInTheDocument();
-    expect(screen.getByText(/3.29 kg/)).toBeInTheDocument();
+    expect(screen.getAllByText(/\d cm/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/\d in\b/)).not.toBeInTheDocument();
+    expect(screen.getByText(/3.29 kg/, { selector: '.growth-reading' })).toBeInTheDocument();
   });
 });

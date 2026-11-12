@@ -479,20 +479,27 @@ export function Reports({ events, loadNursery, onLogSleep, onLogSleeps, onMarkCr
           {feedGap.average > 0 && <small>{formatDurationRange(feedGap.min, feedGap.max)} range</small>}
           <small>{periodScopeLabel(period)}</small>
         </article>
-        {(['wet', 'dirty'] as const).map((kind) => {
-          const lag = diaperLags[kind];
+        {/* One card, two waits: how long after a feed the next wet and the
+            next dirty change usually come. */}
+        <article className="metric-card feed-diaper-card" data-event="diaper">
+          <span>Feed → diaper</span>
+          <div className="metric-split">
+            {(['wet', 'dirty'] as const).map((kind) => {
+              const lag = diaperLags[kind];
 
-          return (
-            <article className="metric-card" data-event="diaper" key={kind}>
-              <span>Feed → {kind}</span>
-              <strong>{lag.averageMinutes !== null ? formatDuration(Math.round(lag.averageMinutes)) : '—'}</strong>
-              {lag.minMinutes !== null && lag.maxMinutes !== null && (
-                <small>{formatDurationRange(lag.minMinutes, lag.maxMinutes)} range</small>
-              )}
-              <small>{lag.samples > 0 ? `${lag.samples} feeds` : 'no pairs yet'}</small>
-            </article>
-          );
-        })}
+              return (
+                <div key={kind}>
+                  <small className="metric-split-label">{kind === 'wet' ? 'Wet' : 'Dirty'}</small>
+                  <strong>{lag.averageMinutes !== null ? formatDuration(Math.round(lag.averageMinutes)) : '—'}</strong>
+                  {lag.minMinutes !== null && lag.maxMinutes !== null && (
+                    <small>{formatDurationRange(lag.minMinutes, lag.maxMinutes)}</small>
+                  )}
+                  <small>{lag.samples > 0 ? `${lag.samples} feed${lag.samples === 1 ? '' : 's'}` : 'no pairs yet'}</small>
+                </div>
+              );
+            })}
+          </div>
+        </article>
         <article className="metric-card" data-event="feed">
           <span>Nursing L/R</span>
           <strong>
