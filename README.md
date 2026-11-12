@@ -125,15 +125,9 @@ npm test
 npm run build
 ```
 
-## GitHub Pages deployment
+## GitHub Pages (retired)
 
-The workflow in `.github/workflows/deploy.yml` builds and deploys the `dist` directory with GitHub Pages. In the repository settings:
-
-1. Set Pages source to **GitHub Actions**.
-2. Add repository variables named `VITE_GOOGLE_CLIENT_ID` and `VITE_GOOGLE_SHEET_ID` if the hosted build should use Google Sheets, plus any of the optional ones above.
-3. Add the deployed site’s origin to the OAuth client’s authorized JavaScript origins.
-
-The current Vite base path is `/baby-steps/`. If the repository or hosting path is different, update `base` in `vite.config.ts` before deploying.
+GitHub Pages is no longer deployed; the app is served from the Pi's internal backend (see `deployment/internal/README.md`). `.github/workflows/deploy.yml` now carries only the opt-in legacy Pi release below. The Vite base path `/baby-steps/` remains the default for a plain `npm run build`.
 
 ## Raspberry Pi build and one-time sign-in
 
