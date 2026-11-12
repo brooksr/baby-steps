@@ -1015,6 +1015,11 @@ stays on the phone.
   fires with no earlier event to measure from (an empty log means unknown, not
   overdue). Copy suggests offering a feed or a bath and points at the
   pediatrician — never more than that.
+- **Daily trend charts share one card** (`components/TrendCharts.tsx`):
+  Feeds/day, Sleep/day, Diapers/day and Milk/day are one `MiniChart` with a
+  Feeds · Sleep · Diapers · Milk picker above its heading, both in the recent
+  trends and under the selected period. Each metric keeps its own heading,
+  family color, stacked parts and expand-to-detail.
 - **Reports page order** — the period control sits directly above the first
   thing it changes. Everything above it (First Year, recent trends, growth
   standards) is period-independent; everything below (Nights, Insights, Feed

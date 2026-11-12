@@ -4159,3 +4159,6 @@ body { min-width: 0; }
 .metric-split { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .metric-split > div { display: grid; gap: 4px; min-width: 0; }
 .metric-split .metric-split-label { color: var(--ink); font-weight: 800; }
+/* Feeds, sleep, diapers and milk share one chart card; the picker swaps them. */
+.trend-charts { min-width: 0; }
+.trend-picker { display: grid; width: 100%; }

@@ -223,6 +223,7 @@ test('real passkey account, family, offline queue, caregiver boundary and recove
       await page.locator('.growth-overview').screenshot({ path:'test-results/mobile-growth-overview.png',style:'.bottom-nav { visibility: hidden; }' });
       await page.locator('.growth-combined').screenshot({ path:'test-results/mobile-growth-charts.png',style:'.bottom-nav { visibility: hidden; }' });
       await page.locator('.night-report').screenshot({ path:'test-results/mobile-night.png',style:'.bottom-nav { visibility: hidden; }' });
+      await page.locator('.trend-charts').first().screenshot({ path:'test-results/mobile-trends.png',style:'.bottom-nav { visibility: hidden; }' });
       await page.locator('.feed-diaper-card').screenshot({ path:'test-results/mobile-feed-diaper.png',style:'.bottom-nav { visibility: hidden; }' });
       if (await page.locator('.feed-clock-chart').count()) await page.locator('.feed-clock-chart').screenshot({ path:'test-results/mobile-feed-clock.png',style:'.bottom-nav { visibility: hidden; }' });
     }

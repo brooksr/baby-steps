@@ -12,7 +12,7 @@ import type { BabyProfile, CareEvent, FeedEvent, MeasurementSystem } from '../do
 import { formatLength, formatVolume, formatWeight, getPreferredUnits, ouncesToKilograms, toUnitVolume } from '../domain/units';
 import { DateRangeFilter } from './DateRangeFilter';
 import { formatDayLabel, formatStat, type ChartPoint } from './chartFormat';
-import { MiniChart } from './MiniChart';
+import { TrendCharts } from './TrendCharts';
 import { FeedClock } from './FeedClock';
 import { FeedOrder } from './FeedOrder';
 import { GrowthStandards } from './GrowthStandards';
@@ -390,21 +390,27 @@ export function Reports({ events, loadNursery, onLogSleep, onLogSleeps, onMarkCr
         <p>{progressLabel}</p>
       </section>
 
-      <section className="chart-grid" aria-label="Recent trends">
-        <MiniChart event="feed" label="Feeds/day" stats={analytics.stats.feeds} total={recentTotals.feeds} values={recentFeedValues} />
-        <MiniChart event="sleep" label="Sleep/day" stats={analytics.stats.sleepHours} suffix="h" total={recentTotals.sleepHours} values={recentSleepValues} />
-        <MiniChart
-          event="diaper"
-          label="Diapers/day"
-          partAverages={[analytics.stats.wetDiapers.average, analytics.stats.dirtyDiapers.average]}
-          partLabels={DIAPER_PART_LABELS}
-          partTotals={[recentTotals.wet, recentTotals.dirty]}
-          stats={analytics.stats.diapers}
-          total={recentTotals.diapers}
-          values={recentDiaperValues}
-        />
-        <MiniChart event="pump" label="Milk/day" stats={recentMilkStats} suffix={milkSuffix} total={recentTotals.milk} values={recentMilkValues} />
-      </section>
+      <TrendCharts
+        label="Recent trends"
+        metrics={[
+          { chart: { event: 'feed', label: 'Feeds/day', stats: analytics.stats.feeds, total: recentTotals.feeds, values: recentFeedValues }, name: 'Feeds' },
+          { chart: { event: 'sleep', label: 'Sleep/day', stats: analytics.stats.sleepHours, suffix: 'h', total: recentTotals.sleepHours, values: recentSleepValues }, name: 'Sleep' },
+          {
+            chart: {
+              event: 'diaper',
+              label: 'Diapers/day',
+              partAverages: [analytics.stats.wetDiapers.average, analytics.stats.dirtyDiapers.average],
+              partLabels: DIAPER_PART_LABELS,
+              partTotals: [recentTotals.wet, recentTotals.dirty],
+              stats: analytics.stats.diapers,
+              total: recentTotals.diapers,
+              values: recentDiaperValues
+            },
+            name: 'Diapers'
+          },
+          { chart: { event: 'pump', label: 'Milk/day', stats: recentMilkStats, suffix: milkSuffix, total: recentTotals.milk, values: recentMilkValues }, name: 'Milk' }
+        ]}
+      />
 
       <GrowthStandards events={events} profile={profile} />
 
@@ -625,22 +631,28 @@ export function Reports({ events, loadNursery, onLogSleep, onLogSleeps, onMarkCr
             </article>
           </section>
 
-          <section className="chart-grid" aria-label={`Charts for ${periodScopeLabel(period)}`}>
-            <MiniChart event="feed" label="Feeds/day" sampled={sampled} stats={periodStats.feeds} total={periodTotals.feeds} values={periodFeedValues} />
-            <MiniChart event="sleep" label="Sleep/day" sampled={sampled} stats={periodStats.sleepHours} suffix="h" total={periodTotals.sleepHours} values={periodSleepValues} />
-            <MiniChart
-              event="diaper"
-              label="Diapers/day"
-              partAverages={[periodDiaperAverages.wet, periodDiaperAverages.dirty]}
-              partLabels={DIAPER_PART_LABELS}
-              partTotals={[periodTotals.wet, periodTotals.dirty]}
-              sampled={sampled}
-              stats={periodStats.diapers}
-              total={periodTotals.diapers}
-              values={periodDiaperValues}
-            />
-            <MiniChart event="pump" label="Milk/day" sampled={sampled} stats={periodStats.milk} suffix={milkSuffix} total={periodTotals.milk} values={periodMilkValues} />
-          </section>
+          <TrendCharts
+            label={`Charts for ${periodScopeLabel(period)}`}
+            metrics={[
+              { chart: { event: 'feed', label: 'Feeds/day', sampled, stats: periodStats.feeds, total: periodTotals.feeds, values: periodFeedValues }, name: 'Feeds' },
+              { chart: { event: 'sleep', label: 'Sleep/day', sampled, stats: periodStats.sleepHours, suffix: 'h', total: periodTotals.sleepHours, values: periodSleepValues }, name: 'Sleep' },
+              {
+                chart: {
+                  event: 'diaper',
+                  label: 'Diapers/day',
+                  partAverages: [periodDiaperAverages.wet, periodDiaperAverages.dirty],
+                  partLabels: DIAPER_PART_LABELS,
+                  partTotals: [periodTotals.wet, periodTotals.dirty],
+                  sampled,
+                  stats: periodStats.diapers,
+                  total: periodTotals.diapers,
+                  values: periodDiaperValues
+                },
+                name: 'Diapers'
+              },
+              { chart: { event: 'pump', label: 'Milk/day', sampled, stats: periodStats.milk, suffix: milkSuffix, total: periodTotals.milk, values: periodMilkValues }, name: 'Milk' }
+            ]}
+          />
         </>
       )}
     </ReportExplorer>

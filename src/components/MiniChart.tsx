@@ -1,10 +1,10 @@
 import { Maximize2 } from 'lucide-react';
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import type { MetricStats } from '../domain/firstYear';
 import type { CareEventType } from '../domain/types';
 import { BAR_LABEL_LIMIT, formatBarValue, formatDayLabel, formatParts, formatStat, type ChartPoint } from './chartFormat';
 
-interface MiniChartProps {
+export interface MiniChartProps {
   /** Which care event the chart is about — it colors the bars by family. */
   event: CareEventType;
   label: string;
@@ -21,9 +21,11 @@ interface MiniChartProps {
   /** True when bars average several days together, so a bar is not one day's total. */
   sampled?: boolean;
   values: ChartPoint[];
+  /** Controls drawn above the heading — the trend picker that swaps metrics. */
+  picker?: ReactNode;
 }
 
-export function MiniChart({ event, label, stats, suffix = '', partAverages, partLabels, partTotals, sampled = false, total, values }: MiniChartProps) {
+export function MiniChart({ event, label, stats, suffix = '', partAverages, partLabels, partTotals, picker, sampled = false, total, values }: MiniChartProps) {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const max = Math.max(1, ...values.map((point) => point.value));
   const cols = Math.max(1, values.length);
@@ -34,6 +36,7 @@ export function MiniChart({ event, label, stats, suffix = '', partAverages, part
 
   return (
     <article className="chart-card" data-event={event}>
+      {picker}
       <div className="chart-heading">
         <h3>{label}</h3>
         <strong>{formatStat(stats.average, suffix)} avg</strong>
